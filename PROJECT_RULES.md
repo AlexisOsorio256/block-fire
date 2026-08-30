@@ -221,12 +221,35 @@ Cada vez que otra IA/agente abra el proyecto debe:
 1. Leer `README.md`
 2. Leer `PROJECT_RULES.md` (este archivo)
 3. Leer `DESIGN_LOG.md`
-4. Inspeccionar código
+4. Inspeccionar código (auditar 1862 líneas: ¿estamos construyendo el juego o alrededor de él?)
 5. Ejecutar el juego
-6. Capturar pantalla
-7. Comparar contra los 10 tests
+6. Capturar pantalla (`?capture=...`) **y** `?capture=...&skinless=1` (Skinless Test)
+7. Ejecutar `?runTests=1` y distinguir `TECHNICAL PASS` de `GAMEPLAY PASS`
+8. Comparar contra los 10 tests + checklist cualitativo (1ª muerte / 3ª / 5ª)
 
 **No modificar solo porque "podría mejorarse".** Debe demostrar que la modificación ayuda a uno de los objetivos principales y registrar hipótesis/resultado en `DESIGN_LOG.md`.
+
+### Distinción obligatoria
+
+```
+TECHNICAL PASS  = el programa hace lo que se pidió (tests automatizados, capturas)
+GAMEPLAY PASS   = un humano se tensa, se arriesga, se sorprende y quiere volver (playtest cualitativo)
+PRODUCT VALIDATED = gameplay validado humanamente + retención observada
+```
+
+`10/10 PASSED` **no** implica `GAMEPLAY PASS`. Ver `README.md` semáforo: `TECHNICAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED` es el estado correcto del MVP.
+
+### Skinless Test (obligatorio para validar core)
+
+Activar `?skinless=1` debe mostrar:
+
+- bolas → círculos simples sin glow
+- fort → rectángulos grises sin textura
+- compuerta → rectángulo plano
+- fondo → plano `#0a0e1e`
+- sin partículas / audio / shake
+
+Si en skinless **sigue siendo satisfactorio aguantar y soltar**, el core tiene valor. Si no, corregir core antes de añadir juice.
 
 ### Cambios prohibidos sin justificación
 
@@ -248,12 +271,16 @@ Cada cambio relevante debe responder:
 
 ```
 PULSE-DAM/
-├── README.md           # Qué es, cómo ejecutar, cómo probar, estado real
-├── PROJECT_RULES.md    # Este archivo — controla el proyecto
-├── DESIGN_LOG.md       # Memoria histórica de decisiones
-├── index.html          # MVP jugable
-├── game.js             # Lógica completa (sin deps)
-└── style.css           # Estilo mobile-first
+├── README.md                    # Qué es, cómo ejecutar, cómo probar, estado real (con semáforo)
+├── PROJECT_RULES.md             # Este archivo — controla el proyecto
+├── DESIGN_LOG.md                # Memoria histórica de decisiones
+├── index.html                   # MVP jugable
+├── game.js                      # Lógica completa (1862 líneas, con DEBUG_SKINLESS)
+├── style.css                    # Estilo mobile-first
+├── capturas/                    # solo Pulse Dam (no mezclar con Shield Surge)
+│   ├── 01-ready.png ... 10-tests.png
+│   └── skinless-tension.png    # evidencia sin arte
+└── INFORME_SHIELD_SURGE.md      # histórico, no canónico
 ```
 
 ---
@@ -271,4 +298,4 @@ PULSE-DAM/
 
 ---
 
-*Última actualización: 2026-08-30 — Constitución inicial Pulse Dam v1.0*
+*Última actualización: 2026-08-30 — Constitución Pulse Dam v1.1 — Añadido: auditoría 1862 líneas, distinción TECHNICAL/GAMEPLAY, Skinless Test, semáforo*

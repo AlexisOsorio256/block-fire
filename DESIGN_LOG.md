@@ -160,4 +160,28 @@ Formato: `FECHA | CAMBIO | MOTIVO | HIPÓTESIS | RESULTADO | DECISIÓN`
 
 ---
 
+## 2026-08-30 — Auditoría 1854 líneas + Skinless Test + Separación TECHNICAL/GAMEPLAY
+
+**Cambio:** Auditoría de `game.js 1862 líneas`, implementación de `DEBUG_SKINLESS` (`?skinless=1`), y corrección de semáforo `TECHNICAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED`. Actualizados `README.md` y `PROJECT_RULES.md`.
+
+**Motivo:** Feedback de diseño/producto (revisión externa) señaló tres riesgos: (1) 1854 líneas pueden ocultar “construir alrededor del juego” si son reglas/excepciones; (2) afirmar “sin arte sigue siendo divertido” sin prueba; (3) `10/10 PASSED` confundía técnico con diversión.
+
+**Hipótesis:**
+
+- Desglose por secciones (CONFIG 14% / UPDATE core 37% / RENDER 26% / INPUT+audio+harness 23%) demostrará que el peso es estado/render/helpers, no sistemas de tuning excesivos.
+- Un `?skinless=1` que deja solo círculos, rectángulos, fondo plano, sin partículas/audio/shake, es la prueba falsable de si la decisión `aguantar/soltar` vale sin juice.
+- Separar `TECHNICAL PASS` (automatizable) de `GAMEPLAY PASS` (requiere humano) evita declarar victoria prematura y bloquea *feature creep*.
+
+**Resultado:**
+
+- Auditoría realizada: 685 líneas UPDATE (core), 477 RENDER, 430 harness/input/audio. No hay tienda/economía/loot. Riesgo contenido.
+- `DEBUG_SKINLESS` implementado: `has('skinless')` → fondo `#0a0e1e`, paredes `#2a344a`, bolas `#e0f0ff` (o amarillo/rojo según presión), sin `spawnParticle` ni `beep`, `render` early-return.
+- Capturas `skinless-tension` verificadas vía `?capture=tension&skinless=1` con `chromium --virtual-time-budget=3500`.
+- `README.md` ahora muestra banner rojo `NO ESTÁ VALIDADO COMO PRODUCTO` + semáforo 🟢/🟡/⚪ + checklist cualitativo (1ª/3ª/5ª muerte) y rechaza “15 reintentos” como criterio.
+- `PROJECT_RULES.md` v1.1 añade §10 con distinción `TECHNICAL/GAMEPLAY/PRODUCT` y Skinless Test obligatorio para futuras auditorías.
+
+**Decisión:** Mantener. No agregar features hasta completar playtest humano con checklist de 6 preguntas + 3 observaciones cualitativas. Próximo paso: probar `?skinless=1` con 5 jugadores y registrar si aparece `¿vuelvo? / ¿experimento? / ¿mejoro decisión?`.
+
+---
+
 *Próximas entradas deben seguir el mismo formato y referenciar test irrefutable afectado.*

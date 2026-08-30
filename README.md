@@ -2,6 +2,12 @@
 
 > **Juego mobile-first de interacción mínima donde el jugador contiene deliberadamente una masa en movimiento, acumula presión/tensión y decide cuándo liberar esa energía para provocar una consecuencia física masiva.**
 
+> ⚠️ **PULSE DAM NO ESTÁ VALIDADO COMO PRODUCTO.**  
+> **EL MVP ESTÁ TÉCNICAMENTE IMPLEMENTADO.**  
+> **EL CORE GAMEPLAY ESTÁ EN FASE DE VALIDACIÓN HUMANA.**  
+> **NO AGREGAR FEATURES HASTA COMPLETAR ESTA VALIDACIÓN.**  
+> Ver semáforo abajo: `TECHNICAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED`.
+
 ---
 
 ## Qué es
@@ -68,7 +74,9 @@ Ver reglas completas: [`PROJECT_RULES.md`](./PROJECT_RULES.md)
 
 ## Estado actual
 
-**MVP jugable — Pulse Dam v1.0 (2026-08-30)**
+**MVP jugable — Pulse Dam v1.0 (2026-08-30) — AUDITADO**
+
+> **TECHNICAL: PASS — VISUAL: PASS — GAMEPLAY: PROMISING / PENDING HUMAN TEST — PRODUCT: NOT VALIDATED**
 
 Implementado:
 
@@ -81,12 +89,37 @@ Implementado:
 - ✅ Destrucción: `perBlock 42` + `pressureBonus` + `riskBonus 125` + `overload -85`
 - ✅ Audio Web Audio: `CHARGE tick / RELEASE whoosh / IMPACT thud / DESTRUCTION crumble / OVERLOAD`
 - ✅ Score / Best (`localStorage pulseDamBest`) + feedback `¡CRÍTICO! / ¡PULSO MASIVO!`
-- ✅ Retry instantáneo y debug `DEBUG=false`
-- ✅ Capturas A–G + tests `10/10`
+- ✅ Retry instantáneo y debug `DEBUG=false` + `DEBUG_SKINLESS` (ver Skinless Test)
+- ✅ Capturas A–G + tests técnicos `10/10` (¡ojo! técnico ≠ diversión)
 
 No implementado (prohibido en MVP sin validar core): tienda, monedas, skins, backend, leaderboard, multiplayer, anuncios, economía, etc.
 
-**Estado honesto:** El core ya provoca “otra” en pruebas internas (riesgo vs payoff claro, `PAYOFF destrucción 23/25` con `92%`). Pendiente test con jugadores reales para ajustar `maxHold`, `pressureMul` y `spawnInterval`. No es “production ready”, es **prototipo para descubrir si merece seguir vivo**.
+**Estado honesto:**
+
+- **Técnico PASS:** arquitectura limpia, 60fps, `10/10` tests, capturas auditables.
+- **Visual PASS:** causalidad clara en captures, juice jerárquico.
+- **Gameplay PROMISING / PENDING:** en pruebas internas el riesgo `78–97%` ya invita a “otra”, pero **no ha sido validado con jugadores reales**. Los tests automatizados demuestran que el programa hace lo que se pidió, **no que sea divertido**. Ver `DESIGN_LOG.md` auditoría 1854 líneas y Skinless Test.
+- **Producto NOT VALIDATED:** no agregar features hasta completar playtest humano (ver checklist cualitativo abajo). No es “production ready”, es **candidato que merece prueba humana**.
+
+### Semáforo (auditado 2026-08-30)
+
+| Área                | Estado |
+| ------------------- | ------ |
+| Arquitectura        | 🟢 PASS |
+| Control             | 🟢 PASS |
+| Causalidad          | 🟢 PASS |
+| Feedback            | 🟢 PASS |
+| Retry               | 🟢 PASS |
+| Evidencia visual    | 🟢 PASS |
+| Documentación       | 🟢 PASS |
+| Performance inicial | 🟢 PASS |
+| Identidad           | 🟡 PROMISING |
+| Profundidad         | 🟡 PROMISING |
+| Diversión real      | 🟡 PENDING TEST |
+| Retención           | ⚪ NOT VALIDATED |
+| Potencial comercial | ⚪ NOT VALIDATED |
+
+> Los ⚪ no son malos: simplemente no se pueden demostrar con código. Requieren playtest humano.
 
 ---
 
@@ -108,25 +141,37 @@ Controles:
 Parámetros útiles:
 
 - `?capture=ready|containment|tension|release|impact|result|retry|gameplay` — fuerza estado para screenshots
-- `?runTests=1` — ejecuta harness 10 tests determinista
+- `?runTests=1` — ejecuta harness 10 tests determinista (¡técnico, no gameplay!)
+- `?skinless=1` — **Skinless Test**: desactiva arte, partículas, audio, shake. Solo círculos/rectángulos/fondo plano. Prueba si la decisión sigue siendo satisfactoria.
+- `?capture=...&skinless=1` — combina captura + skinless para evidencia sin arte
 - `?capture=...` usa `virtual-time-budget=3500` para que JS termine antes del screenshot (ver `DESIGN_LOG.md`)
 
 Mobile-first: funciona con `pointer events`, `touch-action:none`, `DPR` adaptativo, `orientation` vertical. Desktop es herramienta de desarrollo.
 
 ---
 
-## Cómo probar (checklist gameplay)
+## Cómo probar (checklist gameplay) — PLAYTEST HUMANO CUALITATIVO
 
-Haz estos 6 tests sin leer instrucciones previas:
+> Los tests `?runTests=1` son **TECHNICAL PASS**. No demuestran diversión. Este checklist es el verdadero criterio de producto.
+
+Haz estos 6 tests sin leer instrucciones previas (observa, no expliques):
 
 - **A Primer contacto (5s):** ¿sabes qué hacer sin texto? (mantener)
-- **B Primer release:** ¿soltar produce satisfacción? (avalanchas pequeñas vs grandes)
+- **B Primer release:** ¿soltar produce satisfacción inmediata? (avalanchas pequeñas vs grandes)
 - **C Segundo intento:** ¿sabes qué hacer diferente? (aguantar más)
 - **D Riesgo:** ¿aparece “aguanto un poco más”? (¿llegas a 78–97%?)
 - **E Payoff:** ¿gran acumulación → reacción mucho mayor? (¿14+ bloques?)
-- **F Repetición:** tras 3 partidas, ¿quieres “otra”? (¿retry <1s te invita?)
+- **F Repetición:** tras 3 partidas, ¿quieres “otra”?
 
-Criterio de aprobación (todos deben ser SÍ):
+**Criterio cualitativo (más valioso que “15 reintentos”):**
+
+- **Después de la primera muerte:** ¿volvió a tocar sin que nadie se lo pidiera? (sí/no)
+- **Después de la tercera:** ¿está experimentando voluntariamente con el tiempo de carga? (sí/no)
+- **Después de la quinta:** ¿está intentando mejorar una decisión concreta? (sí/no)
+
+> Una persona puede hacer 15 reintentos por paciencia o por completar la prueba; otra puede enamorarse en 4. Lo cualitativo dice más.
+
+Criterio de aprobación (todos deben ser SÍ para `GAMEPLAY PASS`):
 
 ```
 [ ] Se entiende rápido
@@ -136,12 +181,28 @@ Criterio de aprobación (todos deben ser SÍ):
 [ ] Existe riesgo
 [ ] Resultado > input
 [ ] Causalidad clara
-[ ] Derrota clara (overload)
+[ ] Derrota clara (overload por avaricia, no aleatoriedad)
 [ ] Retry rápido
-[ ] Deseo de repetir
+[ ] Deseo de repetir (observado cualitativamente)
 ```
 
-Si alguno falla → `STATUS = NEEDS TUNING` (ajustar valores, no añadir features).
+Si alguno falla → `STATUS = NEEDS TUNING` (ajustar valores `maxHold / pressureMul / spawnInterval`, **no añadir features**).
+
+### Skinless Test (prueba definitiva sin arte)
+
+```
+?skinless=1          → juega sin arte (círculos, rectángulos, fondo plano, sin partículas/audio/shake)
+?capture=tension&skinless=1 → captura evidencia sin arte
+```
+
+Pregunta:
+
+> **¿sigue siendo satisfactorio aguantar y soltar con solo círculos y rectángulos?**
+
+- Si **SÍ** → el core tiene valor, el juice lo amplifica.
+- Si **NO** → corregir core, no añadir partículas.
+
+Evidencia: `capturas/skinless-*.png` (generar con `chromium --screenshot ...?capture=tension&skinless=1`).
 
 ---
 
@@ -164,6 +225,8 @@ Para regenerar:
 
 ```bash
 chromium --headless --disable-gpu --virtual-time-budget=3500 --window-size=1280,800 --screenshot=/tmp/out.png http://localhost:8000/?capture=tension
+# skinless
+chromium --headless --disable-gpu --virtual-time-budget=3500 --window-size=1280,800 --screenshot=/tmp/skinless.png "http://localhost:8000/?capture=tension&skinless=1"
 ```
 
 ---
@@ -203,14 +266,41 @@ PULSE-DAM/
 
 ---
 
-## Pregunta definitiva
+## Auditoría 1854 líneas — ¿estamos construyendo alrededor del juego?
+
+**Líneas totales:** `1862` (`wc -l game.js`)
+
+Desglose aproximado:
+
+- **CONFIG + estado + DOM + resize + fort + spawn + partículas + score/feedback + game flow:** ~270 líneas (14%) — reglas mínimas
+- **UPDATE (presión, spawner, física bolas, ball-ball, ball-block, blocks, partículas, result):** ~685 líneas (37%) — **core gameplay**
+- **RENDER (dam, agua, compuerta, bloques, bolas, partículas, juice, skinless branch):** ~477 líneas (26%)
+- **INPUT + audio + loop + capture helpers + test harness (10 tests):** ~430 líneas (23%)
+
+> Conclusión: la mayoría es **estado/render/HUD/helpers + tests**, no sistemas de tuning excesivos. No hay tienda, economía, etc. El riesgo de “construir alrededor” está contenido, pero se vigilará: **no agregar sistemas hasta validar gameplay humano**.
+
+## Pregunta definitiva + Skinless Test
 
 > “¿Si elimino todo el arte y dejo círculos, masas, paredes y una compuerta, esta interacción sigue siendo divertida?”
 
-Con Pulse Dam: **SÍ** — la decisión de riesgo (cuándo soltar) ya es divertida con solo círculos y rectángulos. El juice solo la amplifica.
+Con Pulse Dam **afirmamos SÍ** pero **no lo habíamos demostrado con capturas** — solo con juice. Ahora existe prueba deliberada:
 
-Si la respuesta fuera NO, habría que cambiar el core, no añadir partículas.
+```bash
+?skinless=1
+```
+
+- bolas → círculos blancos (rojo/amarillo solo si presión alta, sin glow)
+- fort → rectángulos grises
+- compuerta → rectángulo plano
+- fondo → plano `#0a0e1e`
+- sin partículas, sin audio, sin shake/flash
+
+Si en `?skinless=1` sigue apareciendo la tensión `34%→87%` y el payoff `23 bloques`, el core pasa. Captura: `capturas/skinless-tension.png`.
+
+Si **NO** pasa, hay que corregir core, no añadir partículas.
 
 ---
 
-*Última actualización: 2026-08-30 — MVP Pulse Dam v1.0. ¿Merece seguir vivo? Juega 3 partidas y decide.*
+*Última actualización: 2026-08-30 — MVP Pulse Dam v1.0 AUDITADO.*
+*`TECHNICAL: PASS / VISUAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED`*
+*Próximo paso: playtest humano con checklist cualitativo (6 preguntas + 3 observaciones). NO agregar features hasta completar.*

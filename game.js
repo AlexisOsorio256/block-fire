@@ -5,6 +5,7 @@
 // Prioridad: SENSACIÓN > PRECISIÓN FÍSICA
 
 const DEBUG = false;
+const DEBUG_SKINLESS = new URLSearchParams(location.search).has('skinless');
 
 const CONFIG = {
   // Layout relativo, recalculado en resize()
@@ -125,6 +126,7 @@ function ensureAudio(){
   try{ audio.ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ audio.enabled=false; }
 }
 function beep({freq=440, freq2=220, dur=0.12, type='sine', gain=0.18, sweep='exp'}){
+  if(DEBUG_SKINLESS) return;
   if(!audio.enabled || !audio.ctx) return;
   if(audio.ctx.state==='suspended') audio.ctx.resume();
   const t = audio.ctx.currentTime;
@@ -275,6 +277,7 @@ function spawnBall(){
 
 // ---------- PARTICLES ----------
 function spawnParticle(x,y,vx,vy, life, size, color){
+  if(DEBUG_SKINLESS) return;
   if(particles.length >= CONFIG.particles.max) return;
   particles.push({x,y,vx,vy,life,maxLife:life,size,color,alive:true});
 }
@@ -984,6 +987,54 @@ score ${score|0} best ${best} round ${roundScore|0}`;
 // ---------- RENDER ----------
 function render(){
   ctx.save();
+  if(DEBUG_SKINLESS){
+    // SKINLESS TEST: solo geometría pura, sin juice
+    ctx.fillStyle = '#0a0e1e';
+    ctx.fillRect(0,0,W,H);
+    // dam walls plain
+    ctx.fillStyle='#2a344a';
+    ctx.fillRect(CHANNEL_LEFT, RES_TOP-18, WALL_T, GROUND_Y - (RES_TOP-18));
+    ctx.fillRect(CHANNEL_RIGHT - WALL_T, RES_TOP-18, WALL_T, GROUND_Y - (RES_TOP-18));
+    ctx.fillStyle='#1a2238';
+    ctx.fillRect(0, GROUND_Y, W, H-GROUND_Y);
+    // gate plain
+    const gateTop = GATE_Y - CONFIG.gate.thickness/2;
+    const gateLeft = CHANNEL_LEFT - 4;
+    const gateW = DAM_W + 8;
+    if(gateClosed){
+      ctx.fillStyle = pressure>75 ? '#8a2a2a' : pressure>45 ? '#8a7a2a' : '#4a5a7a';
+      ctx.fillRect(gateLeft, gateTop, gateW, CONFIG.gate.thickness);
+      // simple crack line when danger
+      if(pressure > CONFIG.gate.crackAt){
+        ctx.strokeStyle='#ff4d6a'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(CX-20, gateTop+4); ctx.lineTo(CX+20, gateTop+8); ctx.stroke();
+      }
+    } else {
+      ctx.fillStyle='rgba(0,0,0,0.35)';
+      ctx.fillRect(CHANNEL_LEFT+WALL_T, GATE_Y-2, DAM_W-WALL_T*2, 10);
+    }
+    // blocks plain
+    for(const b of blocks){
+      if(!b.alive) continue;
+      ctx.fillStyle = b.falling ? '#6a6a6a' : '#8a96b0';
+      ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+    }
+    // balls plain white circles
+    for(const ball of balls){
+      if(!ball.alive) continue;
+      ctx.fillStyle = ball.y < GATE_Y && gateClosed && pressure>60 ? (pressure>80 ? '#ff6b6a' : '#ffd86a') : '#e0f0ff';
+      ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, TAU); ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.55)'; ctx.lineWidth=1;
+      ctx.stroke();
+    }
+    // vignette minimal
+    ctx.fillStyle='rgba(0,0,0,0.18)';
+    ctx.fillRect(0,0,W,22);
+    ctx.restore();
+    return;
+  }
   if(shake>0){
     const sx = (Math.random()-0.5)*shake*2;
     const sy = (Math.random()-0.5)*shake*2;
