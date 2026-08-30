@@ -46,11 +46,12 @@ export const WeaponData = {
 };
 
 export class WeaponSystem {
-  constructor(scene, camera, audio, vfx) {
+  constructor(scene, camera, audio, vfx, applyDamage) {
     this.scene = scene;
     this.camera = camera;
     this.audio = audio;
     this.vfx = vfx;
+    this.applyDamage = applyDamage;
 
     this.weapons = ['rifle', 'pistol', 'shotgun'];
     this.currentIndex = 0;
@@ -124,26 +125,31 @@ export class WeaponSystem {
     }
   }
 
-  canFire() {
+  canFire(usesPlayerAmmo = true) {
     if (this.isReloading) return false;
-    if (this.fireCooldown > 0) return false;
-    if (this.ammoInMag <= 0) {
+    if (usesPlayerAmmo && this.fireCooldown > 0) return false;
+    if (usesPlayerAmmo && this.ammoInMag <= 0) {
       this.reload();
       return false;
     }
     return true;
   }
 
-  fire(shooter, targets) {
-    if (!this.canFire()) return null;
+  fire(shooter, targets, map = null) {
+    // Bots share the hitscan implementation, but never share the player's
+    // magazine/cooldown. Their own cadence is controlled by Bot.shootCooldown.
+    const usesPlayerAmmo = !shooter.isBot;
+    if (!this.canFire(usesPlayerAmmo)) return null;
 
     const weapon = this.currentWeapon;
-    this.ammoInMag--;
-    this.fireCooldown = weapon.fireRate;
-    this.recoilOffset += weapon.recoil;
+    if (usesPlayerAmmo) {
+      this.ammoInMag--;
+      this.fireCooldown = weapon.fireRate;
+      this.recoilOffset += weapon.recoil;
+    }
 
     // Crosshair feedback
-    if (this.crosshair) {
+    if (usesPlayerAmmo && this.crosshair) {
       this.crosshair.classList.add('fire');
       setTimeout(()=> this.crosshair.classList.remove('fire'), 80);
     }
@@ -151,7 +157,7 @@ export class WeaponSystem {
     if (this.audio) this.audio.play('shoot', weapon.name);
 
     // Muzzle flash
-    if (this.vfx) this.vfx.muzzleFlash(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+    if (usesPlayerAmmo && this.vfx) this.vfx.muzzleFlash(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
 
     // Raycast for each pellet
     let hits = [];
@@ -171,6 +177,11 @@ export class WeaponSystem {
       // For map, we use a simple ray against map boxes (handled in Game)
       let closestHit = null;
       let closestDist = weapon.range;
+
+      // A wall takes priority over a target behind it. This must happen before
+      // damage is applied; filtering the result afterwards cannot undo a hit.
+      const mapHit = map && map.raycast(this.camera.position, direction, closestDist);
+      if (mapHit) closestDist = mapHit.distance;
 
       for (const target of targets) {
         if (target === shooter) continue;
@@ -194,13 +205,12 @@ export class WeaponSystem {
       }
 
       if (closestHit) {
-        // Check map occlusion: if map blocks the shot, ignore
-        // This will be handled by Game which checks map ray first
         hits.push(closestHit);
       } else {
-        // Miss - show impact on map
         if (this.vfx) {
-          const missPoint = this.camera.position.clone().addScaledVector(direction, 45);
+          const missPoint = mapHit
+            ? mapHit.point
+            : this.camera.position.clone().addScaledVector(direction, 45);
           this.vfx.impact(missPoint, null);
         }
       }
@@ -224,9 +234,9 @@ export class WeaponSystem {
         damage += d;
         if (h.headshot) isHeadshot = true;
       }
-      // Apply via DamageSystem (passed in as callback)
-      if (target.takeDamage) {
-        const died = target.takeDamage(damage, isHeadshot ? 'head' : 'body', shooter);
+      // Game owns scores, death feedback and respawns for both player and bots.
+      if (this.applyDamage) {
+        const died = this.applyDamage(target, damage, isHeadshot ? 'head' : 'body', shooter);
         if (died) killed = true;
         totalDamage += damage;
         // VFX
@@ -239,7 +249,7 @@ export class WeaponSystem {
     }
 
     // Hitmarker
-    if (hits.length > 0) {
+    if (usesPlayerAmmo && hits.length > 0) {
       this.showHitmarker(killed);
       if (this.audio) this.audio.play(killed ? 'kill' : 'hit');
     }

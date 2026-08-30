@@ -51,6 +51,34 @@ if (params.has('runTests')) {
       // Test 6: HUD
       const hudOk = !!document.getElementById('hud');
       log('6 HUD', hudOk, `hud ${hudOk}`);
+      // Test 7: A hitscan kill must reach the match damage system. This covers
+      // score/death wiring, not merely that a target mesh can lose health.
+      const bot = game.bots[0];
+      const botStart = bot.position.clone();
+      const aim = new THREE.Vector3();
+      game.camera.getWorldDirection(aim);
+      bot.position.copy(game.camera.position).addScaledVector(aim, 4);
+      bot.position.y -= 0.15;
+      bot.health = bot.maxHealth;
+      bot.isAlive = true;
+      bot.mesh.visible = true;
+      game.playerKills = 0;
+      game.weaponSystem.fireCooldown = 0;
+      game.weaponSystem.ammoInMag = game.weaponSystem.currentWeapon.magazineSize;
+      let combatResult = null;
+      for(let i=0; i<5 && bot.isAlive; i++) {
+        game.weaponSystem.fireCooldown = 0;
+        combatResult = game.weaponSystem.fire(game.player, [bot], null);
+      }
+      const combatOk = !bot.isAlive && game.playerKills === 1 && combatResult?.totalDamage > 0;
+      const scoreAfterWeapon = game.playerKills;
+      bot.respawn(botStart);
+      game.playerKills = 0;
+      game.applyDamage(bot, 100, 'body', game.player);
+      const directDamageOk = game.playerKills === 1;
+      log('7 COMBAT + SCORE', combatOk && directDamageOk, `weaponKills ${scoreAfterWeapon} directKills ${game.playerKills} damage ${combatResult?.totalDamage || 0}`);
+      bot.respawn(botStart);
+      game.playerKills = 0;
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);

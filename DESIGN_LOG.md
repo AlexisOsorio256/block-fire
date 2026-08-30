@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-08-30 — Auditoría de combate y respawn
+
+**Bug corregido:** `WeaponSystem` aplicaba daño directo a los bots, saltándose `Game.applyDamage`; por tanto no se registraban kills, muertes ni respawns. También compartía el cargador/cooldown del jugador con los bots y podía dañar a través de cobertura.
+
+**Cambio local:** el arma delega el daño al sistema central, consulta la oclusión del mapa antes de aplicar daño y los bots mantienen su propia cadencia sin gastar munición del jugador. Los respawns colocan jugador y bots sobre el suelo del mapa, en lugar de usar la altura predefinida del spawn como si fuera un offset. El input de apuntado ahora aplica un FOV reducido, como anuncia la interfaz.
+
+**Verificación:** `?runTests=1` ahora cubre una kill hitscan que incrementa el marcador: 7/7 PASS. Se añadió `capturas/05-audit-gameplay.png` como evidencia visual actualizada.
+
+---
+
 ## 2026-08-30 — Limpieza y enfoque BLOCKFIRE
 
 **Cambio:** Borrado de todo lo que no ayuda a BLOCKFIRE: `historico/` (6 docs + 15 capturas Pulse/Escombros), `PROPUESTA_GAMEPLAY.md` (71K), `PROPUESTA_NUEVO_JUEGO.md`, `RESET_TOTAL.md`, `game.js` raíz (32K 2D). Raíz de 8.7M → 6.8M → ahora 4 markdowns + `src/` (BLOCKFIRE) + `capturas/` vacía.
@@ -27,7 +37,7 @@
 - Mapa 48×48 con 5 clusters + 8 spawns con jitter y `getGroundY`/`checkCollision`
 - Bots con `Bot.js`: wander/chase/attack, strafe, raycast contra mapa para oclusión, 7 bots baratos
 
-**Resultado:** `index.html` + `style.css` + `src/` (8 archivos). `npm run` no necesario, `python3 -m http.server` y listo. `?runTests=1` con 6 tests, `?capture=playing` para screenshots.
+**Resultado:** `index.html` + `style.css` + `src/` (8 archivos). `npm run` no necesario, `python3 -m http.server` y listo. `?runTests=1` con 7 tests, `?capture=playing` para screenshots.
 
 ---
 

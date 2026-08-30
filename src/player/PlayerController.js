@@ -163,7 +163,7 @@ export class PlayerController {
 
   respawn(pos) {
     this.player.position.copy(pos);
-    this.player.position.y = pos.y + this.height;
+    this.player.position.y = this.map ? this.map.getGroundY(pos.x, pos.z) + this.height : this.height;
     this.velocity.set(0,0,0);
     this.health = this.maxHealth;
     this.player.isAlive = true;

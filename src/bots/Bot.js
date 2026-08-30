@@ -128,6 +128,7 @@ export class Bot {
 
   respawn(pos) {
     this.position.copy(pos);
+    this.position.y = this.map.getGroundY(pos.x, pos.z) + this.height;
     this.health = this.maxHealth;
     this.isAlive = true;
     this.mesh.visible = true;

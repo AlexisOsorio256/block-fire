@@ -8,7 +8,7 @@
 - **Prototipo jugable:** 1 mapa 48×48 (5 clusters + plataformas), 3 armas (rifle/pistola/escopeta, mismo `WeaponSystem`), 7 bots `wander→chase→attack`.
 - **Controles:** PC `WASD + Mouse Click` (pointer lock) / Móvil `joystick + desliza + botones` → mismo `PlayerController` (strafe fix aplicado 2026-08-30).
 - **Loop:** Entrar (1 click) → moverte rápido (5.2/7.0) → encontrar (<10s) → disparar (hitscan, recoil, hitmarker) → kill → respawn 1.8s lejos → repetir hasta 20.
-- **Estado:** Base estable, `6/6 tests` en `?runTests=1`, 60fps objetivo, capturas en `capturas/` regeneradas tras fix.
+- **Estado:** Base estable, `7/7 tests` en `?runTests=1`, 60fps objetivo, capturas en `capturas/` regeneradas tras fix.
 
 ## 2. A dónde va (siguiente, no inventar)
 
@@ -33,14 +33,14 @@ src/ui/HUD.js + src/audio/AudioManager.js
 main.js → window.__BLOCKFIRE__ , ?runTests=1 , ?capture=playing
 ```
 
-Reglas: <400 líneas/archivo, datos ≠ sistema, humanos/bots comparten `WeaponSystem`, PC/móvil solo cambia `Input`.
+Reglas: apuntar a <400 líneas/archivo (hoy `Game.js` supera ese límite), datos ≠ sistema, humanos/bots comparten `WeaponSystem`, PC/móvil solo cambia `Input`.
 
 ## 5. Cómo correr / verificar
 
 ```bash
 python3 -m http.server 8002 --directory /home/alex/Documentos/BlockFire
 # http://localhost:8002 → ENTRAR A PARTIDA → click canvas para lock
-# http://localhost:8002/?runTests=1 → 6/6 PASS
+# http://localhost:8002/?runTests=1 → 7/7 PASS
 # http://localhost:8002/?capture=playing → screenshot estado jugando
 ```
 

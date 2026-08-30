@@ -54,7 +54,7 @@ export class Game {
     this.scene.add(this.player.mesh);
 
     // Weapon
-    this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this);
+    this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this, this.applyDamage.bind(this));
 
     // Bots
     this.bots = [];
@@ -374,40 +374,21 @@ export class Game {
     // Player
     this.playerController.update(dt);
 
+    // ADS is intentionally only a camera zoom in this prototype: it makes the
+    // advertised aim input useful without introducing a second movement model.
+    const targetFov = this.input.aim ? 62 : 78;
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1, dt * 14));
+      this.camera.updateProjectionMatrix();
+    }
+
     // Weapon
     this.weaponSystem.update(dt, this.player.isAlive);
 
     // Shooting (player)
     if(this.input.fire && this.player.isAlive){
-      // Check map occlusion first
-      const dir = new THREE.Vector3();
-      this.camera.getWorldDirection(dir);
-      const mapHit = this.map.raycast(this.camera.position, dir, this.weaponSystem.currentWeapon.range);
-      // We pass all targets, WeaponSystem will handle hits, but we need to filter map-blocked hits
-      // For prototype, let WeaponSystem do its thing, but if mapHit is closer than target, we treat as miss
-      // The WeaponSystem already checks targets, but we can provide mapHit distance to filter
-      // For simplicity, just fire and let WeaponSystem handle, but we will post-check mapHit vs closest target
-      // Instead, we will call weapon fire with all alive entities
       const allTargets = [...this.bots, this.player];
-      // Temporarily, if mapHit exists and is closer than any target, we should not count hit
-      // We could just call fire and it will return hits, but if mapHit is closer, we should discard hits that are beyond mapHit
-      const result = this.weaponSystem.fire(this.player, allTargets);
-      if(result && result.hits.length>0 && mapHit){
-        // Filter hits beyond mapHit
-        const filtered = result.hits.filter(h=> h.distance < mapHit.distance);
-        if(filtered.length===0){
-          // All hits were behind wall, treat as miss
-          // Already handled as hit in WeaponSystem, but we can ignore damage if we want
-          // For prototype, keep as is, wall will block but WeaponSystem doesn't know mapHit, so we need to handle here
-          // Instead, we should have passed mapHit to WeaponSystem and let it discard
-          // For now, if mapHit is closer than closest hit, we revert damage? But we already applied damage
-          // To keep simple, we will just not worry for prototype, wall blocking is approximate via bot LOS, not bullet
-        }
-      }
-      // Apply map impact if no hit
-      if(mapHit && (!result || result.hits.length===0)){
-        this.impact(mapHit.point, false);
-      }
+      this.weaponSystem.fire(this.player, allTargets, this.map);
     }
 
     // Bots
@@ -435,7 +416,7 @@ export class Game {
         this.camera.updateMatrixWorld();
 
         const allTargets = [this.player, ...this.bots];
-        const result = this.weaponSystem.fire(bot, allTargets);
+        const result = this.weaponSystem.fire(bot, allTargets, this.map);
 
         // Restore camera
         this.camera.position.copy(savedPos);

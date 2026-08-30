@@ -14,7 +14,7 @@ Si no, nada más importa.
 
 ## 3. ESTADO ACTUAL (2026-08-30)
 
-Prototipo jugable FFA 8, strafe fix aplicado, 6/6 tests, 60fps objetivo, `capturas/` limpias. Siguiente: validar con video 60fps y pulir eficiencia, no añadir contenido.
+Prototipo jugable FFA 8, strafe fix aplicado, 7/7 tests, 60fps objetivo, `capturas/` limpias. Siguiente: validar con video 60fps y pulir eficiencia, no añadir contenido.
 
 ## 4. TEST 13 — éxito = todos pasan
 
@@ -40,7 +40,7 @@ src/ui        HUD
 src/audio     AudioManager
 ```
 
-Reglas: <400 líneas/archivo, datos separados de sistema (`WeaponData {damage,fireRate,mag,reload,spread,recoil,range,pellets,auto}`), humanos y bots usan mismo `WeaponSystem`, PC/móvil solo cambia `Input`.
+Reglas: apuntar a <400 líneas/archivo (hoy `Game.js` supera ese límite), datos separados de sistema (`WeaponData {damage,fireRate,mag,reload,spread,recoil,range,pellets,auto}`), humanos y bots usan mismo `WeaponSystem`, PC/móvil solo cambia `Input`.
 
 ## 8. PRIORIDAD
 
@@ -53,7 +53,7 @@ No romper estabilidad por feature, ni gameplay por arquitectura.
 - 60fps PC y móvil modesto. Shadows 1024, sin antialias pesado en móvil, pixelRatio ≤1.5.
 - Geometrías/materiales pooled, no crear `Geometry/Material` por disparo.
 - Efectos (impact/blood) en loop central, no `requestAnimationFrame` por partícula.
-- Archivos <400 líneas, sin frameworks gigantes, sin deps.
+- Apuntar a archivos <400 líneas, sin frameworks gigantes, sin deps.
 
 ## 10. REGLAS IA
 
