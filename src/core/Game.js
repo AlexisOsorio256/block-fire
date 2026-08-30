@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../lib/three.module.js';
 import { Input } from './Input.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { WeaponSystem } from '../combat/WeaponSystem.js';
