@@ -3,25 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#0b0f1e">
-<title>PULSE DAM</title>
+<meta name="theme-color" content="#1a1f2e">
+<title>ESCOMBROS — Destrucción que Construye</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="bg"></div>
   <canvas id="c"></canvas>
 
-  <!-- HUD -->
   <div id="hud">
     <div id="hud-top">
       <div id="score-wrap">
         <span id="score">0</span>
-        <span id="score-label">SCORE</span>
+        <span id="score-label">ESCOMBROS</span>
       </div>
       <div id="hud-right">
-        <div id="pressure-wrap">
-          <div id="pressure-bar"><div id="pressure-fill"></div></div>
-          <span id="pressure-label">PRESIÓN</span>
+        <div id="shots-wrap">
+          <span id="shots">1</span>
+          <span id="shots-label">TIRO</span>
         </div>
         <div id="best-wrap">
           <span id="best">0</span>
@@ -33,33 +32,31 @@
     <div id="stats-wrap"><span id="stats-line"></span></div>
   </div>
 
-  <!-- Overlay -->
   <div id="overlay">
     <div id="title-block">
-      <h1 id="title">PULSE DAM</h1>
-      <p id="subtitle">MANTÉN PARA CONTENER · SUELTA PARA LIBERAR</p>
-      <p id="hint">Aguanta para acumular presión.<br>Suéltalo <em>antes</em> de que se rompa.</p>
-      <button id="playBtn">TOCA PARA CONTENER</button>
+      <h1 id="title">ESCOMBROS</h1>
+      <p id="subtitle">ARRASTRA PARA APUNTAR · SUELTA PARA LANZAR</p>
+      <p id="hint">Destruye para construir.<br>Los restos <em>no desaparecen</em> — úsalos para el siguiente tiro.</p>
+      <button id="playBtn">TOCA PARA EMPEZAR</button>
       <p id="bestLine">BEST <span id="bestVal">0</span></p>
-      <p id="tap-hint">Un dedo. Una decisión.</p>
+      <p id="tap-hint">Un drag. Mucho que pensar.</p>
     </div>
     <div id="result-block" class="hidden">
-      <h2 id="result-title">IMPACTO</h2>
+      <h2 id="result-title">ESCOMBROS</h2>
       <p id="result-sub"></p>
       <div id="result-stats">
-        <div><span id="finalScore">0</span><label>SCORE</label></div>
-        <div><span id="finalBlocks">0</span><label>BLOQUES</label></div>
+        <div><span id="finalScore">0</span><label>ESCOMBROS</label></div>
+        <div><span id="finalShots">0</span><label>TIROS</label></div>
         <div><span id="finalBest">0</span><label>BEST</label></div>
       </div>
-      <div id="result-badges"></div>
-      <button id="retryBtn">TOCA PARA REINTENTAR</button>
-      <p id="retry-hint">Mantén de nuevo para contener</p>
+      <button id="retryBtn">OTRA VEZ</button>
+      <p id="retry-hint">Los restos quedan — nueva partida limpia</p>
     </div>
   </div>
 
-  <div id="hold-hint">◀ MANTÉN PULSADO ▶</div>
+  <div id="aim-hint">◀ ARRASTRA DESDE LA HONDA ▶</div>
   <div id="debug" class="hidden"></div>
 
-<script src="game.js?v=1"></script>
+<script src="game.js?v=2"></script>
 </body>
 </html>

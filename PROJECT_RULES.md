@@ -1,29 +1,27 @@
-# PROJECT_RULES.md — Constitución Canónica — 5 DIRECCIONES EN INVESTIGACIÓN
+# PROJECT_RULES.md — Constitución Canónica — ESCOMBROS (B — Destrucción que Construye)
 
-> **Pulse Dam descartado. REBOTE PERSISTENTE descartado (2026-08-30).** Históricos en `historico/` y `*_PULSE_DAM_HISTORICO.md`. No se programa hasta elegir 1 de las 5 direcciones de `PROPUESTA_GAMEPLAY.md`.
+> **Pulse Dam y Rebot Persistente descartados (2026-08-30).** Históricos en `historico/`. **B — Destrucción que Construye** tiene luz verde **solo para prototiparse** (no es el juego final). El prototipo decide si vive o muere.
 
 ---
 
 ## 1. IDENTIDAD
 
-**Nombre operativo:** `PENDIENTE — 5 DIRECCIONES` (A Masa Bifurcada, B Destrucción que Construye, C Colocación Física, D Corte de Flujo, E Cadena Programable)  
-**Descripción:** No hay juego activo. Se investigan 5 arquitecturas radicalmente diferentes con `BASE PROBADA + MUTACIÓN FUERTE` (nivel 3-4). Cada una usa input familiar (drag, tap, swipe) pero lo que ocurre después debe tener espacio de decisiones amplio sin economía.
+**Nombre operativo:** `ESCOMBROS` (provisional B)  
+**Descripción:** Prototipo de 1 tiro drag → destrucción por material → escombros persistentes que se convierten en nuevo escenario para el siguiente tiro. No es Angry Birds con otro nombre: la diferencia estructural es que **los restos modifican el espacio del siguiente tiro**.
 
-**Género:** Pendiente de elección humana. No Pool.
-
-**Estado:** `NO PROGRAMAR — INVESTIGACIÓN`
+**Género:** Physics destruction + construcción efímera — One-drag, portrait.
 
 ---
 
 ## 2. OBJETIVO IRREFUTABLE
 
-> **Encontrar una BASE PROBADA + MUTACIÓN FUERTE que produzca `INPUT SIMPLE + MUCHAS DECISIONES + SEGUNDA ORDEN + MAESTRÍA + ONE MORE TRY` sin necesidad de economía/progresión. La simplicidad del input es deseable. La simplicidad del gameplay NO.**
+> **Comprobar si `TIRO → DESTRUCCIÓN → ESCOMBROS PERSISTENTES → NUEVA DECISIÓN` es divertido 5-10 minutos sin contenido que lo maquille. El prototipo debe permitir `APUNTAR → LANZAR → DESTRUIR → ALTERAR ESCENARIO → NUEVA DECISIÓN → LANZAR OTRA VEZ`.**
 
 ```
-BASE PROBADA (ej: Mob Control, Angry Birds, Clash) + MUTACIÓN que cambie ≥2 dimensiones (objetivo, decisión, consecuencia, posicionamiento, cadena, relación entre acciones) = NUESTRO JUEGO
+TIRO → DESTRUCCIÓN → RESTOS MODIFICAN ESCENARIO → ESCENARIO PERSISTENTE → NUEVA DECISIÓN → NUEVO TIRO
 ```
 
-**Test de profundidad (20 preguntas) debe pasar sin agregar niveles/cartas/poderes. Si depende de contenido futuro, es DÉBIL.**
+**Si después de 10 minutos solo es “apuntar mejor”, descartar. Si es “descubrir nueva forma de usar escombros”, continuar.**
 
 ---
 
@@ -83,15 +81,16 @@ Inspirado en principios de Pool/Angry Birds/Peggle/Mob Control/Suika, pero NO co
 
 ---
 
-## 8. MVP — NO PROGRAMAR HASTA ELECCIÓN HUMANA
+## 8. MVP — PROTOTIPO B EN VALIDACIÓN
 
-**REBOTE PERSISTENTE descartado.** No hay MVP activo.
+**Mínimo para B (ya construido, 32K):**
+```
+1 honda + 1 proyectil + 7 bloques (3 madera hp1, 2 piedra hp2, 1 target ★, 1 madera suelta) + suelo persistente
++ drag dirección+fuerza + trayectoria punteada 2 rebotes + física predecible + escombros que quedan
+```
+Nada más. Si no provoca 9/10 en la prueba de 10 preguntas, iterar posiciones/materiales, no añadir features.
 
-Cuando se elija 1 de las 5 direcciones de `PROPUESTA_GAMEPLAY.md`, su MVP será:
-- 1 escena, sin tienda/monedas/niveles/skins, solo infra A reutilizable (Canvas, loop, partículas, harness)
-- Debe pasar los 20 tests de profundidad sin contenido nuevo
-
-Debug: `const DEBUG=false` + `DEBUG_SKINLESS` (para test sin arte cuando haya MVP)
+Debug: `const DEBUG=false`
 
 ---
 
@@ -138,4 +137,4 @@ No modificar porque “podría mejorarse” sin hipótesis en `DESIGN_LOG`.
 
 ---
 
-*Última actualización: 2026-08-30 — 5 direcciones en investigación. REBOTE PERSISTENTE descartado. No programar. — READY FOR CHOICE*
+*Última actualización: 2026-08-30 — B prototipo jugable en validación. No es el juego final. El prototipo decide si vive o muere. — READY FOR PLAYTEST*

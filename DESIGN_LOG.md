@@ -60,4 +60,22 @@
 
 ---
 
-*Próxima entrada: tu elección de 1 de las 5 direcciones para prototipar (o orden de seguir investigando).*
+## 2026-08-30 — LUZ VERDE B: prototipo Destrucción que Construye
+
+**Cambio:** Construido prototipo B jugable (32K, ~700 líneas, solo infra A + core B). Reemplazados `index.html`/`style.css`/`game.js` con: honda drag (dirección+fuerza, trayectoria punteada 2 rebotes), física predecible, estructura 7 bloques (3 madera hp1, 2 piedra hp2, 1 target ★), 2 materiales con decisión, persistencia (escombros caen y se quedan como nueva plataforma), múltiples objetivos, posicionamiento y recuperación. Sin monedas/tienda/niveles.
+
+**Motivo:** Tu orden: B ganó derecho a ser probado físicamente. Investigación documental terminada, no más rankings. Objetivo: responder “¿es divertido 5-10 minutos sin contenido que lo maquille?”.
+
+**Hipótesis:** Si el core tiene chispa, el jugador sentirá “si rompo base madera, los escombros forman rampa hacia piedra” y querrá volver. Si solo es “Angry Birds pero los escombros se quedan”, se descartará.
+
+**Resultado (prueba honesta 10 preguntas, 5 minutos jugando):**
+- 1-9: SÍ (entiende, aprende, segundo tiro diferente, decisión, creativa, recuperable, causalidad clara, “yo lo hice” 1/3, quiere volver)
+- 10: DÉBIL — con 7 bloques, a los 10 minutos ya viste las 3-4 jugadas principales; después es “apuntar mejor”, no nueva forma. El core funciona pero con 7 bloques se agota rápido. Señal de que mutación es real pero necesita 1-2 reglas más para que el espacio sea amplio.
+- Capturas 8 estados generadas (01-ready 278K, 02-aim 277K, 03-flying 279K, 04-impact 323K, 05-modified 275K, 06-secondshot 278K, 07-mobile 150K, 08-tests 61K 6/6). 6/6 tests técnicos. 60fps, ~140 partículas max.
+- Veredicto: **B no es fracaso, pero con 7 bloques no pasa la prueba de 10 minutos sin contenido.** No es clon (diferencia estructural: escombros → terreno), pero necesita iterar posiciones/materiales, no añadir features.
+
+**Decisión:** Mantener B como candidato vivo, pero **no declarar GAMEPLAY PASS ni PRODUCT VALIDATED**. Siguiente paso: jugarlo tú 5-10 minutos y decidir si iteramos B (más interacción con escombros) o descartamos y probamos otro de los 5. No agregar economía/progresión.
+
+---
+
+*Próxima entrada: tu playtest de B (5-10 min) y decisión: iterar B, probar otra dirección, o seguir investigando.*
