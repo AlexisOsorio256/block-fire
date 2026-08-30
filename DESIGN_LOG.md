@@ -46,4 +46,18 @@
 
 ---
 
-*Próxima entrada: resultado del playtest del MVP de RebotPersistente (5 testers, 6 preguntas).*
+## 2026-08-30 — REBOTE PERSISTENTE descartado + 5 direcciones radicalmente diferentes
+
+**Cambio:** REBOTE PERSISTENTE descartado como pediste (no es “apuntar → rebote → siguiente tiro con HP”, es hacer mejor el mismo tiro). Añadida segunda investigación en `PROPUESTA_GAMEPLAY.md` con 5 arquitecturas radicalmente distintas (no 5 variantes Pool): A Masa Bifurcada, B Destrucción que Construye, C Colocación Física, D Corte de Flujo, E Cadena Programable — cada una con loop 30s, decisiones, segunda orden, 20 partidas sin contenido nuevo. No se elige ganador, solo 5 para que elijas. No se programa hasta elección humana.
+
+**Motivo:** Tu feedback brutal: RebotPersistente era Pool + pequeña mutación, no cambiaba ≥2 dimensiones. Necesitamos BASE PROBADA + MUTACIÓN FUERTE (nivel 3-4) con espacio de decisiones amplio sin economía. Las 5 nuevas cambian objetivo, consecuencia, posicionamiento, cadena y relación entre acciones, no solo HP.
+
+**Hipótesis:** Si las 5 se leen y piensas “ahora sí estamos buscando juegos distintos”, objetivo cumplido. Tercera prueba añadida: demo 60s con consecuencias explícitas (ej: “18 unidades → 12 izq + 6 centro → 4 tras muro”) y prueba 100 partidas sin contenido nuevo (si solo mejora puntería → DÉBIL).
+
+**Resultado:** `PROPUESTA_GAMEPLAY.md` actualizado con segunda + tercera investigación (5 direcciones + demos 60s + 100 partidas). `PROJECT_RULES.md` actualizado con 4 principios canónicos nuevos y estado `READY FOR CHOICE — 5 DIRECTIONS`. No se tocó `game.js`.
+
+**Decisión:** No programar hasta que elijas 1 de las 5 (o pidas seguir investigando). RebotPersistente queda descartado oficialmente.
+
+---
+
+*Próxima entrada: tu elección de 1 de las 5 direcciones para prototipar (o orden de seguir investigando).*

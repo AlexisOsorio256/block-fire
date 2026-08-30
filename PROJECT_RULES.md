@@ -1,25 +1,29 @@
-# PROJECT_RULES.md — Constitución Canónica — REBOTE PERSISTENTE
+# PROJECT_RULES.md — Constitución Canónica — 5 DIRECCIONES EN INVESTIGACIÓN
 
-> **Pulse Dam descartado.** Este es el canon del nuevo juego. Históricos en `*_PULSE_DAM_HISTORICO.md`.
+> **Pulse Dam descartado. REBOTE PERSISTENTE descartado (2026-08-30).** Históricos en `historico/` y `*_PULSE_DAM_HISTORICO.md`. No se programa hasta elegir 1 de las 5 direcciones de `PROPUESTA_GAMEPLAY.md`.
 
 ---
 
 ## 1. IDENTIDAD
 
-**Nombre operativo:** `REBOTE PERSISTENTE` (temporal, hasta fantasía final)  
-**Descripción:** Juego mobile-first de 1 bola que tiras con drag (ángulo+fuerza), rebota en paredes, rompe totens con hp/material, **y se queda donde cae**. Cada tiro cambia el siguiente.
+**Nombre operativo:** `PENDIENTE — 5 DIRECCIONES` (A Masa Bifurcada, B Destrucción que Construye, C Colocación Física, D Corte de Flujo, E Cadena Programable)  
+**Descripción:** No hay juego activo. Se investigan 5 arquitecturas radicalmente diferentes con `BASE PROBADA + MUTACIÓN FUERTE` (nivel 3-4). Cada una usa input familiar (drag, tap, swipe) pero lo que ocurre después debe tener espacio de decisiones amplio sin economía.
 
-**Género:** Física dirigida / Puzzle de posicionamiento — One-drag, portrait.
+**Género:** Pendiente de elección humana. No Pool.
+
+**Estado:** `NO PROGRAMAR — INVESTIGACIÓN`
 
 ---
 
 ## 2. OBJETIVO IRREFUTABLE
 
-> **Crear un loop donde el jugador entienda en 5s cómo tirar, descubra en 30s el rebote, domine en 60s la fuerza para dejar bien colocada la bola, y a las 10 partidas elija entre tiro seguro que deja bien vs tiro arriesgado que tira más pero deja mal, queriendo volver a corregir ángulo/fuerza.**
+> **Encontrar una BASE PROBADA + MUTACIÓN FUERTE que produzca `INPUT SIMPLE + MUCHAS DECISIONES + SEGUNDA ORDEN + MAESTRÍA + ONE MORE TRY` sin necesidad de economía/progresión. La simplicidad del input es deseable. La simplicidad del gameplay NO.**
 
 ```
-VER → ELEGIR OBJETIVO → APUNTAR → SOLTAR → REBOTE → IMPACTO → QUEDA → NUEVO ESCENARIO
+BASE PROBADA (ej: Mob Control, Angry Birds, Clash) + MUTACIÓN que cambie ≥2 dimensiones (objetivo, decisión, consecuencia, posicionamiento, cadena, relación entre acciones) = NUESTRO JUEGO
 ```
+
+**Test de profundidad (20 preguntas) debe pasar sin agregar niveles/cartas/poderes. Si depende de contenido futuro, es DÉBIL.**
 
 ---
 
@@ -48,14 +52,18 @@ Pulse Dam falló porque era **unidimensional** (solo *cuándo* soltar, sin *dón
 
 ---
 
-## 5. PRINCIPIOS
+## 5. PRINCIPIOS CANÓNICOS (añadidos 2026-08-30 por orden maestra)
 
-- **SIMPLE DE CONTROLAR ≠ SIMPLE DE JUGAR:** 1 drag, decenas de situaciones (como Pool, Angry Birds, Clash)
-- **BASE PROBADA + MUTACIÓN FUERTE:** Pool es base, mutación es persistencia + hp/material. Nivel 3 Remix, no clon
-- **SEGUNDA ORDEN:** tiro cambia escenario del siguiente tiro
-- **PLAYER AUTHORED:** “yo lo dejé bien/mal”
-- **SMALL INPUT → LARGE CONSEQUENCE:** drag 2cm → 2 rebotes + 3 totens
-- **FAST RETRY:** bola quieta → siguiente drag
+- **El proyecto no busca una mecánica complicada; busca una interacción simple con un espacio de decisiones profundo. La simplicidad del input es deseable. La simplicidad del gameplay NO.**
+- **No inventar la rueda cuando existe una base de gameplay probada. Investigar, extraer el mecanismo que funciona, mutarlo estructuralmente y construir una experiencia propia.**
+- **La infraestructura existente se reutiliza por valor técnico; ninguna mecánica existente se conserva por sentimentalismo ni por coste hundido.**
+- **Código reutilizable ≠ gameplay reutilizable.**
+- **SIMPLE DE CONTROLAR ≠ SIMPLE DE JUGAR:** 1 drag/tap/swipe, decenas de situaciones (como Pool, Angry Birds, Clash)
+- **BASE PROBADA + MUTACIÓN FUERTE (nivel 3-4 Remix/Nueva interpretación):** No clon (0) ni reskin (1)
+- **SEGUNDA ORDEN:** acción cambia escenario del siguiente turno
+- **PLAYER AUTHORED:** “YO hice eso”
+- **SMALL INPUT → LARGE CONSEQUENCE:** 1 gesto → cadena visible
+- **FAST RETRY:** siguiente decisión a un gesto
 
 Jerarquía: `GAMEPLAY > ESTABILIDAD > PERFORMANCE > UX > FEATURES` y `DIVERSIÓN > CLARIDAD > AGENCIA > ...`
 
@@ -75,14 +83,15 @@ Inspirado en principios de Pool/Angry Birds/Peggle/Mob Control/Suika, pero NO co
 
 ---
 
-## 8. MVP
+## 8. MVP — NO PROGRAMAR HASTA ELECCIÓN HUMANA
 
-```
-1 bola + 3 paredes + 6 totens (3 madera hp1,2 piedra hp2,1 torre) + suelo persistente + línea 2 rebotes + score/best + retry
-```
-Nada más. Una escena. Si no provoca “otra”, iterar posiciones, no añadir features.
+**REBOTE PERSISTENTE descartado.** No hay MVP activo.
 
-Debug: `const DEBUG=false` + `DEBUG_SKINLESS` (círculos/rects, sin partículas, para test sin arte)
+Cuando se elija 1 de las 5 direcciones de `PROPUESTA_GAMEPLAY.md`, su MVP será:
+- 1 escena, sin tienda/monedas/niveles/skins, solo infra A reutilizable (Canvas, loop, partículas, harness)
+- Debe pasar los 20 tests de profundidad sin contenido nuevo
+
+Debug: `const DEBUG=false` + `DEBUG_SKINLESS` (para test sin arte cuando haya MVP)
 
 ---
 
@@ -129,4 +138,4 @@ No modificar porque “podría mejorarse” sin hipótesis en `DESIGN_LOG`.
 
 ---
 
-*Última actualización: 2026-08-30 — RebotPersistente v0.1 — READY FOR PROTOTYPE*
+*Última actualización: 2026-08-30 — 5 direcciones en investigación. REBOTE PERSISTENTE descartado. No programar. — READY FOR CHOICE*
