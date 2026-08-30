@@ -304,3 +304,5 @@ Si **NO** pasa, hay que corregir core, no añadir partículas.
 *Última actualización: 2026-08-30 — MVP Pulse Dam v1.0 AUDITADO.*
 *`TECHNICAL: PASS / VISUAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED`*
 *Próximo paso: playtest humano con checklist cualitativo (6 preguntas + 3 observaciones). NO agregar features hasta completar.*
+
+<!-- punto final: sincronización verificada 2026-08-30 — Desktop → GitHub OK -->
