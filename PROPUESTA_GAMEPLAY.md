@@ -563,7 +563,112 @@ Si las lees y piensas “ahora sí estamos buscando juegos distintos” → obje
 
 *Fin de segunda investigación. No se escribe código hasta que elijas 1 dirección. Si ninguna te provoca “joder, aquí sí hay un juego”, seguimos investigando, no forzamos ganador.*
 
+---
+
+# TERCERA PRUEBA — DEMOSTRACIÓN 60s CON CONSECUENCIAS EXPLÍCITAS (como pediste)
+
+> **Regla:** No vale decir “el jugador decide X”. Hay que mostrar **“tengo 18 unidades, envío 12 por izquierda → quedan 8 tras muro → 8 llegan detrás → ahora tengo 2 posiciones”**.
+
+### DIRECCIÓN A — MASA BIFURCADA — Demo 60s con números
+
+**Estado inicial (0s):** Tengo 18 unidades azules en la entrada. Bifurcación con 3 ramas: Izq x3 con muro enemigo (requiere 10 para romper), Centro x2 libre, Der x1.5 con boost pero trampa que resta 30%. Enemigo defiende Izq con 12 rojas.
+
+**5s:** Decido **12 por Izq + 6 por Centro**. Las 12 chocan con 12 rojas → quedan 4 azules (12-8 muertos) y rompen muro pero llegan debilitadas y pintan poco territorio. Las 6 por Centro pasan por x2 → 12, llegan intactas y pintan territorio Centro 40%. Ahora tengo **4 en Izq (posición avanzada pero débil) y 12 en Centro (posición retrasada pero fuerte)** y debo decidir cuál reforzar. Si hubiera mandado 18 por Izq, tendría 10 tras muro y pintaría mucho, pero si enemigo pone refuerzo hubiera perdido todo.
+
+**15s:** Enemigo refuerza Izq con 10 más. Mi territorio Centro da +20% a la siguiente oleada que pase por ahí. Decido mandar siguiente oleada de 20 unidades **0 por Izq, 14 por Centro, 6 por Der**. Las 14 por Centro con bonus se hacen 33 (14×2×1.2) y llegan a base enemiga. Las 6 por Der activan boost y se hacen 9 pero pierden 3 en trampa → 6.
+
+**30s:** Base enemiga recibe 33+6=39. Mi masa pintó Centro y Der. Siguiente bifurcación tiene 3 ramas nuevas, pero Centro y Der siguen pintados 1 oleada más. Decido si repito Centro para aprovechar bonus o cambio a Izq ahora que enemigo movió defensa.
+
+**60s:** He pintado 2/3 ramas, mi masa total es 45, enemiga 30. Si hubiera ido todo por Izq al inicio, tendría 0 en Centro y no tendría bonus. La decisión de split cambió el mapa.
+
+### DIRECCIÓN B — DESTRUCCIÓN QUE CONSTRUYE — Demo 60s con escombros reales
+
+**Estado inicial (0s):** Torre 1: base madera (3 bloques), Torre 2: piedra (2 bloques duros arriba), hueco entre ellas de 4 unidades. Tengo 1 bola. Escombros: 0.
+
+**3s:** Apunto a **base madera** (no a piedra). Bola golpea madera → torre 1 se derrumba, deja **3 escombros madera pequeños** en suelo entre torres. Dos de ellos iguales se fusionan (Suika) → **1 viga larga madera** (ocupa 3 unidades). Torre 2 sigue intacta.
+
+**12s:** Decido: ¿uso viga larga ahora como puente hacia Torre 2 o la guardo? Si la uso ahora, podré llegar a piedra con rebote. Si la guardo, Torre 2 sigue inalcanzable. **Uso viga**: la coloco con drag entre hueco, forma puente.
+
+**20s:** Segunda bola: apunto a piedra pero **rebota en mi puente** → ángulo que antes era imposible ahora entra, golpea base piedra → piedra cae, deja **2 escombros piedra grandes**. Uno de ellos cae sobre mi puente y lo rompe → puente deja **1 escombro madera + 1 piedra**.
+
+**35s:** Tengo **1 viga madera + 2 piedra**. Decido fusionar 2 piedra → **1 losa piedra** grande que sirve como trampolín. La coloco bajo donde caerá la siguiente bola.
+
+**55s:** Tercera bola: tiro flojo, cae en losa, rebota alto y limpia lo que queda. Si en el primer tiro hubiera ido directo a piedra, habría hecho poco daño y **no tendría puente**, siguiente tiro seguiría imposible. El derrumbe creó la solución.
+
+### DIRECCIÓN C — COLOCACIÓN FÍSICA — Demo 60s con física
+
+**Estado inicial (0s):** Arena 10x10, 2 obstáculos fijos en centro. Mano: muro pesado (2 elixir, bloquea mucho), rebote ligero (1, rebota), bomba (3, empuja). Elixir 4/10. Enemigo suelta flujo de 10 bolas por arriba.
+
+**3s:** Flujo enemigo viene por centro. Decido **colocar muro pesado en (5,5) justo en centro** (cuesta 2, quedo en 2 elixir). Flujo choca, se divide en 2: 5 bolas a izquierda, 5 a derecha, ambas van hacia mis zonas x2 laterales (bien).
+
+**10s:** Coloco **unidad ligera en (2,5)** con 1 elixir (quedo en 1). Flujo dividido izquierdo choca con unidad ligera → rebota y empuja a 3 bolas enemigas hacia trampa en (1,3). Trampa se activa y empuja de vuelta.
+
+**18s:** Enemigo coloca su muro en (8,5) bloqueando mi flujo. Mi muro + su muro crean embudo en (6,5). Decido esperar 2s a juntar elixir a 3 y poner **bomba en embudo**. Si la pongo ahora, flujo aún no está en embudo y desperdicio.
+
+**26s:** Flujo de 12 bolas entra en embudo, pongo bomba → explota, empuja 8 bolas fuera del mapa. Si hubiera puesto bomba en centro al inicio, habría empujado solo 3.
+
+### DIRECCIÓN D — CORTE DE FLUJO — Demo 60s
+
+**Estado inicial (0s):** Laberinto 3x3 paredes, río azul de 10 bolas avanza por camino central hacia x2. Río rojo enemigo igual. Paredes cerradas.
+
+**3s:** Veo que camino central lleva a x2 pero tiene trampa que resta 3. Decido **cortar pared izquierda con swipe** (1 corte). Pared se abre, río se desvía instantáneamente 90° hacia x3. 10 bolas entran por x3 → 30. Río rojo sigue por centro.
+
+**8s:** Nuevo río azul de 12 viene. Como mi corte sigue abierto, **va automático por x3 sin que haga nada** → 36. Ya no necesito cortar. Enemigo corta su pared y su río también va por x3.
+
+**16s:** Mi río x3 ahora va directo a base enemiga, pero enemigo puso muro en (2,2). Decido **cortar muro enemigo**: cuesta 1 corte, pero si lo hago ahora, mi río de 14 que viene en 2s pasará. Espero 2s.
+
+**19s:** Corto muro enemigo justo cuando río de 14 llega → 14×3=42 pasan. Si hubiera cortado antes, río anterior de 12 se habría desviado a x2 y perdido x3.
+
+**28s:** Laberinto queda con 2 paredes abiertas (izquierda y enemiga). Siguiente oleada de 16 se dividirá sola: 10 por mi x3 y 6 por centro. No necesito cortar. El laberinto que creé juega solo.
+
+### DIRECCIÓN E — CADENA PROGRAMABLE — Demo 60s
+
+**Estado inicial (0s):** Tablero 8 pines grises fijos + 4 naranjas (obligatorias) + 1 morada bonus. Mano: pin “división” (divide bola en 2). Tengo que decidir dónde poner mi pin.
+
+**3s:** Coloco **pin división en (4,4) entre 2 naranjas**. Pin dura 2 tiros.
+
+**5s:** Suelto bola desde arriba centro. Bola cae → toca pin fijo en (4,2) → rebota a mi pin división en (4,4) → se divide en 2 bolas → cada una toca 1 naranja → 2 naranjas limpias, pin división sigue, 2 pines grises golpeados dan recurso “explosivo”.
+
+**14s:** Ahora tengo pin explosivo en mano. Quedan 2 naranjas juntas abajo en (3,7) y (5,7). Coloco **pin explosivo en (4,6) justo arriba de ellas**. Si lo pongo en centro, explotaría y solo tocaría 1.
+
+**19s:** Suelto bola desde izquierda. Bola rebota en 2 pines fijos, cae en mi pin explosivo (4,6) → explota con radio 2 → limpia las 2 naranjas + 1 pin gris → limpio tablero. Pin explosivo desaparece, me queda pin rebote normal.
+
+**28s:** Tablero ahora tiene hueco donde estaban naranjas. Mi pin división sigue 1 tiro más en (4,4). Si en el primer tiro hubiera puesto pin en esquina, solo habría tocado 1 naranja y no tendría recurso explosivo para el final. El pin que puse en 3s cambió el tiro de 19s.
+
+---
+
+## PARTIDA SIN CONTENIDO NUEVO — ¿Qué descubre el jugador después de 100 partidas con las mismas piezas?
+
+**A Masa Bifurcada (mismas 3 ramas, mismos multiplicadores):**
+- Novato (partida 1-3): manda todo por x3.
+- 5 partidas: descubre que dividir 70/30 pinta territorio.
+- 20 partidas: descubre finta (mandar poco a x3 para que enemigo defienda ahí, mandar masa real por x2).
+- 100 partidas: domina **sacrificio**: manda 4 unidades a propósito a morir en trampa para que enemigo crea que vas por ahí, mientras acumulas masa para siguiente oleada por ruta pintada. No es más puntería, es lectura del rival. No necesita nuevas puertas.
+
+**B Destrucción que Construye (mismas 2 torres, mismos 3 escombros):**
+- Novato: tira al centro para destruir.
+- 5 partidas: descubre que tirar a base madera da más escombros que tirar a piedra.
+- 20 partidas: descubre que **no destruir todo es mejor**: dejar 1 bloque en pie para que escombros caigan inclinados y formen rampa.
+- 100 partidas: aprende a **fallar a propósito** el primer tiro para que escombros caigan exactamente donde necesita el puente del segundo tiro. Tira flojo a esquina para generar viga larga en lugar de 3 pequeños. No necesita nuevas torres.
+
+**C Colocación Física (mismas 3 cartas, misma arena):**
+- Novato: pone muro en centro.
+- 20 partidas: descubre que poner muro 10px más a la izquierda hace que flujo entre en trampa.
+- 100 partidas: descubre **no colocar**: deja elixir a 10 y espera a que enemigo coloque, luego pone muro que usa su muro como parte de embudo. Juega con su colocación.
+
+**D Corte de Flujo (mismo laberinto 3x3):**
+- Novato: corta la pared más cercana al río.
+- 20 partidas: descubre que no cortar 5s y esperar a que 2 ríos se junten permite desviar ambos con 1 corte.
+- 100 partidas: deja laberinto con 2 paredes abiertas a propósito para que su río y el enemigo compartan camino y se empujen.
+
+**E Cadena Programable (mismos 8 pines fijos):**
+- Novato: pone pin al azar.
+- 20 partidas: pone pin donde la bola que falló la última vez habría rebotado mejor.
+- 100 partidas: pone pin que **no da muchos rebotes ahora pero deja el tablero perfecto para el siguiente tiro con explosivo**. Juega a 2 turnos vista.
+
+> Si la respuesta después de 100 partidas fuera solo “mejor puntería”, está marcado DÉBIL. En los 5, la respuesta es **sacrificio, finta, no colocar, dejar en equilibrio, preparar 2 turnos** — formas de jugar, no puntería.
+
 STATUS:
-READY FOR CHOICE — 5 DIRECTIONS
+READY FOR CHOICE — 5 DIRECTIONS (con demo 60s explícita)
 ```
 
