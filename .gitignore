@@ -1,0 +1,34 @@
+# OS
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Dependencies (no deps en este proyecto, pero por si acaso)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python http.server
+__pycache__/
+*.pyc
+
+# Capturas temporales
+/tmp/
+
+# Env
+.env
+.env.local
+
+# No ignorar capturas/ — son evidencia visual del MVP
+# !capturas/
+
+# Logs de chromium
+*.png.bak
