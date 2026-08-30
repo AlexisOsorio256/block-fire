@@ -1,65 +1,82 @@
-# ESCOMBROS — Destrucción que Construye
+# BLOCKFIRE — FPS 3D Blocky
 
-> **Pulse Dam DESCARTADO. REBOTE PERSISTENTE DESCARTADO.** Históricos en `historico/` y `capturas/historico-pulse/`. Prototipo actual **B — Destrucción que Construye** (luz verde para prototipar, no es el juego final).
-
-> **Tira → destruye → los escombros no desaparecen → úsalos para el siguiente tiro.**
+> **FPS 3D pequeño, rápido y jugable.** 1 jugador + 7 bots en Free For All, 20 kills para ganar o 5 minutos. Movimiento arcade, disparo satisfactorio, respawn inmediato. PC (WASD+Mouse) y Móvil (joystick + botones) con la misma lógica.
 
 ---
 
 ## Qué es
 
-Prototipo extremadamente pequeño para responder: **¿es divertido cuando lo tengo en las manos 5-10 minutos sin contenido que lo maquille?**
+BLOCKFIRE es un prototipo FPS 3D inspirado en la sensación de juegos como KUBOOM 3D (accesibilidad y ritmo) sin copiar mapas, armas, personajes ni UI. No es una demo técnica de cubos: es un FPS real desde el primer segundo.
 
-**Base probada:** Angry Birds (trayectoria + destrucción por material)  
-**Mutación:** los restos **permanecen y se convierten en nuevo escenario**. No desaparecen. 2 escombros iguales se fusionan (suave, no es Suika dominante).
-
-No es Angry Birds con otro nombre. En Angry destruyes y pasa al siguiente nivel. Aquí **destruyes y construyes el terreno del siguiente tiro**.
+**Objetivo del prototipo:** comprobar si es divertido entrar, moverse rápido, encontrar enemigos, disparar, matar y volver a hacerlo sin fricción.
 
 ---
 
-## Core Loop (lo que debe sentirse jugando)
+## Core Loop
 
 ```
-APUNTAR (drag desde honda, ves trayectoria punteada 2 rebotes)
+Entrar a partida (1 click)
 ↓
-LANZAR (suelta)
+Moverte rápido (WASD / joystick + salto)
 ↓
-DESTRUIR (madera hp1 rompe fácil, piedra hp2 resiste)
+Encontrar enemigo (mapa pequeño, encuentros <10s)
 ↓
-LOS RESTOS CAEN Y SE QUEDAN (no desaparecen)
+Apuntar + Disparar (hitscan, recoil, hitmarker)
 ↓
-ESCENARIO MODIFICADO (escombros forman nueva plataforma/rampa)
+Impacto (muzzle flash, sonido, sangre, shake)
 ↓
-NUEVA DECISIÓN (¿qué tiro ahora que tengo rampa?)
+Kill (+1, sonido distinto, killfeed)
 ↓
-LANZAR OTRA VEZ (usando lo que creaste)
+Morir → Respawn 1.8s en spawn lejano
+↓
+Repetir hasta 20 kills o 5 min
 ```
-
-Segunda orden: `tiro → escombros → nuevo escenario → nueva decisión`
 
 ---
 
-## Estado actual — Prototipo B en validación
+## Controles
 
-```
-BASE: Angry Birds + Suika/Donut (fusión leve)
-MUTACIÓN: Persistencia + escombros colocables/fusionables
-STATUS: PROTOTIPO JUGABLE EN VALIDACIÓN (no hay ganador, B solo ganó derecho a ser probado)
-BUILD: 32K game.js (~600 líneas, solo infra A reutilizada) + Canvas/DPR/pointer/loop/audio/partículas
-```
+**PC:**
+- `WASD` mover, `Shift` correr, `Space` saltar
+- `Mouse` mirar (click para bloquear puntero), `Click izq` disparar, `Click der` apuntar
+- `R` recargar, `1/2/3` o `Q/E` cambiar arma
 
-**Implementado para MVP (solo core, sin features):**
-- ✅ Lanzamiento drag con dirección+fuerza, trayectoria punteada, rebotes predecibles
-- ✅ Física con gravedad 980, restitución madera/piedra distinta
-- ✅ Estructura pequeña 7 bloques (3 madera base hp1, 2 piedra hp2, 1 target ★, 1 madera suelta)
-- ✅ 2 materiales que generan decisión (madera fácil muchos escombros pequeños vs piedra resistente pocos grandes)
-- ✅ Persistencia: bloques destruidos caen y se quedan como escombros estáticos que bloquean/rebotan el siguiente tiro
-- ✅ Múltiples objetivos (madera, piedra, target ★) → “¿cuál destruyo primero?”
-- ✅ Posicionamiento importa (dónde caen escombros)
-- ✅ Recuperación: mala jugada no es game over, escombros quedan y puedes corregir
-- ✅ Score/best, retry instantáneo, audio procedural, partículas, shake
+**Móvil:**
+- Izquierda: joystick virtual para mover
+- Derecha: desliza para mirar
+- Botones: ● disparar, ◎ apuntar, ↑ saltar, ↻ recargar, ⇄ cambiar arma
 
-**Prohibido y no agregado:** monedas, tienda, skins, upgrades, cartas, energía, vidas, anuncios, niveles, progresión, economía, backend.
+La lógica es la misma, solo cambia el origen del input (`KeyboardMouseInput` vs `TouchInput` → `PlayerController`).
+
+---
+
+## Armas (mismo sistema, datos distintos)
+
+| Arma | Tipo | Daño | Cadencia | Cargador | Precisión | Pellets |
+|------|------|------|----------|----------|-----------|---------|
+| Rifle | auto | 24 | 0.11s | 30 | media | 1 |
+| Pistola | semi | 28 | 0.32s | 12 | alta | 1 |
+| Escopeta | semi | 14×6 | 0.72s | 6 | dispersa | 6 |
+
+Headshot x2. Alcance: rifle 90, pistola 70, escopeta 22.
+
+---
+
+## Estado actual
+
+**Prototipo FFA 8 jugadores (1 humano + 7 bots) — 1 mapa pequeño, 3 armas, 5 min / 20 kills**
+
+- Movimiento rápido (5.2 / 7.0 sprint, salto 7.5, gravedad 22)
+- Cámara FPS fluida (yaw/pitch, sensibilidad 0.0022, clamp)
+- Disparo hitscan inmediato, recoil, crosshair y hitmarker con feedback
+- Bots: wander → chase → attack, strafe, buscan objetivo, disparan, mueren, respawn
+- Daño centralizado (`DamageSystem` via `applyDamage`), headshot x2
+- Mapa 48×48 con 5 clusters de cobertura + plataformas, 8 spawns con jitter
+- Audio procedural (Web Audio) sin assets pesados
+- HUD mínimo: HP, munición, kills/deaths, timer
+- 60fps objetivo, sombras suaves, niebla, pooling
+
+**No tiene (a propósito):** tienda, skins, progresión, multiplayer online, ranking, clanes. Solo el núcleo.
 
 ---
 
@@ -70,74 +87,56 @@ python3 -m http.server 8002 --directory /home/alex/Documentos/pulse-dam
 # abrir http://localhost:8002
 ```
 
-Controles:
-- **Drag desde la honda** (zona 96px alrededor de SLING_X/Y) para apuntar, suelta para lanzar
-- **R** o botón `OTRA VEZ` para reset (los restos se limpian solo en reset, no entre tiros)
-- `?capture=ready|aim|flying|impact|modified|secondshot` para capturas
-- `?runTests=1` para 6 tests técnicos
+Click en `ENTRAR A PARTIDA` → en PC click en canvas para bloquear ratón → `ESC` para salir.
+
+Parámetros:
+- `?runTests=1` — 6 tests técnicos (game loads, move, fire, bots, map, HUD)
+- `?capture=playing` — fuerza estado `PLAYING` para screenshots
 
 ---
 
-## Cómo probar — 10 preguntas (respuestas honestas tras probar 5 minutos)
-
-1. **¿Entiendo qué hacer sin explicación?** — SÍ. Honda + projectile + hint “ARRASTRA DESDE LA HONDA” es inmediato. Sin hint, 80% lo entiende por slingshot visual.
-2. **¿Mi primer tiro me enseña algo?** — SÍ. Tiras a madera, ves que se rompe fácil y deja escombros que se quedan. Aprendes madera ≠ piedra.
-3. **¿El segundo tiro es diferente debido al primero?** — SÍ, pero débil con 7 bloques. Si tu primer tiro dejó escombros en el centro, el segundo tiro rebota ahí. Con 7 bloques, la diferencia es sutil, no dramática.
-4. **¿Estoy tomando una decisión o solamente apuntando?** — SÍ, pero al inicio es 70% apuntar, 30% decidir. Decides qué estructura (madera vs piedra) y qué escombros quieres generar.
-5. **¿Puedo hacer una jugada intencionalmente creativa?** — SÍ, a partir del 2º tiro: “voy a tirar a la base madera para que los escombros caigan y formen rampa hacia la torre de piedra”. Se siente intencional.
-6. **¿Una mala jugada puede recuperarse?** — SÍ. Si fallas y no rompes nada, los pocos escombros que dejaste igual quedan y puedes usarlos. No hay game over por 1 mal tiro.
-7. **¿Puedo ver claramente por qué funcionó o falló?** — SÍ. Física visible, grieta en piedra hp1, caída. No hay RNG oculto.
-8. **¿Existe un momento de “NO MAMES, eso lo provoqué yo.”?** — SÍ, pero no es constante. Cuando usas escombros como puente para alcanzar el target ★ que era imposible directo, sí se siente. Con 7 bloques, ocurre 1 de cada 3 partidas, no cada tiro.
-9. **¿Después de 5 minutos quiero volver a intentarlo?** — SÍ. Retry instantáneo invita. Quieres probar otra estructura primero.
-10. **¿Después de 10 minutos estoy descubriendo nuevas formas de jugar o solo apuntando mejor?** — **DÉBIL.** Con 7 bloques y 2 materiales, a los 10 minutos ya viste las 3-4 jugadas principales. Después es “apuntar mejor”. Para que a los 10 minutos siga habiendo descubrimiento, necesitaríamos 1-2 tipos más de interacción con escombros (ej: fusión más visible, o escombros que se pueden arrastrar 1 vez). **El core tiene chispa, pero con 7 bloques se agota rápido.**
-
-**Veredicto honesto para B:** Pasa 9/10, el 10º revela que la profundidad existe (segunda orden real) pero **con 7 bloques es poco profunda para 10 minutos sin contenido**. No es “Angry Birds con escombros que se quedan” (eso sería clon), es “destrucción que genera terreno”, pero con 7 bloques el terreno nuevo es solo una pequeña rampa, no un nuevo puzzle. **No es un fracaso, es una señal de que la mutación funciona pero necesita 1-2 reglas más para que el espacio de decisiones sea amplio.**
-
----
-
-## Capturas (causalidad, no bonitas)
-
-Generadas con `chromium --virtual-time-budget=3500`:
-
-- `01-ready.png` — READY, honda + estructura intacta
-- `02-aim.png` — primer lanzamiento, drag con trayectoria punteada
-- `03-flying.png` — bola en vuelo
-- `04-impact.png` — destrucción parcial, 2 bloques cayendo, shake
-- `05-modified.png` — escenario modificado, escombros en suelo como nueva plataforma
-- `06-secondshot.png` — segundo lanzamiento apuntando usando escombros modificados
-- `07-mobile.png` — 390×844
-- `08-tests.png` — 6/6 tests técnicos
-
-Para regenerar: `chromium --headless --virtual-time-budget=3500 --window-size=1280,800 --screenshot=/tmp/out.png http://localhost:8002/?capture=modified`
-
----
-
-## Estructura
+## Arquitectura (para que la IA no se pierda)
 
 ```
-pulse-dam/ (ahora es escombros, repo pendiente renombrar)
-├── README.md                    # este archivo (B prototipo)
-├── PROJECT_RULES.md             # reglas B (no Pulse)
-├── DESIGN_LOG.md                # log B (por qué B, qué funciona/qué no)
-├── PROPUESTA_GAMEPLAY.md        # investigación 12 juegos + 40 conceptos + 5 direcciones + demo 60s
-├── historico/                   # Pulse y Rebot descartados
-│   ├── README_PULSE_DAM_HISTORICO.md
-│   └── ...
-├── capturas/historico-pulse/    # evidencia Pulse (no usar)
-├── capturas/01-ready.png ...    # evidencia B (8 imágenes, 1.9M)
-├── game.js                      # 32K, ~600 líneas, solo infra A + B core
-├── index.html / style.css       # esqueleto B
-└── PROPUESTA_NUEVO_JUEGO.md     # 40 conceptos previos (histórico)
+src/
+  core/
+    Game.js         # Scene, renderer, luces, loop, match (FFA 20 kills / 5 min), respawn
+    Input.js        # Abstrae KeyboardMouseInput y TouchInput → {move, look, fire, jump...}
+  player/
+    PlayerController.js # Movimiento, gravedad, salto, colisión AABB, cámara FPS
+  combat/
+    WeaponSystem.js # WeaponData (rifle/pistol/shotgun) + hitscan raycast + recoil + munición
+  bots/
+    Bot.js          # Mesh blocky, vida, estados wander/chase/attack, strafe, disparo
+  world/
+    Map.js          # Ground + 4 paredes + 5 clusters + plataformas + 8 spawns + colisión/Occlusión
+  ui/
+    HUD.js          # HP, ammo, kills, timer, killfeed, debug
+  audio/
+    AudioManager.js # Web Audio procedural (shoot/hit/kill/reload)
+  main.js           # Entry, expone window.__BLOCKFIRE__
+
+index.html          # Importmap three@0.160.0, HUD, mobile controls, overlay
+style.css           # HUD + mobile joystick + overlay
+capturas/           # Evidencia visual (vacía hasta generar)
+```
+
+**Principios:**
+- Pocos sistemas, responsabilidades claras, sin frameworks gigantes
+- Datos + Sistemas separados (`WeaponData` vs `WeaponSystem`)
+- Humanos y bots usan **el mismo** `WeaponSystem` (no duplicar lógica)
+- PC y móvil solo cambian `Input`, no `PlayerController`
+- Archivos pequeños (<400 líneas), sin sobreingeniería
+
+---
+
+## Capturas
+
+Vacío hasta generar. Para crear:
+```bash
+chromium --headless --virtual-time-budget=3000 --window-size=1280,800 --screenshot=/tmp/bf.png http://localhost:8002/?capture=playing
 ```
 
 ---
 
-## Reglas
-
-- Ver `PROJECT_RULES.md` (B)
-- No agregar economía/tienda/niveles hasta validar core con 10 preguntas
-- Si B resulta “Angry Birds pero los escombros se quedan” → **DESCARTAR**, no rescatar con features
-
----
-
-*Última actualización: 2026-08-30 — B prototipo jugable en validación. No es el juego final. El prototipo decide si vive o muere.*
+*Última actualización: 2026-08-30 — BLOCKFIRE prototipo FFA 8 jugadores. 1 jugador + 7 bots, 20 kills, 5 min, PC+Móvil.*

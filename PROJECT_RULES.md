@@ -1,140 +1,163 @@
-# PROJECT_RULES.md — Constitución Canónica — ESCOMBROS (B — Destrucción que Construye)
+# PROJECT_RULES.md — BLOCKFIRE
 
-> **Pulse Dam y Rebot Persistente descartados (2026-08-30).** Históricos en `historico/`. **B — Destrucción que Construye** tiene luz verde **solo para prototiparse** (no es el juego final). El prototipo decide si vive o muere.
+> Fuente canónica del proyecto. Si dudas, lee esto antes de tocar código.
 
 ---
 
 ## 1. IDENTIDAD
 
-**Nombre operativo:** `ESCOMBROS` (provisional B)  
-**Descripción:** Prototipo de 1 tiro drag → destrucción por material → escombros persistentes que se convierten en nuevo escenario para el siguiente tiro. No es Angry Birds con otro nombre: la diferencia estructural es que **los restos modifican el espacio del siguiente tiro**.
-
-**Género:** Physics destruction + construcción efímera — One-drag, portrait.
+**Nombre:** `BLOCKFIRE` (provisional)  
+**Descripción:** FPS 3D blocky low-poly, 1 jugador + 7 bots, FFA, 20 kills o 5 minutos, 1 mapa pequeño, 3 armas, movimiento rápido, disparo satisfactorio. PC (WASD+Mouse) y Móvil (joystick+botones) con **misma lógica**, solo input distinto.
 
 ---
 
 ## 2. OBJETIVO IRREFUTABLE
 
-> **Comprobar si `TIRO → DESTRUCCIÓN → ESCOMBROS PERSISTENTES → NUEVA DECISIÓN` es divertido 5-10 minutos sin contenido que lo maquille. El prototipo debe permitir `APUNTAR → LANZAR → DESTRUIR → ALTERAR ESCENARIO → NUEVA DECISIÓN → LANZAR OTRA VEZ`.**
+> **¿Es divertido entrar, moverse rápido, encontrar enemigos, disparar, matar y volver a hacerlo inmediatamente sin fricción, con un FPS que se siente real desde el primer segundo?**
 
-```
-TIRO → DESTRUCCIÓN → RESTOS MODIFICAN ESCENARIO → ESCENARIO PERSISTENTE → NUEVA DECISIÓN → NUEVO TIRO
-```
-
-**Si después de 10 minutos solo es “apuntar mejor”, descartar. Si es “descubrir nueva forma de usar escombros”, continuar.**
+Si la respuesta es no, no importa cuán bonita sea la arquitectura.
 
 ---
 
-## 3. TEST IRREFUTABLE (10)
+## 3. TESTS IRREFUTABLES (prototipo es éxito si los 13 pasan)
 
-| # | Test | Pregunta |
-|---|------|----------|
-|1|COMPRENSIÓN|¿Entiende en 5s que drag y suelta tira?|
-|2|AGENCIA|¿El resultado (totens + dónde queda) es claramente su culpa?|
-|3|TENSIÓN|¿Duda entre seguro (1 toten + buena posición) vs arriesgado (2 totens + mala)?|
-|4|PAYOFF|¿Rebote que tira torre se siente mucho mayor que el drag?|
-|5|ASIMETRÍA|¿Un drag pequeño genera cadena de 2 rebotes + derrumbe?|
-|6|APRENDIZAJE|¿Tras fallar esquina, sabe qué corregir (5° / fuerza)?|
-|7|RETRY|¿Tras quedarse sin ángulo, quiere otra?|
-|8|PERSONALIDAD|¿Con círculos+rectángulos+línea se reconoce?|
-|9|FRUSTRACIÓN|¿Bola en esquina se siente “yo la dejé mal”, no “el juego me trolea”?|
-|10|ONE MORE TRY|¿Dice “si apunto 5° más y tiro flojo...”?|
-
-Si 10 es NO → NO está listo.
-
----
-
-## 4. COSAS QUE APRENDIMOS (Pulse Dam)
-
-Pulse Dam falló porque era **unidimensional** (solo *cuándo* soltar, sin *dónde/cómo*), sin segunda orden (reset cada ronda), sin espacio de decisiones, y personalidad prestada (presa genérica). No se rescata, no se hace v2.
+1. Entra a partida en 1 click
+2. Se mueve fluido (sin peso militar)
+3. Apunta con precisión (mouse y táctil)
+4. Disparar se siente satisfactorio (flash, sonido, recoil, hitmarker)
+5. Impactos tienen feedback (sangre, impacto, shake)
+6. Enemigos reaccionan (se mueven, disparan, mueren)
+7. Muertes funcionan (feedback + 1.8s respawn)
+8. Respawn es rápido y en spawn lejano
+9. Encuentros <10s (mapa pequeño)
+10. 60fps estable en PC y móvil modesto
+11. PC funciona (teclado+ratón)
+12. Móvil funciona (joystick+botones)
+13. Otra IA puede continuar sin reescribir todo (arquitectura clara)
 
 ---
 
-## 5. PRINCIPIOS CANÓNICOS (añadidos 2026-08-30 por orden maestra)
+## 4. PRINCIPIOS CANÓNICOS
 
 - **El proyecto no busca una mecánica complicada; busca una interacción simple con un espacio de decisiones profundo. La simplicidad del input es deseable. La simplicidad del gameplay NO.**
-- **No inventar la rueda cuando existe una base de gameplay probada. Investigar, extraer el mecanismo que funciona, mutarlo estructuralmente y construir una experiencia propia.**
-- **La infraestructura existente se reutiliza por valor técnico; ninguna mecánica existente se conserva por sentimentalismo ni por coste hundido.**
+- **No inventar la rueda cuando existe una base probada. Investigar, extraer, mutar estructuralmente.**
+- **La infraestructura se reutiliza por valor técnico; ninguna mecánica se conserva por sentimentalismo.**
 - **Código reutilizable ≠ gameplay reutilizable.**
-- **SIMPLE DE CONTROLAR ≠ SIMPLE DE JUGAR:** 1 drag/tap/swipe, decenas de situaciones (como Pool, Angry Birds, Clash)
-- **BASE PROBADA + MUTACIÓN FUERTE (nivel 3-4 Remix/Nueva interpretación):** No clon (0) ni reskin (1)
-- **SEGUNDA ORDEN:** acción cambia escenario del siguiente turno
-- **PLAYER AUTHORED:** “YO hice eso”
-- **SMALL INPUT → LARGE CONSEQUENCE:** 1 gesto → cadena visible
-- **FAST RETRY:** siguiente decisión a un gesto
-
-Jerarquía: `GAMEPLAY > ESTABILIDAD > PERFORMANCE > UX > FEATURES` y `DIVERSIÓN > CLARIDAD > AGENCIA > ...`
+- **Simple de entender. Rápido de jugar. Satisfactorio de disparar. Difícil de romper. Fácil de extender.**
+- **GAMEPLAY > ESTABILIDAD > PERFORMANCE > UX > FEATURES** y `DIVERSIÓN > CLARIDAD > AGENCIA ...`
 
 ---
 
-## 6. COSAS PROHIBIDAS (MVP)
+## 5. COSAS PROHIBIDAS (en prototipo)
 
-No agregar hasta validar core con 5 testers y las 6 preguntas + 3 cualitativas:
+No agregar hasta validar el núcleo FFA:
 
-tienda, monedas, skins, inventario, cartas, energía, login, backend, leaderboard, multiplayer, anuncios, economía, misiones, battle pass, RPG, árbol mejoras, 20 niveles, tutorial largo, múltiples bolas, viento, materiales extra.
-
----
-
-## 7. NO CLONAR
-
-Inspirado en principios de Pool/Angry Birds/Peggle/Mob Control/Suika, pero NO copiar pájaros, resortera, mesa de billar, clavijas, puertas, cañones, etc. Identidad = *persistencia*.
+tienda, monedas, skins, battle pass, ranking, cuentas, multiplayer online, matchmaking, servidores, anuncios, campaña, inventario, loot, vehículos, clanes, chat, habilidades, 20 armas, 20 mapas, progresión.
 
 ---
 
-## 8. MVP — PROTOTIPO B EN VALIDACIÓN
+## 6. NO CLONAR
 
-**Mínimo para B (ya construido, 32K):**
-```
-1 honda + 1 proyectil + 7 bloques (3 madera hp1, 2 piedra hp2, 1 target ★, 1 madera suelta) + suelo persistente
-+ drag dirección+fuerza + trayectoria punteada 2 rebotes + física predecible + escombros que quedan
-```
-Nada más. Si no provoca 9/10 en la prueba de 10 preguntas, iterar posiciones/materiales, no añadir features.
-
-Debug: `const DEBUG=false`
+Inspirado en *sensación* de KUBOOM 3D / Warzone (accesibilidad y ritmo), pero **no copiar** mapas, personajes, armas, nombres, UI, assets ni identidad visual de ningún juego. Estética blocky low-poly propia, colorida no infantil, ligera.
 
 ---
 
-## 9. JUICE
-
-Jerarquía `NORMAL < BUENO < PERFECTO < MASIVO` — polvo al caer, flash solo en torre. No todo al máximo.
-
----
-
-## 10. AUDITORÍA FUTURA
-
-1. Leer `README.md`
-2. Leer `PROJECT_RULES.md` (este)
-3. Leer `DESIGN_LOG.md`
-4. Leer `PROPUESTA_NUEVO_JUEGO.md` (por qué este y no otros 39)
-5. Inspeccionar código (solo infra A reutilizable, nada de presa)
-6. Ejecutar, capturar, `?runTests` (técnico ≠ gameplay)
-7. Playtest 5 personas con 6 preguntas + 3 cualitativas
-
-No modificar porque “podría mejorarse” sin hipótesis en `DESIGN_LOG`.
-
----
-
-## 11. ESTRUCTURA
+## 7. ARQUITECTURA
 
 ```
-├── README.md (nuevo)
-├── PROJECT_RULES.md (este)
-├── DESIGN_LOG.md (nuevo)
-├── PROPUESTA_NUEVO_JUEGO.md (40 conceptos)
-├── capturas/historico-pulse/ (Pulse descartado)
-└── game.js (histórico, se refactorizará a ~600 líneas solo con infra A)
+src/core      Game, Input, Time
+src/player    PlayerController, CameraController
+src/combat    Weapon (WeaponData) + WeaponSystem + DamageSystem
+src/bots      Bot + BotController
+src/match     Match (FFA 20 kills / 5 min), Team, Score
+src/world     Map, SpawnSystem
+src/effects   VFX, HitFeedback
+src/audio     AudioManager
+src/ui        HUD
 ```
 
----
-
-## 12. REGLAS MAESTRAS
-
-> **NO INVENTAR LA RUEDA. NO CLONAR LA RUEDA. HACER UNA RUEDA QUE GIRA Y HACERLA NUESTRA.**
-
-> **1–3 acciones + muchísimas situaciones, no 20 features.**
-
-> **¿Si dejo solo círculo + rectángulos + línea, sigue siendo reconocible y divertido? Si NO, corregir core.**
+Reglas:
+- Pocos sistemas, responsabilidades claras, dependencias simples
+- Datos separados de comportamiento (`WeaponData` vs `WeaponSystem`)
+- Humanos y bots usan **el mismo** `WeaponSystem`
+- PC y móvil solo cambian `Input`
 
 ---
 
-*Última actualización: 2026-08-30 — B prototipo jugable en validación. No es el juego final. El prototipo decide si vive o muere. — READY FOR PLAYTEST*
+## 8. DATOS + SISTEMAS
+
+Armas configuradas por datos, no por clases distintas:
+```
+WeaponData { damage, fireRate, magazineSize, reloadTime, spread, recoil, range, pellets, automatic }
+```
+Agregar pistola/SMG/rifle/escopeta/sniper sin reescribir `WeaponSystem`.
+
+---
+
+## 9. MVP = FFA 8
+
+- 1 humano + 7 bots, todos contra todos
+- +1 kill por eliminación, gana 20 kills o tiempo 5 min
+- 1 mapa pequeño con rutas, coberturas, alturas
+- 3 armas (rifle auto, pistola semi, escopeta 6 pellets) mismo sistema
+- Hitscan raycast: Camera → Raycast → Target → DamageSystem
+- Daño: cuerpo, cabeza x2
+- Muerte → 1.8s → respawn en spawn lejano
+- Sin espectador, sin ragdoll complejo
+
+---
+
+## 10. ORDEN DE PRIORIDADES
+
+1. Estabilidad
+2. Gameplay
+3. Rendimiento
+4. UX
+5. Inmersión
+6. Features
+
+No sacrificar estabilidad por feature, ni gameplay por arquitectura innecesaria.
+
+---
+
+## 11. REGLAS PARA LA IA
+
+1. No reescribir sistemas funcionales sin necesidad
+2. Inspeccionar antes de modificar
+3. No duplicar sistemas
+4. No crear segunda implementación de una feature existente
+5. No introducir dependencias sin razón técnica clara
+6. No refactors masivos por estética
+7. Mantener archivos <400 líneas
+8. Reutilizar sistemas existentes
+9. No añadir features no solicitadas
+10. Si puede romper gameplay, comprobar comportamiento actual primero
+
+---
+
+## 12. ESTRUCTURA REPO (eficiente)
+
+```
+BLOCKFIRE/
+├── README.md
+├── PROJECT_RULES.md
+├── DESIGN_LOG.md
+├── index.html
+├── style.css
+├── src/
+│   ├── core/Game.js, Input.js
+│   ├── player/PlayerController.js
+│   ├── combat/WeaponSystem.js
+│   ├── bots/Bot.js
+│   ├── world/Map.js
+│   ├── ui/HUD.js
+│   └── audio/AudioManager.js
+├── capturas/          # solo evidencia visual actual (vacía hasta generar)
+└── .gitignore, LICENSE
+```
+
+Nada de `historico/` con 10 markdowns ni `capturas/historico-pulse/` con 15 PNGs. Si hace falta histórico, queda en git history, no en la carpeta.
+
+---
+
+*Última actualización: 2026-08-30 — BLOCKFIRE FFA 8, 20 kills, 5 min, PC+Móvil, arquitectura limpia.*

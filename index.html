@@ -3,60 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#1a1f2e">
-<title>ESCOMBROS — Destrucción que Construye</title>
+<meta name="theme-color" content="#0a0f1e">
+<title>BLOCKFIRE — FPS Blocky</title>
 <link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
-  <div id="bg"></div>
-  <canvas id="c"></canvas>
+  <div id="game-container"></div>
 
+  <!-- HUD mínimo -->
   <div id="hud">
     <div id="hud-top">
-      <div id="score-wrap">
-        <span id="score">0</span>
-        <span id="score-label">ESCOMBROS</span>
+      <div id="hud-left">
+        <span id="health">100</span><label>HP</label>
+        <span id="ammo">30/90</span><label>AMMO</label>
+      </div>
+      <div id="hud-center">
+        <span id="timer">05:00</span>
+        <span id="score">0 - 0</span>
       </div>
       <div id="hud-right">
-        <div id="shots-wrap">
-          <span id="shots">1</span>
-          <span id="shots-label">TIRO</span>
-        </div>
-        <div id="best-wrap">
-          <span id="best">0</span>
-          <span id="best-label">BEST</span>
-        </div>
+        <span id="kills">0</span><label>KILLS</label>
+        <span id="deaths">0</span><label>DEATHS</label>
       </div>
     </div>
-    <div id="feedback-wrap"><span id="feedback"></span></div>
-    <div id="stats-wrap"><span id="stats-line"></span></div>
+    <div id="crosshair">+</div>
+    <div id="hitmarker"></div>
+    <div id="killfeed"></div>
   </div>
 
+  <!-- Mobile controls -->
+  <div id="mobile-controls">
+    <div id="joystick-zone">
+      <div id="joystick-base"><div id="joystick-stick"></div></div>
+    </div>
+    <div id="look-zone"></div>
+    <div id="action-buttons">
+      <button id="btn-fire" class="action-btn">●</button>
+      <button id="btn-aim" class="action-btn">◎</button>
+      <button id="btn-jump" class="action-btn">↑</button>
+      <button id="btn-reload" class="action-btn">↻</button>
+      <button id="btn-switch" class="action-btn">⇄</button>
+    </div>
+  </div>
+
+  <!-- Overlay -->
   <div id="overlay">
     <div id="title-block">
-      <h1 id="title">ESCOMBROS</h1>
-      <p id="subtitle">ARRASTRA PARA APUNTAR · SUELTA PARA LANZAR</p>
-      <p id="hint">Destruye para construir.<br>Los restos <em>no desaparecen</em> — úsalos para el siguiente tiro.</p>
-      <button id="playBtn">TOCA PARA EMPEZAR</button>
-      <p id="bestLine">BEST <span id="bestVal">0</span></p>
-      <p id="tap-hint">Un drag. Mucho que pensar.</p>
+      <h1>BLOCKFIRE</h1>
+      <p>8 JUGADORES · FFA · 20 KILLS PARA GANAR</p>
+      <button id="playBtn">ENTRAR A PARTIDA</button>
+      <p id="hint">PC: WASD + Mouse + Click · Móvil: Joystick + Desliza + Botones</p>
     </div>
     <div id="result-block" class="hidden">
-      <h2 id="result-title">ESCOMBROS</h2>
-      <p id="result-sub"></p>
+      <h2 id="result-title">VICTORIA</h2>
+      <p id="result-sub">20 kills</p>
       <div id="result-stats">
-        <div><span id="finalScore">0</span><label>ESCOMBROS</label></div>
-        <div><span id="finalShots">0</span><label>TIROS</label></div>
-        <div><span id="finalBest">0</span><label>BEST</label></div>
+        <div><span id="finalKills">0</span><label>KILLS</label></div>
+        <div><span id="finalDeaths">0</span><label>DEATHS</label></div>
+        <div><span id="finalScore">0</span><label>SCORE</label></div>
       </div>
-      <button id="retryBtn">OTRA VEZ</button>
-      <p id="retry-hint">Los restos quedan — nueva partida limpia</p>
+      <button id="retryBtn">OTRA PARTIDA</button>
     </div>
   </div>
 
-  <div id="aim-hint">◀ ARRASTRA DESDE LA HONDA ▶</div>
   <div id="debug" class="hidden"></div>
 
-<script src="game.js?v=2"></script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
