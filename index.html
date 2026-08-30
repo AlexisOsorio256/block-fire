@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b0f1e">
+<title>PULSE DAM</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="bg"></div>
+  <canvas id="c"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hud-top">
+      <div id="score-wrap">
+        <span id="score">0</span>
+        <span id="score-label">SCORE</span>
+      </div>
+      <div id="hud-right">
+        <div id="pressure-wrap">
+          <div id="pressure-bar"><div id="pressure-fill"></div></div>
+          <span id="pressure-label">PRESIÓN</span>
+        </div>
+        <div id="best-wrap">
+          <span id="best">0</span>
+          <span id="best-label">BEST</span>
+        </div>
+      </div>
+    </div>
+    <div id="feedback-wrap"><span id="feedback"></span></div>
+    <div id="stats-wrap"><span id="stats-line"></span></div>
+  </div>
+
+  <!-- Overlay -->
+  <div id="overlay">
+    <div id="title-block">
+      <h1 id="title">PULSE DAM</h1>
+      <p id="subtitle">MANTÉN PARA CONTENER · SUELTA PARA LIBERAR</p>
+      <p id="hint">Aguanta para acumular presión.<br>Suéltalo <em>antes</em> de que se rompa.</p>
+      <button id="playBtn">TOCA PARA CONTENER</button>
+      <p id="bestLine">BEST <span id="bestVal">0</span></p>
+      <p id="tap-hint">Un dedo. Una decisión.</p>
+    </div>
+    <div id="result-block" class="hidden">
+      <h2 id="result-title">IMPACTO</h2>
+      <p id="result-sub"></p>
+      <div id="result-stats">
+        <div><span id="finalScore">0</span><label>SCORE</label></div>
+        <div><span id="finalBlocks">0</span><label>BLOQUES</label></div>
+        <div><span id="finalBest">0</span><label>BEST</label></div>
+      </div>
+      <div id="result-badges"></div>
+      <button id="retryBtn">TOCA PARA REINTENTAR</button>
+      <p id="retry-hint">Mantén de nuevo para contener</p>
+    </div>
+  </div>
+
+  <div id="hold-hint">◀ MANTÉN PULSADO ▶</div>
+  <div id="debug" class="hidden"></div>
+
+<script src="game.js?v=1"></script>
+</body>
+</html>
