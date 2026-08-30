@@ -1,51 +1,59 @@
-# BLOCKFIRE — FPS 3D Blocky
+# BLOCKFIRE
 
-> **Para la IA:** Lee esto primero. Todo lo demás es secundario.
-> BLOCKFIRE es un FPS rápido, 1 jugador + 7 bots, FFA 20 kills / 5 min. Objetivo: probar si el loop es divertido sin fricción.
+FPS 3D blocky para PC y Android. Hoy es un prototipo local single-player: 1
+humano + 7 bots FFA. El producto se reduce a un loop: **entrar → moverse →
+encontrar → disparar → kill clara → respawn rápido → otra partida**.
 
-## 1. Qué es ahora
+Este archivo describe el estado del proyecto. Las reglas para modificarlo
+están en [`PROJECT_RULES.md`](PROJECT_RULES.md). Antes de tocar código, lee
+ambos, en ese orden.
 
-- **Prototipo jugable:** 1 mapa 48×48 (5 clusters + plataformas), 3 armas (rifle/pistola/escopeta, mismo `WeaponSystem`), 7 bots `wander→chase→attack`.
-- **Controles:** PC `WASD + Mouse Click` (pointer lock) / Móvil `joystick + desliza + botones` → mismo `PlayerController` (strafe fix aplicado 2026-08-30).
-- **Loop:** Entrar (1 click) → moverte rápido (5.2/7.0) → encontrar (<10s) → disparar (hitscan, recoil, hitmarker) → kill → respawn 1.8s lejos → repetir hasta 20.
-- **Estado:** Base estable, `7/7 tests` en `?runTests=1`, 60fps objetivo, capturas en `capturas/` regeneradas tras fix.
+## Estado canónico — 2026-08-30
 
-## 2. A dónde va (siguiente, no inventar)
+- Prototipo local, sin build, empaquetador Android ni dependencias de npm: se
+  sirve como archivos ES modules estáticos. Android es una plataforma objetivo,
+  no una app ya implementada.
+- Una partida termina al llegar a 20 kills o a los 5 minutos.
+- Mapa cuadrado de **96 × 96 unidades** (`Map.size = 48` es el semiextento),
+  con cobertura, plataformas y 8 puntos de spawn.
+- Tres armas: rifle, pistola y escopeta. Un único `WeaponSystem` resuelve
+  hitscan, daño, oclusión y feedback; jugador y bots comparten esa lógica.
+- PC: WASD, mouse, click para disparar, botón derecho para apuntar, R y 1–3.
+  Móvil: joystick, arrastre de cámara y botones.
+- La suite mínima es `?runTests=1`: **7/7 PASS**. Incluye carga, movimiento,
+  disparo, HUD, mapa, bots y una kill que actualiza el marcador.
 
-1. **Validar diversión:** ¿20 kills en 5 min se siente rápido y satisfactorio? Ajustar solo `moveSpeed / fireRate / spread / bot inaccuracy / map densidad` si el video 60fps muestra fricción.
-2. **Eficiencia:** Mantener 60fps PC y móvil modesto. No añadir tienda/skins/mapas/armas/multiplayer hasta validar núcleo.
-3. **No añadir nada más** hasta pasar los 13 tests irrefutables.
+No hay multijugador, cuentas, economía, inventario, progresión, tienda ni
+sistemas de contenido. No asumir que existen.
 
-## 3. Qué no hacer
-
-Parado hasta validar FFA: tienda, monedas, skins, battle pass, ranking, multiplayer online, matchmaking, loot, vehículos, clanes, chat, 20 armas/mapas.
-
-## 4. Arquitectura mínima (para continuar sin romper)
+## Arquitectura actual
 
 ```
-src/core/Game.js        # scene, renderer, loop, match
-src/core/Input.js       # KeyboardMouse + Touch → {move,fire,jump}
-src/player/PlayerController.js # movimiento, gravedad, cámara, colisión
-src/combat/WeaponSystem.js     # WeaponData + hitscan + recoil
-src/bots/Bot.js         # 7 bots, mismo WeaponSystem que humano
-src/world/Map.js        # 48×48, spawns, colisión, raycast
-src/ui/HUD.js + src/audio/AudioManager.js
-main.js → window.__BLOCKFIRE__ , ?runTests=1 , ?capture=playing
+src/main.js                    arranque y smoke tests
+src/core/Game.js               escena, ciclo, partida, daño y VFX
+src/core/Input.js              teclado/mouse/táctil → acciones neutrales
+src/player/PlayerController.js movimiento, cámara, gravedad y respawn humano
+src/combat/WeaponSystem.js     datos de armas, hitscan, munición y feedback
+src/bots/Bot.js                IA simple: wander → chase → attack
+src/world/Map.js               geometría, spawns, colisión y raycast
+src/ui/HUD.js                  HUD y kill feed
+src/audio/AudioManager.js      audio procedural
 ```
 
-Reglas: apuntar a <400 líneas/archivo (hoy `Game.js` supera ese límite), datos ≠ sistema, humanos/bots comparten `WeaponSystem`, PC/móvil solo cambia `Input`.
+No crear una segunda ruta para PC/móvil, jugador/bots, daño, armas o respawn.
+Extiende el sistema dueño de la responsabilidad.
 
-## 5. Cómo correr / verificar
+## Ejecutar y verificar
 
 ```bash
-python3 -m http.server 8002 --directory /home/alex/Documentos/BlockFire
-# http://localhost:8002 → ENTRAR A PARTIDA → click canvas para lock
-# http://localhost:8002/?runTests=1 → 7/7 PASS
-# http://localhost:8002/?capture=playing → screenshot estado jugando
+python3 -m http.server 8002 --bind 127.0.0.1 --directory /home/alex/Documentos/BlockFire
 ```
 
-## 6. Evidencia
+- `http://127.0.0.1:8002/` — partida normal.
+- `?runTests=1` — smoke tests; no aceptar cambios si no marca 7/7 PASS.
+- `?capture=playing` — partida iniciada para una captura.
 
-`capturas/` solo lo actual (01-ready, 02-playing, 03-mobile, 04-tests). Histórico en `git log`, no en carpeta.
-
-*Actualizado: 2026-08-30 — fix strafe invertido, foco IA, eficiencia.*
+`capturas/` contiene evidencia visual puntual, no documentación de producto.
+El historial de decisiones y cambios es `git log` y GitHub; no mantener diarios
+o logs narrativos dentro del repositorio. Actualiza este README solo al cambiar
+el estado, alcance, arquitectura real, controles o verificación del proyecto.
