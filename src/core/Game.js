@@ -16,13 +16,15 @@ export class Game {
     this.scene.background = new THREE.Color(0x0a0f1e);
     this.scene.fog = new THREE.Fog(0x0a0f1e, 28, 72);
 
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Renderer — eficiencia: sin antialias en móvil, pixelRatio ≤1.5, sombras 1024
+    const isMobile = window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    this.renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.2 : 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
+    this._isMobile = isMobile;
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 200);
@@ -72,8 +74,19 @@ export class Game {
     this.playerDeaths = 0;
     this.killFeed = [];
 
-    // Effects
+    // Effects — pooling para eficiencia (no crear Geometry/Material por disparo)
     this.hitFlash = 0;
+    this._activeFlashes = [];
+    this._activeImpacts = [];
+    this._activeBloods = [];
+    // Geometrías compartidas
+    this._geoMuzzle = new THREE.SphereGeometry(0.035, 6, 6);
+    this._matMuzzle = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.75 });
+    this._geoImpact = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+    this._matImpact = new THREE.MeshStandardMaterial({ color: 0x8ea0c0, transparent: true, opacity: 1 });
+    this._matImpactHead = new THREE.MeshStandardMaterial({ color: 0xff4444, transparent: true, opacity: 1 });
+    this._geoBlood = new THREE.SphereGeometry(0.04, 4, 4);
+    this._matBlood = new THREE.MeshBasicMaterial({ color: 0xcc2222, transparent: true, opacity: 0.8 });
 
     // Time
     this.clock = new THREE.Clock();
@@ -97,7 +110,7 @@ export class Game {
     const dir = new THREE.DirectionalLight(0xfff4cc, 1.1);
     dir.position.set(18, 28, 12);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 80;
     dir.shadow.camera.left = -40;
@@ -275,62 +288,59 @@ export class Game {
     return died;
   }
 
-  // VFX helpers (used by WeaponSystem)
+  // VFX helpers — pooling + loop central (sin rAF por partícula)
   muzzleFlash(pos, dir) {
-    // Simple flash sprite
-    const flash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 })
-    );
-    flash.position.copy(pos).addScaledVector(dir, 0.6);
+    const mat = this._matMuzzle.clone();
+    const flash = new THREE.Mesh(this._geoMuzzle, mat);
+    flash.position.copy(pos).addScaledVector(dir, 0.75);
     this.scene.add(flash);
-    setTimeout(()=> this.scene.remove(flash), 48);
+    this._activeFlashes.push({ mesh: flash, life: 0.05 });
   }
 
   impact(point, isHeadshot) {
-    // Small cube impact
-    const geo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-    const mat = new THREE.MeshStandardMaterial({ color: isHeadshot ? 0xff4444 : 0x8ea0c0 });
-    const cube = new THREE.Mesh(geo, mat);
+    const mat = (isHeadshot ? this._matImpactHead.clone() : this._matImpact.clone());
+    const cube = new THREE.Mesh(this._geoImpact, mat);
     cube.position.copy(point);
     this.scene.add(cube);
-    // Animate out
-    let life = 0.36;
-    const animate = ()=>{
-      life -= 0.016;
-      if(life<=0) this.scene.remove(cube);
-      else {
-        cube.position.y += 0.016 * 1.2;
-        cube.material.opacity = life/0.36;
-        cube.material.transparent = true;
-        requestAnimationFrame(animate);
-      }
-    };
-    animate();
+    this._activeImpacts.push({ mesh: cube, life: 0.36, maxLife: 0.36 });
   }
 
   blood(point) {
     for(let i=0;i<4;i++){
-      const p = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 4, 4),
-        new THREE.MeshBasicMaterial({ color: 0xcc2222, transparent: true, opacity: 0.8 })
-      );
+      const mat = this._matBlood.clone();
+      const p = new THREE.Mesh(this._geoBlood, mat);
       p.position.copy(point);
       p.position.y += 0.12;
       this.scene.add(p);
       const vel = new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.2+0.4, (Math.random()-0.5)*2);
-      let life = 0.42;
-      const anim = ()=>{
-        life-=0.016;
-        if(life<=0) this.scene.remove(p);
-        else {
-          p.position.addScaledVector(vel, 0.016);
-          vel.y -= 9.8*0.016*0.6;
-          p.material.opacity = life/0.42;
-          requestAnimationFrame(anim);
-        }
-      };
-      anim();
+      this._activeBloods.push({ mesh: p, vel, life: 0.42, maxLife: 0.42 });
+    }
+  }
+
+  _updateVFX(dt) {
+    // Flashes
+    for(let i=this._activeFlashes.length-1;i>=0;i--){
+      const f = this._activeFlashes[i];
+      f.life -= dt;
+      if(f.life <= 0){ this.scene.remove(f.mesh); this._activeFlashes.splice(i,1); }
+    }
+    // Impacts
+    for(let i=this._activeImpacts.length-1;i>=0;i--){
+      const it = this._activeImpacts[i];
+      it.life -= dt;
+      if(it.life <= 0){ this.scene.remove(it.mesh); this._activeImpacts.splice(i,1); }
+      else { it.mesh.position.y += dt * 1.2; it.mesh.material.opacity = it.life / it.maxLife; }
+    }
+    // Blood
+    for(let i=this._activeBloods.length-1;i>=0;i--){
+      const b = this._activeBloods[i];
+      b.life -= dt;
+      if(b.life <= 0){ this.scene.remove(b.mesh); this._activeBloods.splice(i,1); }
+      else {
+        b.mesh.position.addScaledVector(b.vel, dt);
+        b.vel.y -= 9.8 * dt * 0.6;
+        b.mesh.material.opacity = b.life / b.maxLife;
+      }
     }
   }
 
@@ -463,6 +473,8 @@ export class Game {
     if(this.hitFlash>0){
       this.hitFlash -= dt;
     }
+
+    this._updateVFX(dt);
 
     this.renderer.render(this.scene, this.camera);
   }

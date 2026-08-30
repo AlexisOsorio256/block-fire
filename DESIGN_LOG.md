@@ -42,4 +42,21 @@
 
 ---
 
-*Próxima entrada: resultado del playtest FFA 20 kills (¿es divertido el loop sin fricción?)*
+## 2026-08-30 — Fix strafe invertido
+
+**Bug:** `PlayerController` calculaba `right = forward × up .negate()` → A iba a derecha, D a izquierda. Reportado como “controles invertidos en los lados”.
+**Fix:** `right.crossVectors(forward, up)` sin negate. PC `A/D` y móvil joystick lateral ahora correctos. Capturas basura borradas y regeneradas (01-ready 222K, 02-playing 52K, 03-mobile 121K, 04-tests 64K 6/6).
+
+---
+
+## 2026-08-30 — Enfoque IA + eficiencia + video 60fps
+
+**Docs:** `README.md` y `PROJECT_RULES.md` reescritos para IA (no para dev externo). README: qué es ahora / a dónde va / qué no hacer / arquitectura mínima. PROJECT_RULES: canónico corto 11 secciones, eficiencia obligatoria (pixelRatio ≤1.5, sombras 1024, pooling).
+
+**Eficiencia:** `Game.js` renderer `antialias: !isMobile`, `pixelRatio 1.5/1.2`, `shadowMap 1024` (antes 2048). VFX pooled: `_geoMuzzle/_geoImpact/_geoBlood` compartidos, `_activeFlashes/_activeImpacts/_activeBloods` actualizados en loop central (sin rAF por partícula), `muzzle flash 0.08→0.035` y offset 0.6→0.75. Menos GC, menos overdraw.
+
+**Video 60fps:** Grabado `canvas.captureStream(60)` + `MediaRecorder` 6s 1280×657 670K via headless `chrome --remote-debugging-port` con auto-play (W + strafe + yaw osc + fire). Frame 0 mostró `muzzle flash` gigante tapando pantalla → corregido (tamaño y offset). Frames 1/3/5: bots estables, sombras suaves 1024 sin pixelado, movimiento fluido, sin HUD (DOM no capturado por stream, normal). Sin drops visibles, 60fps estable en headless. Video analizado, no se commitea (eficiencia repo); evidencia queda en `/tmp/blockfire_60fps.webm` y análisis aquí.
+
+---
+
+*Próxima: validar loop 20 kills con test humano (¿<10s entre encuentros? ¿recoil satisfactorio?)*

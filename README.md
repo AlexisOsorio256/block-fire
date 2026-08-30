@@ -1,142 +1,51 @@
 # BLOCKFIRE — FPS 3D Blocky
 
-> **FPS 3D pequeño, rápido y jugable.** 1 jugador + 7 bots en Free For All, 20 kills para ganar o 5 minutos. Movimiento arcade, disparo satisfactorio, respawn inmediato. PC (WASD+Mouse) y Móvil (joystick + botones) con la misma lógica.
+> **Para la IA:** Lee esto primero. Todo lo demás es secundario.
+> BLOCKFIRE es un FPS rápido, 1 jugador + 7 bots, FFA 20 kills / 5 min. Objetivo: probar si el loop es divertido sin fricción.
 
----
+## 1. Qué es ahora
 
-## Qué es
+- **Prototipo jugable:** 1 mapa 48×48 (5 clusters + plataformas), 3 armas (rifle/pistola/escopeta, mismo `WeaponSystem`), 7 bots `wander→chase→attack`.
+- **Controles:** PC `WASD + Mouse Click` (pointer lock) / Móvil `joystick + desliza + botones` → mismo `PlayerController` (strafe fix aplicado 2026-08-30).
+- **Loop:** Entrar (1 click) → moverte rápido (5.2/7.0) → encontrar (<10s) → disparar (hitscan, recoil, hitmarker) → kill → respawn 1.8s lejos → repetir hasta 20.
+- **Estado:** Base estable, `6/6 tests` en `?runTests=1`, 60fps objetivo, capturas en `capturas/` regeneradas tras fix.
 
-BLOCKFIRE es un prototipo FPS 3D inspirado en la sensación de juegos como KUBOOM 3D (accesibilidad y ritmo) sin copiar mapas, armas, personajes ni UI. No es una demo técnica de cubos: es un FPS real desde el primer segundo.
+## 2. A dónde va (siguiente, no inventar)
 
-**Objetivo del prototipo:** comprobar si es divertido entrar, moverse rápido, encontrar enemigos, disparar, matar y volver a hacerlo sin fricción.
+1. **Validar diversión:** ¿20 kills en 5 min se siente rápido y satisfactorio? Ajustar solo `moveSpeed / fireRate / spread / bot inaccuracy / map densidad` si el video 60fps muestra fricción.
+2. **Eficiencia:** Mantener 60fps PC y móvil modesto. No añadir tienda/skins/mapas/armas/multiplayer hasta validar núcleo.
+3. **No añadir nada más** hasta pasar los 13 tests irrefutables.
 
----
+## 3. Qué no hacer
 
-## Core Loop
+Parado hasta validar FFA: tienda, monedas, skins, battle pass, ranking, multiplayer online, matchmaking, loot, vehículos, clanes, chat, 20 armas/mapas.
+
+## 4. Arquitectura mínima (para continuar sin romper)
 
 ```
-Entrar a partida (1 click)
-↓
-Moverte rápido (WASD / joystick + salto)
-↓
-Encontrar enemigo (mapa pequeño, encuentros <10s)
-↓
-Apuntar + Disparar (hitscan, recoil, hitmarker)
-↓
-Impacto (muzzle flash, sonido, sangre, shake)
-↓
-Kill (+1, sonido distinto, killfeed)
-↓
-Morir → Respawn 1.8s en spawn lejano
-↓
-Repetir hasta 20 kills o 5 min
+src/core/Game.js        # scene, renderer, loop, match
+src/core/Input.js       # KeyboardMouse + Touch → {move,fire,jump}
+src/player/PlayerController.js # movimiento, gravedad, cámara, colisión
+src/combat/WeaponSystem.js     # WeaponData + hitscan + recoil
+src/bots/Bot.js         # 7 bots, mismo WeaponSystem que humano
+src/world/Map.js        # 48×48, spawns, colisión, raycast
+src/ui/HUD.js + src/audio/AudioManager.js
+main.js → window.__BLOCKFIRE__ , ?runTests=1 , ?capture=playing
 ```
 
----
+Reglas: <400 líneas/archivo, datos ≠ sistema, humanos/bots comparten `WeaponSystem`, PC/móvil solo cambia `Input`.
 
-## Controles
-
-**PC:**
-- `WASD` mover, `Shift` correr, `Space` saltar
-- `Mouse` mirar (click para bloquear puntero), `Click izq` disparar, `Click der` apuntar
-- `R` recargar, `1/2/3` o `Q/E` cambiar arma
-
-**Móvil:**
-- Izquierda: joystick virtual para mover
-- Derecha: desliza para mirar
-- Botones: ● disparar, ◎ apuntar, ↑ saltar, ↻ recargar, ⇄ cambiar arma
-
-La lógica es la misma, solo cambia el origen del input (`KeyboardMouseInput` vs `TouchInput` → `PlayerController`).
-
----
-
-## Armas (mismo sistema, datos distintos)
-
-| Arma | Tipo | Daño | Cadencia | Cargador | Precisión | Pellets |
-|------|------|------|----------|----------|-----------|---------|
-| Rifle | auto | 24 | 0.11s | 30 | media | 1 |
-| Pistola | semi | 28 | 0.32s | 12 | alta | 1 |
-| Escopeta | semi | 14×6 | 0.72s | 6 | dispersa | 6 |
-
-Headshot x2. Alcance: rifle 90, pistola 70, escopeta 22.
-
----
-
-## Estado actual
-
-**Prototipo FFA 8 jugadores (1 humano + 7 bots) — 1 mapa pequeño, 3 armas, 5 min / 20 kills**
-
-- Movimiento rápido (5.2 / 7.0 sprint, salto 7.5, gravedad 22)
-- Cámara FPS fluida (yaw/pitch, sensibilidad 0.0022, clamp)
-- Disparo hitscan inmediato, recoil, crosshair y hitmarker con feedback
-- Bots: wander → chase → attack, strafe, buscan objetivo, disparan, mueren, respawn
-- Daño centralizado (`DamageSystem` via `applyDamage`), headshot x2
-- Mapa 48×48 con 5 clusters de cobertura + plataformas, 8 spawns con jitter
-- Audio procedural (Web Audio) sin assets pesados
-- HUD mínimo: HP, munición, kills/deaths, timer
-- 60fps objetivo, sombras suaves, niebla, pooling
-
-**No tiene (a propósito):** tienda, skins, progresión, multiplayer online, ranking, clanes. Solo el núcleo.
-
----
-
-## Cómo ejecutar
+## 5. Cómo correr / verificar
 
 ```bash
-python3 -m http.server 8002 --directory /home/alex/Documentos/pulse-dam
-# abrir http://localhost:8002
+python3 -m http.server 8002 --directory /home/alex/Documentos/BlockFire
+# http://localhost:8002 → ENTRAR A PARTIDA → click canvas para lock
+# http://localhost:8002/?runTests=1 → 6/6 PASS
+# http://localhost:8002/?capture=playing → screenshot estado jugando
 ```
 
-Click en `ENTRAR A PARTIDA` → en PC click en canvas para bloquear ratón → `ESC` para salir.
+## 6. Evidencia
 
-Parámetros:
-- `?runTests=1` — 6 tests técnicos (game loads, move, fire, bots, map, HUD)
-- `?capture=playing` — fuerza estado `PLAYING` para screenshots
+`capturas/` solo lo actual (01-ready, 02-playing, 03-mobile, 04-tests). Histórico en `git log`, no en carpeta.
 
----
-
-## Arquitectura (para que la IA no se pierda)
-
-```
-src/
-  core/
-    Game.js         # Scene, renderer, luces, loop, match (FFA 20 kills / 5 min), respawn
-    Input.js        # Abstrae KeyboardMouseInput y TouchInput → {move, look, fire, jump...}
-  player/
-    PlayerController.js # Movimiento, gravedad, salto, colisión AABB, cámara FPS
-  combat/
-    WeaponSystem.js # WeaponData (rifle/pistol/shotgun) + hitscan raycast + recoil + munición
-  bots/
-    Bot.js          # Mesh blocky, vida, estados wander/chase/attack, strafe, disparo
-  world/
-    Map.js          # Ground + 4 paredes + 5 clusters + plataformas + 8 spawns + colisión/Occlusión
-  ui/
-    HUD.js          # HP, ammo, kills, timer, killfeed, debug
-  audio/
-    AudioManager.js # Web Audio procedural (shoot/hit/kill/reload)
-  main.js           # Entry, expone window.__BLOCKFIRE__
-
-index.html          # Importmap three@0.160.0, HUD, mobile controls, overlay
-style.css           # HUD + mobile joystick + overlay
-capturas/           # Evidencia visual (vacía hasta generar)
-```
-
-**Principios:**
-- Pocos sistemas, responsabilidades claras, sin frameworks gigantes
-- Datos + Sistemas separados (`WeaponData` vs `WeaponSystem`)
-- Humanos y bots usan **el mismo** `WeaponSystem` (no duplicar lógica)
-- PC y móvil solo cambian `Input`, no `PlayerController`
-- Archivos pequeños (<400 líneas), sin sobreingeniería
-
----
-
-## Capturas
-
-Vacío hasta generar. Para crear:
-```bash
-chromium --headless --virtual-time-budget=3000 --window-size=1280,800 --screenshot=/tmp/bf.png http://localhost:8002/?capture=playing
-```
-
----
-
-*Última actualización: 2026-08-30 — BLOCKFIRE prototipo FFA 8 jugadores. 1 jugador + 7 bots, 20 kills, 5 min, PC+Móvil.*
+*Actualizado: 2026-08-30 — fix strafe invertido, foco IA, eficiencia.*
