@@ -418,6 +418,152 @@ MVP:
 1 bola + 3 paredes + 6 totens + suelo persistente + línea 2 rebotes + score/best + retry. Canvas 2D, sin backend, ~600 líneas reutilizando infra A. Medir 6 preguntas + 3 cualitativas en 5 testers.
 
 STATUS:
-READY FOR PROTOTYPE
+READY FOR PROTOTYPE (HISTÓRICO — REBOTE PERSISTENTE DESCARTADO EL 2026-08-30 POR NUEVA ORDEN)
+
+---
+
+# SEGUNDA INVESTIGACIÓN — 5 DIRECCIONES RADICALMENTE DIFERENTES
+
+**Fecha:** 2026-08-30 — **REBOTE PERSISTENTE DESCARTADO** como pediste. No es “apuntar → rebote → siguiente tiro con HP”. El análisis volvió a caer en “hacer mejor el mismo tiro”. Esta segunda investigación busca **BASE PROBADA + MUTACIÓN que cambie ≥2 dimensiones** (objetivo, decisión, consecuencia, posicionamiento, estrategia, riesgo, cadena, control durante acción, relación entre acciones, información).
+
+> No se programa. No se elige ganador. Solo 5 arquitecturas tan distintas que digas “ahora sí estamos buscando juegos distintos”.
+
+Cada dirección reutiliza input familiar (arrastrar, apuntar, colocar, cortar, tocar momento) pero lo que pasa DESPUÉS es el juego.
+
+---
+
+## DIRECCIÓN A — MASA BIFURCADA — Mob Control + Clash Royale + Routing territorial
+
+- **Base inspiradora:** Mob Control (100M+, puertas x2/x3, masa desproporcionada) + Clash Royale (colocación + recurso + counter) + Routing (elegir camino)
+- **Input reutilizado:** arrastrar para apuntar cañón / flujo (Mob Control)
+- **Qué conserva:** sensación de multiplicación desproporcionada, puertas visibles, escalada, caos de masa
+- **Qué cambia radicalmente:** la masa **no sigue un camino único**. Fluye sola y tú en cada bifurcación decides **cuánto % mandas por cada rama** (split 70/30, 50/50) con un gesto rápido. Además, cada rama deja un **rastro territorial** (color) que persiste 2 oleadas y da bonus si vuelves a pasar. Cambia **objetivo** (no solo llegar a base, controlar territorio), **decisión** (repartir, no solo elegir puerta), **consecuencia** (masa dividida), **relación entre acciones** (rastro persiste) y **riesgo** (concentrar vs dividir).
+- **Loop 30s (no es apunta→espera):** 0s ves masa azul avanzando sola hacia bifurcación con 3 ramas: A x3 con enemigo defendiendo, B x2 libre, C x1.5 con boost pero trampa. 3s decides split 50/30/20 con drag. 5s ves dos masas separadas avanzar, una choca con enemigo, otra limpia y pinta territorio. 10s decides si mandas refuerzo a A o consolidas B. 15s masa pintada da +20% a siguiente oleada que pase por ahí → decides si vuelves a usarla. 20s enemigo reacciona y bloquea rama B → debes improvisar y mandar por C. 30s oleada termina, territorio pintado queda, decides estrategia para siguiente oleada con 3 ramas nuevas.
+- **Decisiones disponibles:** cuánto % a cada rama, qué rama priorizar, cuándo reforzar, si usar masa para pintar territorio o para atacar base, si sacrificar cantidad por posición
+- **Decisiones segundo orden:** el split de ahora deja rastro que bonifica la siguiente oleada; elegir A ahora bloquea B después
+- **Riesgo/recompensa:** concentrar 80% en x3 → si pasa, masa gigante; si enemigo bloquea, pierdes 80%. Dividir 33/33/33 → seguro pero masa pequeña en cada rama
+- **Cadena:** masa → puerta x3 → masa grande → pinta territorio → siguiente masa por ahí → más grande → ataca base → base deja rastro
+- **Estrategias válidas:** Agresiva (todo a x3), Controladora (pintar territorio), Distracción (mandar poco a x3 para que enemigo defienda ahí, mandar masa real por x2)
+- **Novato:** manda todo por x3 visible
+- **Experto:** hace split 20/80 para pintar territorio y en siguiente oleada usa territorio pintado para x3 gratis; finta al enemigo
+- **20 partidas:** cada bifurcación es puzzle de 3 ramas con enemigos distintos, rastro de 2 turnos crea memoria. No necesitas niveles nuevos, solo 3 ramas bien diseñadas dan 100 combinaciones. Descubres fintas, sacrificios, control territorial
+- **Espectáculo:** masa de 10 se vuelve 180 delante de tus ojos en 2s
+- **Clips 5-15s:** split justo antes de bifurcación → masa se divide y pinta 2 territorios
+- **Riesgo clon:** 2 (Mob) → con split + territorio sube a 3-4, no es solo elegir puerta
+- **Infra reutilizable:** Canvas, loop, partículas para masa, shake al multiplicar, harness capture, audio tick. Reutiliza `partículas`, `shake`, `loop` de Pulse
+- **Pulse que desaparece:** todo `pressure`, `gate`, `avalanche` — nada de presa
+
+---
+
+## DIRECCIÓN B — DESTRUCCIÓN QUE CONSTRUYE — Angry Birds + Suika/Donut + Construcción
+
+- **Base:** Angry Birds (trayectoria + estructura + material + cadena) + Suika (fusión + espacio) + Donut County (colocar y ver mundo cambiar)
+- **Input:** apuntar y lanzar (Angry Birds)
+- **Qué conserva:** trayectoria, destrucción por material, cadena de derrumbe
+- **Qué cambia radicalmente:** **los escombros no desaparecen**: caen y se convierten en **bloques construibles** que puedes colocar para construir puente/trampolín para el siguiente tiro. Además, 2 escombros iguales se fusionan (Suika) en bloque mayor. Cambia **objetivo** (no solo destruir, destruir para construir), **consecuencia** (escombro → material), **relación entre acciones** (derrumbe de ahora es plataforma del siguiente tiro), **estrategia** (qué destruir para qué construir)
+- **Loop 30s:** 0s ves torre madera + piedra, bola en mano. 3s apuntas y lanzas a base madera → torre cae, deja 3 escombros madera. 8s escombros se asientan, 2 iguales se fusionan en viga larga. 12s decides: ¿uso viga para hacer puente hacia torre de piedra lejana o la guardo? 15s colocas viga como puente con drag. 20s lanzas segunda bola que rebota en tu puente y llega a piedra que antes era imposible. 28s puente se rompe y deja nuevos escombros para siguiente.
+- **Decisiones:** qué estructura tiro, qué escombros genero, qué fusiono, dónde coloco puente, si guardo escombro
+- **Segundo orden:** el tiro de ahora crea el terreno del siguiente tiro
+- **Riesgo/recompensa:** tirar a madera da muchos escombros pequeños (mucho material, poco daño), tirar a piedra da pocos escombros grandes (poco material, mucho daño)
+- **Cadena:** tiro → derrumbe → escombros → fusión → puente → tiro → rebote en puente → nuevo derrumbe
+- **Estrategias:** Demoledor puro (todo a destruir), Constructor (tiro suave para generar material), Fusionador (busca 2 iguales)
+- **Novato:** tira al centro para destruir
+- **Experto:** tira a esquina para que escombros caigan justo donde necesita puente, busca fusión para viga larga
+- **20 partidas:** cada torre deja escombros distintos, cada fusión cambia. No necesitas 20 niveles, con 5 torres bien diseñadas tienes 100 formas de construir. Descubres que a veces es mejor NO destruir todo
+- **Espectáculo:** torre que se derrumba y del polvo aparece viga que colocas
+- **Clips:** tiro → derrumbe → escombros se fusionan → colocas puente → segundo tiro rebota en tu puente
+- **Riesgo clon:** 3 (no es Angry Birds con círculos, es Angry + Suika + construcción)
+- **Infra reutilizable:** Canvas, física rebote, partículas polvo, audio impacto. Reutiliza `partículas`, `shake`, `audio` de Pulse
+- **Pulse que desaparece:** `pressure`, `gate`, isla de presión — nada
+
+---
+
+## DIRECCIÓN C — COLOCACIÓN FÍSICA — Clash Royale + Pool + Física sandbox
+
+- **Base:** Clash Royale (colocar carta en arena, timing, posición, elixir) + 8 Ball Pool (fuerza, rebote, posición)
+- **Input:** elegir carta (tap de mano 3) + arrastrar para posicionar en arena (Clash)
+- **Qué conserva:** selección de mano, timing, posicionamiento como decisión principal, recurso que se recarga
+- **Qué cambia radicalmente:** **las unidades/cosas que colocas tienen física real** (masa, rebote, empuje). No caminan solas por un camino, caen y empujan. Colocar un muro pesado desvía la bola enemiga, colocar una unidad ligera rebota. Cambia **consecuencia** (colocar no es atacar, es alterar física), **posicionamiento** (cada pixel importa), **cadena** (una colocación empuja a otra), **control durante acción** (puedes colocar mientras la física sigue)
+- **Loop 30s:** 0s tienes 3 cartas: muro pesado (2 elixir), rebote ligero (1), bomba (3). Ronda enemiga suelta masa por arriba. 3s decides: colocas muro en centro para desviar flujo enemigo hacia tu zona x2. 7s flujo enemigo choca con tu muro, rebota y se divide. 10s colocas unidad ligera en lateral que rebota y empuja masa enemiga hacia trampa. 15s enemigo coloca su muro. 20s ves que tu muro + su muro crean un embudo → colocas bomba en embudo. 28s bomba explota y empuja todo.
+- **Decisiones:** qué carta de 3 juego, dónde exactamente (pixel), cuándo (ahora vs en 1s cuando flujo llegue), si guardo elixir
+- **Segundo orden:** cada colocación queda 5s y altera física del siguiente placement (muro que pusiste bloquea tu siguiente)
+- **Riesgo/recompensa:** muro pesado bloquea mucho pero cuesta 2 elixir y te deja sin jugada 3s; ligero es barato pero poco empuje
+- **Cadena:** colocas muro → flujo rebota → empuja unidad → unidad activa trampa → trampa empuja de vuelta
+- **Estrategias:** Muralla (todo muros), Rebote (todo ligeros que rebotan), Bomba (espera embudo)
+- **Novato:** coloca en centro sin mirar flujo
+- **Experto:** coloca 10px más a la izquierda para que rebote entre en trampa, cuenta elixir enemigo, deja hueco a propósito
+- **20 partidas:** arena con 2 obstáculos fijos + 6 cartas distintas = cientos de colocaciones. Cada colocación es puzzle de física. Descubres que a veces es mejor NO colocar y dejar elixir.
+- **Espectáculo:** colocar muro y ver masa de 20 rebotar como billar
+- **Clips:** colocas muro en último segundo y masa enemiga se desvía y se va fuera
+- **Riesgo clon:** 4 (no es Clash con skins, es Clash con física Pool)
+- **Infra reutilizable:** Canvas, pointer drag para posicionar, loop, partículas para empuje, shake. Reutiliza `pointer events`, `loop`, `shake` de Pulse
+- **Pulse que desaparece:** nada de presa/compuerta, solo drag de colocación
+
+---
+
+## DIRECCIÓN D — CORTE DE FLUJO — Fruit Ninja + Laberinto + Mob Control (flujo automático)
+
+- **Base:** Fruit Ninja (swipe para cortar) + Mob Control (flujo de masa) + Laberinto/Roting
+- **Input:** swipe para cortar (Fruit Ninja) — pero no cortas fruta, cortas **pared del laberinto**
+- **Qué conserva:** gesto de corte directo, respuesta inmediata, flujo constante de masa como en Mob
+- **Qué cambia radicalmente:** **tú no controlas la masa**. La masa fluye sola como río por laberinto hacia tu base (y la enemiga hacia la tuya). Tú solo puedes **cortar 1 pared cada 3s** para abrir un nuevo camino y desviar el flujo. El laberinto es el tablero. Cambia **objetivo** (no disparar masa, desviar río), **decisión** (qué pared cortar, no qué puerta elegir), **control durante acción** (cortas mientras fluye), **consecuencia** (corte abre camino permanente para las siguientes oleadas), **información** (ves el flujo venir y anticipas)
+- **Loop 30s:** 0s ves río azul de 10 bolas avanzando solo por camino central hacia puertas x2. Enemigo tiene río rojo. 3s ves que camino central tiene trampa, decides cortar pared izquierda con swipe para abrir atajo hacia x3. 5s río se desvía, entra por x3 y se hace 30. 10s nuevo río viene, pero tu corte sigue abierto → ahora va automático por x3 sin que hagas nada. Enemigo corta su pared y desvía su río. 15s ves que tu río x3 ahora va directo a base enemiga, pero enemigo puso muro. Decides cortar muro enemigo (cuesta 2 cortes). 20s cortas, río pasa. 25s río grande llega a base y pinta territorio. 30s laberinto queda distinto para siguiente oleada.
+- **Decisiones:** qué pared cortar (de 6 posibles), cuándo (ahora vs esperar a que río llegue), si gasto corte en desviar mi río o en bloquear enemigo, qué camino dejo abierto para siguiente
+- **Segundo orden:** cada corte deja el laberinto abierto para las siguientes oleadas (tuya y enemiga). Cortar ahora facilita tu siguiente, pero también puede facilitar al enemigo si cortas mal.
+- **Riesgo/recompensa:** cortar pared hacia x3 → masa x3 pero camino más largo y enemigo puede usarlo también. Dejar camino central seguro → poca masa pero seguro
+- **Cadena:** corte → desvío → masa por x3 → masa grande → pinta → siguiente masa por camino pintado → más grande
+- **Estrategias:** Atajo (abrir x3), Bloqueo (cortar para cerrar camino enemigo), Territorio (cortar para pintar)
+- **Novato:** corta la pared más cercana al río
+- **Experto:** no corta nada 5s, espera a que 2 ríos se junten y corta una pared que desvía ambos a x3 a la vez; corta pared que parece inútil ahora pero abre cadena en 2 oleadas
+- **20 partidas:** laberinto de 3x3 paredes = 9 paredes, cada una abre 2 caminos. Con 1 corte cada 3s tienes 10 cortes por partida = 90 decisiones. Cada partida el laberinto inicial es distinto. Descubres que a veces es mejor NO cortar y dejar río ir por x2
+- **Espectáculo:** río de 10 bolas que se desvía de golpe por tu corte y se hace 30
+- **Clips:** swipe → pared se abre → río entero gira 90° y entra por x3
+- **Riesgo clon:** 4 (no es Fruit Ninja con bolas, es Fruit Ninja como editor de laberinto para flujo Mob)
+- **Infra reutilizable:** Canvas, swipe detection, flujo de partículas, loop. Reutiliza `pointer events` (swipe), `loop`, `partículas` de Pulse, pero sin `pressure`
+- **Pulse que desaparece:** todo `pressure`, `gate`, `avalanche` — aquí el flujo es automático, tú solo editas escenario
+
+---
+
+## DIRECCIÓN E — CADENA PROGRAMABLE — Peggle + Chain Reaction + Programación táctica
+
+- **Base:** Peggle (1 tiro → rebotes + cadena) + Chain Reaction (1 chispa → otra) + Programación (colocar antes de ejecutar)
+- **Input:** **2 taps secuenciales**: 1º tap para **colocar 1 pin rebotador** (eliges tipo: rebote normal / división / explosivo) en el tablero, 2º tap para **soltar bola** desde arriba (Peggle). Ambos son 1 tap, muy familiares.
+- **Qué conserva:** tiro Peggle desde arriba, rebotes, naranjas obligatorias, cadena visual, anticipación
+- **Qué cambia radicalmente:** **tú colocas el pin que va a rebotar** antes de tirar. El tablero tiene 8 pines fijos + 1 tuyo. Tu pin persiste 2 tiros y luego desaparece. Además, los pines golpeados desaparecen y se convierten en recurso para colocar el siguiente pin (si golpeas 3 naranjas, tu siguiente pin puede ser explosivo). Cambia **decisión** (no solo ángulo, sino dónde pongo mi pin), **consecuencia** (pin colocado cambia todos los rebotes), **relación entre acciones** (pin que pones ahora afecta los 2 siguientes tiros), **estrategia** (qué tipo de pin pongo), **información** (ves pines fijos y eliges hueco)
+- **Loop 30s:** 0s ves tablero con 8 pines grises y 4 naranjas. Tienes pin “división” en mano. 3s eliges dónde poner tu pin (entre 2 naranjas). 5s sueltas bola desde arriba con drag. 7s bola rebota en tu pin → se divide en 2 → cada una toca naranja → cadena. 12s pines golpeados desaparecen y te dan recurso “explosivo”. 15s colocas pin explosivo abajo donde quedaron 2 naranjas juntas. 20s sueltas bola → rebota en pin fijo → cae en tu pin explosivo → explota y limpia naranjas. 28s tu pin explosivo desaparece, te queda pin rebote normal para siguiente.
+- **Decisiones:** dónde pongo mi pin (de 10 huecos), qué tipo (rebote/división/explosivo según recurso), dónde suelto bola (izquierda/centro/derecha), si uso pin para rebotar ahora o para preparar siguiente
+- **Segundo orden:** pin colocado dura 2 tiros → el pin que pones ahora cambia el tablero del siguiente tiro. Recurso de pines golpeados → tu siguiente pin es mejor
+- **Riesgo/recompensa:** poner pin en centro → muchos rebotes pero puede desviar bola fuera; poner en lateral seguro → pocos rebotes pero asegura 1 naranja. Pin explosivo limpia mucho pero desaparece y dejas hueco.
+- **Cadena:** colocas pin → tiras → rebote en tu pin → divide → cada división toca naranja → naranjas dan recurso → siguiente pin mejor → siguiente tiro más grande
+- **Estrategias:** Centro (pin en medio para máximo rebote), Esquina (pin seguro), División (pin que divide para tocar 2 lados), Explosivo (guardar pin explosivo para final)
+- **Novato:** pone pin al azar y tira al centro
+- **Experto:** pone pin donde la bola que falló la última vez habría rebotado mejor; guarda pin explosivo para cuando queden 2 naranjas juntas; pone pin que sirve para tiro actual y también deja hueco para el siguiente tiro
+- **20 partidas:** tablero con 8 pines fijos aleatorios + 4 naranjas aleatorias = cientos de tableros. Cada pin que colocas (3 tipos × 10 posiciones) = 30 opciones por turno × 5 turnos = 150. Descubres que a veces es mejor poner pin que no rebota mucho ahora pero deja el tablero perfecto para el siguiente tiro con explosivo.
+- **Espectáculo:** bola que toca tu pin, se divide en 2, cada una explota y limpia 4 naranjas con fiebre Peggle
+- **Clips:** colocas pin → tiras → bola rebota en tu pin → división → fiebre
+- **Riesgo clon:** 4 (no es Peggle con otro skin, es Peggle donde TÚ pones un peg)
+- **Infra reutilizable:** Canvas, tiro drag, rebote, partículas, audio, harness. Reutiliza `pointer events`, `partículas`, `audio beep`, `shake` de Pulse, pero sin `pressure`
+- **Pulse que desaparece:** todo `pressure`, `gate`, `reservoir`, `avalanche`
+
+---
+
+## CRITERIO FINAL — SIN GANADOR
+
+No hay ganador. Las 5 son arquitecturas **radicalmente diferentes**:
+
+- **A** es **flujo dividido en tiempo real** (ruta + territorio)
+- **B** es **tiro que genera material construible** (destrucción → construcción)
+- **C** es **colocación con física** (poner + empujar)
+- **D** es **edición de laberinto para flujo automático** (cortar, no disparar)
+- **E** es **programación de rebote** (colocar pin + tirar)
+
+Si las lees y piensas “ahora sí estamos buscando juegos distintos” → objetivo cumplido. El siguiente paso es **elegir 1 de las 5 para prototipar**, no programar 5 a la vez.
+
+**Rebote Persistente queda oficialmente descartado** (no es ninguna de las 5, era variante Pool con persistencia, nivel 2, descartado por ser “hacer mejor el mismo tiro”).
+
+*Fin de segunda investigación. No se escribe código hasta que elijas 1 dirección. Si ninguna te provoca “joder, aquí sí hay un juego”, seguimos investigando, no forzamos ganador.*
+
+STATUS:
+READY FOR CHOICE — 5 DIRECTIONS
 ```
 
