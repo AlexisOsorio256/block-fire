@@ -71,7 +71,7 @@ export class PlayerController {
     const right = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
     forward.y = 0; forward.normalize();
-    right.crossVectors(forward, new THREE.Vector3(0,1,0)).negate();
+    right.crossVectors(forward, new THREE.Vector3(0,1,0));
 
     // Input move is in local space: x = strafe, y = forward
     const wishDir = new THREE.Vector3();
