@@ -1,301 +1,132 @@
-# PROJECT_RULES.md — Constitución Canónica
+# PROJECT_RULES.md — Constitución Canónica — REBOTE PERSISTENTE
 
-> Este documento es la FUENTE CANÓNICA de reglas del proyecto. Controla todas las decisiones futuras. Cualquier cambio que contradiga estas reglas debe justificarse explícitamente contra los Tests Irrefutables.
+> **Pulse Dam descartado.** Este es el canon del nuevo juego. Históricos en `*_PULSE_DAM_HISTORICO.md`.
 
 ---
 
-## 1. IDENTIDAD DEL PROYECTO
+## 1. IDENTIDAD
 
-**Nombre operativo:**
+**Nombre operativo:** `REBOTE PERSISTENTE` (temporal, hasta fantasía final)  
+**Descripción:** Juego mobile-first de 1 bola que tiras con drag (ángulo+fuerza), rebota en paredes, rompe totens con hp/material, **y se queda donde cae**. Cada tiro cambia el siguiente.
 
-```
-PULSE DAM
-```
-
-**Descripción:**
-
-> Juego mobile-first de interacción mínima donde el jugador contiene deliberadamente una masa en movimiento, acumula presión/tensión y decide cuándo liberar esa energía para provocar una consecuencia física masiva.
-
-**Género:** Physics / Timing / Destruction — One-button, portrait mobile.
-
-**Stack:** HTML5 Canvas + JavaScript nativo + Web Audio. Sin dependencias, sin backend, sin motores pesados.
+**Género:** Física dirigida / Puzzle de posicionamiento — One-drag, portrait.
 
 ---
 
 ## 2. OBJETIVO IRREFUTABLE
 
-> **Crear un loop en el que el jugador presione para contener/acumular, sienta tensión creciente, libere voluntariamente y reciba una consecuencia física claramente mayor que su acción inicial, generando deseo inmediato de volver a intentarlo.**
+> **Crear un loop donde el jugador entienda en 5s cómo tirar, descubra en 30s el rebote, domine en 60s la fuerza para dejar bien colocada la bola, y a las 10 partidas elija entre tiro seguro que deja bien vs tiro arriesgado que tira más pero deja mal, queriendo volver a corregir ángulo/fuerza.**
 
 ```
-CONTENER → ACUMULAR → AGUANTAR → DECIDIR → LIBERAR → CAOS → RECOMPENSA → REINTENTAR
+VER → ELEGIR OBJETIVO → APUNTAR → SOLTAR → REBOTE → IMPACTO → QUEDA → NUEVO ESCENARIO
 ```
-
-Toda decisión de diseño debe servir a esta frase. Si no lo hace, no pertenece al MVP.
 
 ---
 
-## 3. TEST IRREFUTABLE DEL PROYECTO
-
-Todo futuro cambio DEBE evaluarse contra estas 10 preguntas. Un "NO" en cualquiera es señal de `NEEDS TUNING`.
+## 3. TEST IRREFUTABLE (10)
 
 | # | Test | Pregunta |
 |---|------|----------|
-| 1 | **COMPRENSIÓN** | ¿Una persona puede entender lo esencial observando el juego durante unos segundos? |
-| 2 | **AGENCIA** | ¿El jugador realmente causa el resultado? |
-| 3 | **TENSIÓN** | ¿Contener la masa genera una decisión y no simplemente una espera? |
-| 4 | **PAYOFF** | ¿Liberar produce una consecuencia claramente satisfactoria? |
-| 5 | **ASIMETRÍA** | ¿Una pequeña acción del jugador produce una reacción visual mucho mayor? |
-| 6 | **APRENDIZAJE** | ¿El jugador puede mejorar después de fallar? |
-| 7 | **RETRY** | ¿Después de terminar una partida existe una razón inmediata para intentar otra? |
-| 8 | **PERSONALIDAD** | ¿La mecánica sigue siendo interesante aunque se eliminen las texturas y el arte final? |
-| 9 | **FRUSTRACIÓN** | ¿El fracaso se siente causado por una decisión del jugador y no por arbitrariedad? |
-| 10 | **ONE MORE TRY** | ¿El juego provoca espontáneamente el deseo de intentar otra vez? |
+|1|COMPRENSIÓN|¿Entiende en 5s que drag y suelta tira?|
+|2|AGENCIA|¿El resultado (totens + dónde queda) es claramente su culpa?|
+|3|TENSIÓN|¿Duda entre seguro (1 toten + buena posición) vs arriesgado (2 totens + mala)?|
+|4|PAYOFF|¿Rebote que tira torre se siente mucho mayor que el drag?|
+|5|ASIMETRÍA|¿Un drag pequeño genera cadena de 2 rebotes + derrumbe?|
+|6|APRENDIZAJE|¿Tras fallar esquina, sabe qué corregir (5° / fuerza)?|
+|7|RETRY|¿Tras quedarse sin ángulo, quiere otra?|
+|8|PERSONALIDAD|¿Con círculos+rectángulos+línea se reconoce?|
+|9|FRUSTRACIÓN|¿Bola en esquina se siente “yo la dejé mal”, no “el juego me trolea”?|
+|10|ONE MORE TRY|¿Dice “si apunto 5° más y tiro flojo...”?|
 
-> Si la pregunta definitiva **"¿provoca ONE MORE TRY?"** es NO → el proyecto **NO está listo**.
-
----
-
-## 4. COSAS QUE APRENDIMOS
-
-### ORBITAL SLING — Falló por:
-
-- Cálculo espacial excesivo
-- Predicción de trayectorias
-- Espera pasiva
-- Dificultad
-- Poca expresividad
-- Sensación genérica
-
-**Regla:** No repetir. No introducir mecánicas que exijan cálculo mental de trayectorias.
-
-### SHIELD SURGE — Falló por:
-
-- Gameplay demasiado reactivo
-- Poca iniciativa del jugador
-- Payoff insuficientemente grande
-- Falta de identidad mecánica
-- Poca sensación de autoría
-
-**Regla:** No repetir. No hacer juegos donde el jugador solo reacciona. Pulse Dam debe dar **iniciativa y autoría**: el jugador DECIDE cuándo liberar.
-
-> El siguiente prototipo también puede fallar. Si falla, documentar por qué en `DESIGN_LOG.md` y no repetir el mismo error.
+Si 10 es NO → NO está listo.
 
 ---
 
-## 5. PRINCIPIOS DE DISEÑO
+## 4. COSAS QUE APRENDIMOS (Pulse Dam)
 
-| Principio | Significado |
-|-----------|-------------|
-| **SMALL INPUT → LARGE CONSEQUENCE** | Una interacción pequeña (un dedo, un hold) debe poder producir una reacción enorme en pantalla. |
-| **ACTIVE ANTICIPATION** | Mientras el jugador contiene, debe estar tomando una decisión o asumiendo un riesgo. No es espera pasiva. |
-| **PLAYER AGENCY** | El resultado debe depender claramente de la decisión del jugador (cuándo liberar, cuánto arriesgar). |
-| **CONTROL SIMPLE / PROFUNDIDAD OCULTA** | No añadir botones para fabricar profundidad. Profundidad = timing + riesgo + lectura de presión. |
-| **ESCALADA** | La acción debe poder evolucionar hacia resultados progresivamente mayores (más masa, más presión, más destrucción). |
-| **CAUSALIDAD VISUAL** | El jugador debe ver por qué ocurrió lo que ocurrió. Masa → compuerta → liberación → impacto → destrucción, todo visible y continuo. |
-| **FAST RETRY** | La siguiente partida debe estar a un toque. Sin menús intermedios que rompan el loop. |
-| **GAME JUICE COMO AMPLIFICADOR** | Los efectos deben aumentar una acción buena. No deben intentar salvar una acción aburrida. Jerarquía: `NORMAL < BUENO < PERFECTO < MASIVO`. |
-
-**Jerarquía de prioridades técnicas:**
-
-```
-GAMEPLAY > ESTABILIDAD > PERFORMANCE > UX > INMERSIÓN > FEATURES
-```
-
-Dentro de gameplay:
-
-```
-DIVERSIÓN > CLARIDAD > AGENCIA > TENSIÓN > PAYOFF > REJUGABILIDAD > POLISH
-```
+Pulse Dam falló porque era **unidimensional** (solo *cuándo* soltar, sin *dónde/cómo*), sin segunda orden (reset cada ronda), sin espacio de decisiones, y personalidad prestada (presa genérica). No se rescata, no se hace v2.
 
 ---
 
-## 6. COSAS PROHIBIDAS (en MVP)
+## 5. PRINCIPIOS
 
-No introducir automáticamente sin demostrar que el core funciona y sin superar los 10 tests:
+- **SIMPLE DE CONTROLAR ≠ SIMPLE DE JUGAR:** 1 drag, decenas de situaciones (como Pool, Angry Birds, Clash)
+- **BASE PROBADA + MUTACIÓN FUERTE:** Pool es base, mutación es persistencia + hp/material. Nivel 3 Remix, no clon
+- **SEGUNDA ORDEN:** tiro cambia escenario del siguiente tiro
+- **PLAYER AUTHORED:** “yo lo dejé bien/mal”
+- **SMALL INPUT → LARGE CONSEQUENCE:** drag 2cm → 2 rebotes + 3 totens
+- **FAST RETRY:** bola quieta → siguiente drag
 
-- tienda, monedas, skins, inventario
-- cartas, energía, login, backend, servidores
-- leaderboard, multiplayer, anuncios
-- economía, misiones complejas, battle pass, RPG
-- árboles de mejoras
-- decenas de niveles
-- tutorial largo
+Jerarquía: `GAMEPLAY > ESTABILIDAD > PERFORMANCE > UX > FEATURES` y `DIVERSIÓN > CLARIDAD > AGENCIA > ...`
 
-**Regla:** El MVP debe demostrar primero que el core loop es divertido. Todo lo demás es distracción hasta entonces.
+---
+
+## 6. COSAS PROHIBIDAS (MVP)
+
+No agregar hasta validar core con 5 testers y las 6 preguntas + 3 cualitativas:
+
+tienda, monedas, skins, inventario, cartas, energía, login, backend, leaderboard, multiplayer, anuncios, economía, misiones, battle pass, RPG, árbol mejoras, 20 niveles, tutorial largo, múltiples bolas, viento, materiales extra.
 
 ---
 
 ## 7. NO CLONAR
 
-Pulse Dam puede inspirarse en **principios** observados en: Mob Control, Save the Doge, Peggle, Angry Birds, Donut County, Suika y otros.
-
-Pero **NO copiar**:
-
-- personajes, estética, estructura, niveles, UI, nombres, arte, enemigos, puertas, cañones, perros, abejas, sistemas específicos
-
-La identidad debe venir de **nuestra interacción** (contener → acumular presión → liberar), no de assets prestados.
+Inspirado en principios de Pool/Angry Birds/Peggle/Mob Control/Suika, pero NO copiar pájaros, resortera, mesa de billar, clavijas, puertas, cañones, etc. Identidad = *persistencia*.
 
 ---
 
-## 8. DEFINICIÓN DEL MVP
+## 8. MVP
 
 ```
-MASA + CANAL + COMPUERTA + CONTENCIÓN + ACUMULACIÓN + RELEASE + IMPACTO + DESTRUCCIÓN + SCORE + RETRY
+1 bola + 3 paredes + 6 totens (3 madera hp1,2 piedra hp2,1 torre) + suelo persistente + línea 2 rebotes + score/best + retry
 ```
+Nada más. Una escena. Si no provoca “otra”, iterar posiciones, no añadir features.
 
-Nada más es necesario inicialmente. Una sola escena jugable y bien pulida es suficiente.
-
-### Escenario
-
-- Arena 2D clara, canal/trayectoria controlada, paredes laterales, compuerta, masa móvil, objetivo destructible.
-
-### Masa
-
-- Puede ser partículas, clusters, esferas simples. `SENSACIÓN > PRECISIÓN FÍSICA`. La solución más sencilla que produzca buena sensación visual.
-
-### Compuerta
-
-```
-HOLD   = CONTENER
-RELEASE = LIBERAR
-```
-Respuesta al input inmediata. Sin animación larga antes del efecto.
-
-### Contención
-
-- Mientras HOLD: masa se acumula, presión/tensión crece, estado visual cambia, **riesgo creciente** visible.
-- No es solo una barra de progreso. Debe sentirse *“estoy aguantando demasiado”*.
-
-### Riesgo
-
-```
-más tiempo = más potencia + más riesgo
-```
-El jugador decide ¿suelto ahora o aguanto? Debe haber un punto donde aguantar se vuelve peligroso (crack, leak, overflow).
-
-### Release
-
-```
-COMPUERTA → LIBERACIÓN → MASA → ACELERACIÓN → IMPACTO
-```
-Causal, inmediato, proporcional a lo acumulado.
-
-### Payoff
-
-`1 dedo → aguantar → soltar → MASA → CHOQUE → DESTRUCCIÓN`. Debe poder llenar gran parte de la pantalla.
-
-### Objetivo destructible
-
-Fortificación sencilla. Debe producir desplazamiento, ruptura, fragmentos, colapso, sonido, partículas, camera shake.
-
-### Score
-
-`score / best` al inicio. Puede premiar cantidad destruida, potencia, timing, riesgo. Sin economía.
-
-### Debug
-
-```js
-const DEBUG = false;
-```
-Con DEBUG true mostrar FPS, masa, presión, tiempo contenido, potencia, estado, score.
+Debug: `const DEBUG=false` + `DEBUG_SKINLESS` (círculos/rects, sin partículas, para test sin arte)
 
 ---
 
-## 9. JERARQUÍA DEL JUICE
+## 9. JUICE
 
-```
-NORMAL → BUENO → PERFECTO → MASIVO
-```
-No todo a máxima intensidad. Reservar el espectáculo para el payoff grande.
-
-Efectos en orden: contención+release+impacto primero; después partículas, shake, hitstop, trails, audio, flashes.
-
-Audio mínimo: `CHARGE, RELEASE, IMPACT, DESTRUCTION, FAIL` con `más presión = más tensión` y `más potencia = más impacto`.
+Jerarquía `NORMAL < BUENO < PERFECTO < MASIVO` — polvo al caer, flash solo en torre. No todo al máximo.
 
 ---
 
-## 10. REGLAS DE AUDITORÍA FUTURA
-
-Cada vez que otra IA/agente abra el proyecto debe:
+## 10. AUDITORÍA FUTURA
 
 1. Leer `README.md`
-2. Leer `PROJECT_RULES.md` (este archivo)
+2. Leer `PROJECT_RULES.md` (este)
 3. Leer `DESIGN_LOG.md`
-4. Inspeccionar código (auditar 1862 líneas: ¿estamos construyendo el juego o alrededor de él?)
-5. Ejecutar el juego
-6. Capturar pantalla (`?capture=...`) **y** `?capture=...&skinless=1` (Skinless Test)
-7. Ejecutar `?runTests=1` y distinguir `TECHNICAL PASS` de `GAMEPLAY PASS`
-8. Comparar contra los 10 tests + checklist cualitativo (1ª muerte / 3ª / 5ª)
+4. Leer `PROPUESTA_NUEVO_JUEGO.md` (por qué este y no otros 39)
+5. Inspeccionar código (solo infra A reutilizable, nada de presa)
+6. Ejecutar, capturar, `?runTests` (técnico ≠ gameplay)
+7. Playtest 5 personas con 6 preguntas + 3 cualitativas
 
-**No modificar solo porque "podría mejorarse".** Debe demostrar que la modificación ayuda a uno de los objetivos principales y registrar hipótesis/resultado en `DESIGN_LOG.md`.
-
-### Distinción obligatoria
-
-```
-TECHNICAL PASS  = el programa hace lo que se pidió (tests automatizados, capturas)
-GAMEPLAY PASS   = un humano se tensa, se arriesga, se sorprende y quiere volver (playtest cualitativo)
-PRODUCT VALIDATED = gameplay validado humanamente + retención observada
-```
-
-`10/10 PASSED` **no** implica `GAMEPLAY PASS`. Ver `README.md` semáforo: `TECHNICAL: PASS / GAMEPLAY: PROMISING / PRODUCT: NOT VALIDATED` es el estado correcto del MVP.
-
-### Skinless Test (obligatorio para validar core)
-
-Activar `?skinless=1` debe mostrar:
-
-- bolas → círculos simples sin glow
-- fort → rectángulos grises sin textura
-- compuerta → rectángulo plano
-- fondo → plano `#0a0e1e`
-- sin partículas / audio / shake
-
-Si en skinless **sigue siendo satisfactorio aguantar y soltar**, el core tiene valor. Si no, corregir core antes de añadir juice.
-
-### Cambios prohibidos sin justificación
-
-- Añadir complejidad / controles
-- Reducir claridad
-- Aumentar tiempos muertos
-- Hacer más difícil sin beneficio
-- Ocultar información importante
-- Reducir performance
-- Añadir sistemas no necesarios
-
-Cada cambio relevante debe responder:
-
-> ¿Qué problema concreto estamos solucionando? ¿Cómo sabemos que lo solucionamos?
+No modificar porque “podría mejorarse” sin hipótesis en `DESIGN_LOG`.
 
 ---
 
-## 11. ESTRUCTURA DEL REPOSITORIO
+## 11. ESTRUCTURA
 
 ```
-PULSE-DAM/
-├── README.md                    # Qué es, cómo ejecutar, cómo probar, estado real (con semáforo)
-├── PROJECT_RULES.md             # Este archivo — controla el proyecto
-├── DESIGN_LOG.md                # Memoria histórica de decisiones
-├── index.html                   # MVP jugable
-├── game.js                      # Lógica completa (1862 líneas, con DEBUG_SKINLESS)
-├── style.css                    # Estilo mobile-first
-├── capturas/                    # solo Pulse Dam (no mezclar con Shield Surge)
-│   ├── 01-ready.png ... 10-tests.png
-│   └── skinless-tension.png    # evidencia sin arte
-└── INFORME_SHIELD_SURGE.md      # histórico, no canónico
+├── README.md (nuevo)
+├── PROJECT_RULES.md (este)
+├── DESIGN_LOG.md (nuevo)
+├── PROPUESTA_NUEVO_JUEGO.md (40 conceptos)
+├── capturas/historico-pulse/ (Pulse descartado)
+└── game.js (histórico, se refactorizará a ~600 líneas solo con infra A)
 ```
 
 ---
 
-## 12. REGLAS MAESTRAS (recordatorio visible)
+## 12. REGLAS MAESTRAS
 
-> **EL JUGADOR NO DEBE SENTIR QUE ESTÁ ESPERANDO PARA OBTENER UNA RECOMPENSA.**
-> **DEBE SENTIR QUE ESTÁ ARRIESGÁNDOSE PARA CREAR UNA REACCIÓN.**
+> **NO INVENTAR LA RUEDA. NO CLONAR LA RUEDA. HACER UNA RUEDA QUE GIRA Y HACERLA NUESTRA.**
 
-> **EL RESULTADO DEBE PARECER MAYOR QUE LA ACCIÓN QUE LO PRODUJO.**
+> **1–3 acciones + muchísimas situaciones, no 20 features.**
 
-> **SI EL JUEGO NO PROVOCA "OTRA", HAY QUE CAMBIAR EL JUEGO, NO SOLO EL CÓDIGO.**
-
-> **¿Si elimino todo el arte y dejo círculos, masas, paredes y una compuerta, esta interacción sigue siendo divertida?** Si NO → corregir el core, no añadir partículas.
+> **¿Si dejo solo círculo + rectángulos + línea, sigue siendo reconocible y divertido? Si NO, corregir core.**
 
 ---
 
-*Última actualización: 2026-08-30 — Constitución Pulse Dam v1.1 — Añadido: auditoría 1862 líneas, distinción TECHNICAL/GAMEPLAY, Skinless Test, semáforo*
+*Última actualización: 2026-08-30 — RebotPersistente v0.1 — READY FOR PROTOTYPE*
