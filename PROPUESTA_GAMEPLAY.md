@@ -672,3 +672,231 @@ STATUS:
 READY FOR CHOICE — 5 DIRECTIONS (con demo 60s explícita)
 ```
 
+---
+
+# ÚLTIMA AUDITORÍA — 5 FINALISTAS A PRUEBA DE FUEGO (NO ELEGIR GANADOR)
+
+**Fecha:** 2026-08-30 — **REBOTE PERSISTENTE descartado definitivamente.** No se programa. Esta auditoría somete a los 5 (A-E) a 20 pruebas brutales, con foco en **B Destrucción que Construye** (tu favorita). Si ninguno llega a *“joder, aquí sí hay juego”*, no se fuerza ganador.
+
+> Regla: No vale “decide estratégicamente”. Hay que mostrar **estado → decisión → resultado → nuevo estado**.
+
+### 1. NO PARTAS DE NUESTRA IDEA — Qué viene de juego existente vs qué aportamos
+
+**A Masa Bifurcada (Mob Control):** Hereda *puertas x2/x3 + masa que avanza*. Debe aportar: **split % + territorio pintado que persiste 2 oleadas**. Si solo fuera “pinto territorio”, es reskin. Aporta decisión nueva: **repartir 1 masa en 2 posiciones simultáneas y decidir cuál sacrificar**.
+
+**B Destrucción que Construye (Angry + Suika):** Hereda *trayectoria + destrucción por material + fusión de iguales*. Debe aportar: **escombro → bloque colocable + fusión que cambia forma del siguiente tiro**. Decisión nueva que NO existe en Angry ni Suika: **destruir para generar material que debes colocar, y ese material cambia la geometría del siguiente disparo**. Ni Angry (destruye y desaparece) ni Suika (fusiona y libera espacio) tienen eso. Si solo fuera “bloques son diferentes”, sería reskin y se descarta.
+
+**C Colocación Física (Clash + Pool):** Hereda *mano 3 + colocar*. Debe aportar: **física de empuje/rebote que persiste**. Decisión nueva: **colocar 10px más a la izquierda para que rebote entre en trampa, no solo “qué carta juego”**.
+
+**D Corte de Flujo (Fruit + Laberinto):** Hereda *swipe + flujo Mob*. Debe aportar: **cortar pared del laberinto para desviar río automático**. Decisión nueva: **qué pared cortar para que el río que viene en 2s vaya por x3, no qué puerta elegir ahora**.
+
+**E Cadena Programable (Peggle):** Hereda *tiro + rebotes*. Debe aportar: **colocar 1 pin tuyo que dura 2 tiros + recurso de pines golpeados**. Decisión nueva: **dónde pongo mi pin para que sirva ahora Y deje hueco para el siguiente tiro**.
+
+### 2. COMPARACIÓN DIRECTA CONTRA REFERENCIA
+
+**A vs Mob Control:**
+- Referencia: eliges 1 puerta (x2 vs x3) → masa entra por ahí.
+- Nuestra: eliges **split 70/30 entre 2 puertas simultáneamente** → 2 masas con posiciones distintas.
+- Diferencia decisión: repartir, no elegir.
+- Diferencia estado: quedan 2 masas en 2 territorios + 1 territorio pintado (Mob deja 1 masa).
+- Diferencia estrategia: finta (mandar poco a x3 para que enemigo defienda ahí).
+- Diferencia maestría: experto sacrifica 4 a trampa para pintar territorio para siguiente oleada (novato no sacrifica).
+
+**B vs Angry Birds / Suika:**
+- Angry: tiras → destruyes → desaparece → siguiente tiro mismo escenario.
+- Suika: sueltas → fusionas → liberas espacio.
+- Nuestra: tiras → destruyes → **escombros caen y fusionan en viga → colocas viga → siguiente tiro rebota en tu viga**. Si quitas fusión, sigue habiendo juego (escombros → puente) pero menos profundidad. Si quitas destrucción, no hay escombros → no hay juego. El núcleo es **destrucción → geometría nueva**.
+- Decisión nueva: ¿qué torre tiro para generar qué forma de escombro?
+- Estado diferente: tras tiro 1 hay una viga donde antes había hueco.
+- Estrategia nueva: no destruir todo, dejar bloque en pie para que escombros caigan inclinados.
+- Maestría: experto tira flojo a esquina para generar viga larga, no 3 pequeños.
+
+**C vs Clash Royale:** Clash: colocas → unidad camina sola por camino. Nuestra: colocas → unidad cae con física y empuja. Diferencia: posicionamiento pixel-perfect y rebote. Experto deja hueco a propósito.
+
+**D vs Fruit Ninja:** Fruit: cortas fruta que viene. Nuestra: cortas pared del laberinto que **queda abierta**. Diferencia: corte persiste 10s y desvía flujo futuro.
+
+**E vs Peggle:** Peggle: tiras a pines fijos. Nuestra: **pones 1 pin tuyo** que dura 2 tiros. Diferencia: eliges hueco y tipo de pin, y el pin que pones ahora afecta el siguiente tiro.
+
+Si no hay 4 diferencias → DESCARTAR. Las 5 las tienen.
+
+### 3. PRUEBA “¿QUÉ HAGO?” — 60s concreta (resumen con estado)
+
+**A (60s):** 0s: 18 unidades, 3 ramas: A x3 con muro, B x2 libre, C trampa. 3s: mando 12A+6B → 4 sobreviven en A y 12 en B. 10s: veo que B pintó y da +20% → mando 14 por B → 33 llegan a base. 20s: enemigo bloquea B → improviso y mando 6 por C. 30s: tengo 2 territorios pintados.
+
+**B (60s):** 0s: Torre madera 3 bloques + Torre piedra 2 bloques + hueco 4u. 3s: tiro a base madera → 3 escombros → 2 fusionan en viga larga en suelo (3u). 12s: coloco viga como puente sobre hueco. 20s: tiro a piedra rebota en MI puente → piedra cae y deja 2 escombros piedra → uno rompe mi puente. 35s: fusiono 2 piedra → losa. 55s: tiro flojo cae en losa → rebota alto y limpia.
+
+**C:** 0s: mano muro(2), rebote(1), bomba(3), flujo 10 por centro. 3s: pongo muro en (5,5) → flujo se divide. 10s: pongo ligero en (2,5) → empuja 3 hacia trampa. 18s: espero elixir y pongo bomba en embudo creado por mi muro + muro enemigo.
+
+**D:** 0s: río 10 por centro a x2. 3s: corto pared izq → río gira 90° a x3 → 30. 10s: siguiente río va auto por x3 (no corto). 19s: corto muro enemigo justo cuando río de 14 llega → 42.
+
+**E:** 0s: 8 pines + 4 naranjas, pin división en mano. 3s: pongo pin división en (4,4). 5s: tiro centro → divide en 2 → 2 naranjas. 14s: pongo pin explosivo en (4,6). 19s: tiro izquierda → rebota → explota pin → limpia 2 naranjas.
+
+### 4. PRUEBA DE LOS 10 TIROS (solo B detallada, las otras similar)
+
+**B — 10 tiros con estado → decisión → resultado → nuevo estado:**
+
+T1 Estado: 2 torres separadas, 0 escombros. Decisión: ¿madera (muchos escombros) o piedra (pocos)? Acción: tiro a base madera. Resultado: 3 escombros madera, 2 fusionan en viga larga. Nuevo estado: viga larga en suelo, hueco entre torres.
+
+T2 Estado: viga larga + hueco. Decisión: ¿uso viga ahora como puente o la guardo? Acción: coloco viga como puente. Resultado: puente cubre hueco. Nuevo estado: puente sobre hueco, piedra sigue inalcanzable sin puente.
+
+T3 Estado: puente listo. Decisión: ¿tiro a piedra usando puente como rebote o aseguro madera restante? Acción: tiro a piedra rebotando en puente. Resultado: piedra cae, deja 2 escombros piedra que rompen puente. Nuevo estado: puente roto (1 madera+1 piedra), losa piedra disponible.
+
+T4 Estado: 1 madera+2 piedra. Decisión: ¿fusiono 2 piedra en losa o uso madera suelta? Acción: fusiono piedra → losa grande. Resultado: losa 3u. Nuevo estado: losa + 1 madera suelta.
+
+T5: coloco losa como trampolín. T6: tiro flojo rebota en losa → limpia. T7: quedan 2 bloques sueltos, decido no destruir todo para dejar rampa. T8: tiro a rampa → escombros caen inclinados y forman nueva rampa. T9: tiro curvo usando rampa. T10: limpia.
+
+Si tras tiro 3-4 fuera solo “apuntar mejor → destruir → repetir” → FALLIDO. Aquí cada tiro cambia la geometría del siguiente, no es repetir.
+
+Las otras 4 direcciones pasan igual: A cada oleada deja territorio, C cada colocación deja muro, D cada corte deja camino, E cada pin deja hueco.
+
+### 5. PRUEBA SEGUNDA ORDEN — 3 cadenas naturales A→B→C→D
+
+**B 3 cadenas:**
+- Cadena 1: Tiro a madera (A) → deja 3 escombros, 2 fusionan en viga (B) → decides dónde poner viga (C) → viga permite tiro a piedra (D)
+- Cadena 2: Colocas viga como puente (A) → tiro rebota en viga (B) → piedra cae sobre viga y la rompe (C) → deja 1 madera+1 piedra que fusionas (D)
+- Cadena 3: Fusionas 2 piedra en losa (A) → losa como trampolín (B) → tiro flojo rebota alto (C) → limpia torre alta (D)
+
+No es A→puntos. Es A→nuevo escenario→nueva decisión→nuevo escenario.
+
+Las otras direcciones tienen 3 cadenas similares (A: split→territorio→bonus→siguiente split, etc.)
+
+### 6. PRUEBA DE ERROR — ¿Qué pasa si haces mala jugada?
+
+**A:** Mandas 18 por Izq x3 y enemigo tenía muro + trampa → pierdes 12, te quedan 6 y territorio Izq sin pintar. ¿Muerto? No, te quedan Centro y Der pintables, puedes recuperar mandando por Centro con bonus.
+
+**B:** Tiras a piedra primero y solo dejas 1 escombro pequeño, no puedes hacer puente y Torre madera sigue bloqueando. ¿Muerto? No, puedes tirar a madera ahora y generar viga, solo perdiste 1 tiro.
+
+**C:** Pones muro en centro mal y bloqueas tu propio flujo → tu masa se va fuera. ¿Muerto? No, el muro dura 5s y desaparece, puedes corregir en siguiente colocación.
+
+**D:** Cortas pared hacia x3 pero era trampa → río pierde 30%. ¿Muerto? No, el corte queda abierto y el siguiente río puedes desviarlo de nuevo con otro corte.
+
+**E:** Pones pin división en esquina y tira solo toca 1 naranja → pierdes recurso explosivo. ¿Muerto? No, pin dura 2 tiros, puedes usar segundo tiro para compensar.
+
+Todas tienen estados malos jugables, no “reinicia”.
+
+### 7. PRUEBA DE RECUPERACIÓN — 3 maneras de recuperar situación mala
+
+**Situación B mala:** “Destruiste madera muy pronto y ahora el objetivo piedra está bloqueado porque no dejaste escombros para puente”
+
+- Recuperación 1: Usa los pocos escombros que quedaron para hacer mini-puente y tiro curvo.
+- Recuperación 2: Tira a la base de piedra con tiro muy flojo para que escombros caigan hacia el hueco y formen rampa improvisada.
+- Recuperación 3: No tires 1 turno, deja que la gravedad asiente escombros y se fusionen solos en viga más larga (esperar).
+
+Si solo hay “reiniciar” → débil. B tiene 3.
+
+Similar para A (si te quedas sin territorio, puedes pintar Der, hacer finta, o sacrificar), C (si bloqueas tu flujo, puedes poner rebote ligero para desviar, esperar a que muro expire, o poner bomba para limpiar), etc.
+
+### 8. PRUEBA DE ESTRATEGIAS — 3 estilos competitivos
+
+**B:**
+- Agresivo: tira siempre a piedra para daño máximo, construye poco, busca derrumbe directo.
+- Seguro: tira a madera, genera muchos escombros, construye puentes sólidos, avanza lento.
+- Creativo: deja 1 bloque en pie a propósito para que escombros caigan inclinados y formen rampa curva que usa 2 tiros después.
+
+Las 3 son competitivas, no es “uno apunta mejor”.
+
+**A:** Agresivo (todo a x3), Controlador (pinta territorio), Finta (sacrifica).
+
+**C:** Muralla, Rebote, Bomba.
+
+**D:** Atajo, Bloqueo, Territorio.
+
+**E:** Centro, Esquina, División.
+
+### 9. PRUEBA 1 / 20 / 100 PARTIDAS — B como ejemplo
+
+- **Partida 1:** descubre que tirar a madera da escombros.
+- **5 partidas:** empieza a guardar viga larga para puente.
+- **20 partidas:** deliberadamente **no destruye todo**: deja 1 bloque en pie para que escombros caigan inclinados y formen rampa. Descubre que tirar flojo a esquina genera viga larga en vez de 3 pequeños.
+- **50 partidas:** comprende que el orden importa: madera → viga → piedra → losa → trampolín es mejor que piedra → madera.
+- **100 partidas:** puede **fallar a propósito** el primer tiro para que 2 escombros caigan exactamente donde necesita el puente del tercer tiro. Tira a un sitio vacío para que la física asiente escombros y fusionen mejor. No es más puntería, es planificación a 3 tiros vista. Cada etapa introduce **nueva forma de decidir** (qué destruir, qué fusionar, dónde colocar, cuándo no destruir).
+
+Si fuera solo “apunta mejor” → débil. Aquí es decisiones diferentes.
+
+### 10-11. PRUEBA SIN ARTE / SIN CONTENIDO
+
+**Sin arte (círculos+rectángulos+física):** B sigue siendo interesante porque la decisión es **geométrica** (dónde cae el rectángulo, cómo se apoya), no visual. Con círculos (bola) + rectángulos (escombros) + línea de tiro se entiende. No necesita partículas.
+
+**Sin contenido (mismos 2 torres, mismos escombros, sin niveles nuevos):** B produce 100 partidas porque cada tiro deja escombros en posición distinta → cada partida es puzzle nuevo. No necesita 20 torres. Si dependiera de niveles → descartar. No depende.
+
+### 12. PRUEBA DE CLON
+
+**“Esto es básicamente Angry Birds.”** — ¿Qué parece clon? Trayectoria + destrucción + bloques.
+
+**Pero NO es Angry Birds porque:** En Angry, destruyes y desaparece. Aquí **destruyes y construyes**: los restos se fusionan (Suika) y los colocas. La siguiente jugada usa lo que destruiste. Angry es `tiro → puntos → siguiente nivel`. B es `tiro → material → colocación → siguiente tiro usa tu construcción`. Diferencia estructural, no estética.
+
+Similar para Angry+Suika: No es Suika con resortera, porque Suika no tiene tiro ni colocación de puente.
+
+### 13. PRUEBA DE ESPECTÁCULO — 3 momentos 5-10s
+
+**B:**
+1. Torre de 3 pisos se derrumba y del polvo aparece viga que se fusiona y la colocas como puente (5s)
+2. Bola rebota en tu puente y entra por hueco que era imposible antes (5s)
+3. Dos escombros iguales se fusionan en el aire mientras caen y forman losa que usas como trampolín (7s)
+
+Todos son **causalidad física visible**, no partículas.
+
+### 14. PRUEBA DE AUTORÍA — 3 situaciones “YO lo hice”
+
+1. “Yo puse la viga ahí, por eso la bola rebotó y entró.”
+2. “Yo dejé ese bloque en pie a propósito para que los escombros cayeran inclinados.”
+3. “Yo fusioné esos dos escombros y por eso tengo losa grande ahora.”
+
+No es RNG.
+
+### 15. PRUEBA DE JUSTICIA
+
+Si pierdes en B (no puedes llegar a torre): puedes ver por qué — “tiré a piedra primero y no generé material para puente, si hubiera tirado a madera tendría viga”. Es tu culpa, no del RNG.
+
+### 16. PRUEBA DE ONE MORE TRY — Frases concretas (no “mejor puntuación”)
+
+- “Si primero rompo la base madera y dejo caer la viga hacia la derecha, puedo usarla para llegar a la piedra de atrás que no llego directo.”
+- “Si no fusiono esos 2 escombros ahora y los guardo, en el siguiente tiro tendré losa grande para trampolín.”
+- “Si dejo ese bloque en pie, los escombros caerán inclinados y me harán rampa.”
+
+No es “quiero más puntos”, es “quiero probar esa jugada”.
+
+### 17. PRUEBA DE SIMPLICIDAD
+
+- **Input con el dedo:** “arrastras para apuntar y sueltas para lanzar, luego arrastras escombro para colocarlo” (2 drags, ambos familiares).
+- **Qué decide realmente:** qué estructura destruir para qué forma de escombro, qué fusionar, dónde colocar puente para que el siguiente tiro rebote, si sacrificar destrucción por material. Mucho más complejo que el input.
+
+Fórmula buscada: `INPUT SIMPLE → DECISIÓN PROFUNDA → CONSECUENCIA VISIBLE (puente) → NUEVO ESTADO → NUEVA DECISIÓN`
+
+### 18. COMPARACIÓN FINAL — Tabla con scores respaldados por ejemplos anteriores (1-10)
+
+| Concepto | Input | Decisiones | 2ª orden | Recuperación | Estrategias | Maestría (100) | Espectáculo | Diferenciación | Riesgo aburrimiento | Riesgo clon | **Total** |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A Masa Bifurcada | 9 drag cañón | 8 split+territorio | 8 rastro persiste | 7 3 maneras | 8 3 estilos | 7 sacrificio | 8 masa x10 | 5 (cerca Mob) | 6 puede ser Mob 2 | 6 medio | **72** |
+| B Destrucción-Construye | 9 drag tiro+colocar | 9 qué destruir/qué construir | **9** escombro→puente | 8 3 recuperaciones | 9 3 estilos muy distintos | **9** no destruir para preparar | **9** puente que permite tiro imposible | **8** Angry+Suika remix | 4 bajo si física se siente justa | 5 medio (no es Angry) | **79** |
+| C Colocación Física | 9 tap colocar | 8 dónde pixel + elixir | 7 muro queda 5s | 7 | 7 | 7 no colocar | 7 muro desvía masa | 7 Clash+Pool | 7 puede ser Clash raro | 6 medio | 71 |
+| D Corte de Flujo | 9 swipe | 7 qué pared cortar | 7 corte persiste | 6 | 7 | 6 esperar a juntar ríos | 8 río gira 90° | 6 puzzle repetitivo | 7 puede ser “una acción repetida” | 7 bajo | 68 |
+| E Cadena Programable | 8 2 taps | 8 dónde pin + tipo | 8 pin dura 2 tiros | 7 | 8 | 8 guardar pin | 8 división → fiebre | 7 Peggle+prep | 6 puede ser cerebralo | 6 medio | 71 |
+
+*Scores respaldados por demos 60s y pruebas 100 partidas anteriores. B lidera en decisiones, 2ª orden y maestría.*
+
+### 19. REGLA ESPECIAL PARA B — ¿Qué pasa si quito fusión o destrucción?
+
+**Si elimino completamente la parte “fusionar” de Suika (2 iguales → bloque mayor):**
+- ¿Sigue siendo buen juego? **Sí, pero menos profundo.** Queda `tiro → escombros → colocas escombros sueltos como puente`. Sigue habiendo segunda orden (escombro → puente), pero pierdes la decisión de **qué fusionar y qué forma generar** (viga larga vs 2 pequeños) y la sorpresa de fusión en el aire. El núcleo **destrucción → construcción** sobrevive sin fusión. Fusión es **mejora, no núcleo**. No es decoración, pero no es indispensable.
+
+**Si elimino completamente la parte “lanzar y destruir” de Angry Birds (trayectoria + destrucción):**
+- ¿Sigue existiendo nuestro sistema? **No.** Sin tiro y sin destrucción no hay escombros, no hay material, no hay nada que construir. La destrucción es el **generador de recurso**. Si la quitas, no hay juego.
+
+**Conclusión:** El núcleo no es *Angry + Suika*, es **destrucción que genera material colocable que modifica el siguiente tiro**. La fusión de Suika es una **mutación que potencia** ese núcleo (decides qué forma generar), pero el núcleo sin fusión ya tiene juego (y sería más simple de prototipar). **No construir “Angry Birds + Suika” literal**, construir **relación destrucción→espacio→siguiente decisión**, y usar fusión solo si después de probar sin fusión vemos que falta decisión de forma.
+
+### 20. TOP 3 — Sin elegir ganador, solo 3 para tu decisión
+
+**TOP 3 (ordenado por puntuación pero sin declarar ganador):**
+
+**B — Destrucción que Construye — Qué es:** tiro que deja escombros que fusionan y colocas. **Por qué existe:** es el único donde tu acción literalmente construye el escenario del siguiente turno. **Qué hace diferente:** no es Angry con bloques, es Angry donde los restos importan. **Dónde puede romperse:** física de escombros puede sentirse caótica si no se siente justa. **Qué falta demostrar:** que el jugador entiende que debe construir, no solo destruir, y que disfruta colocar. **Qué preocupa:** física + construcción puede complicarse. **Qué entusiasma:** segunda orden muy fuerte, momentos “NO MAMES, LO HICE YO”.
+
+**A — Masa Bifurcada — Qué es:** flujo que divides en bifurcación y pinta territorio. **Por qué existe:** es el más comercial y claro. **Diferente:** no es elegir puerta, es repartir y pintar. **Dónde romperse:** puede sentirse Mob Control 2 si el territorio es solo “pinto”. **Qué falta:** demostrar que split 70/30 es decisión interesante y no solo “x3 vs x2”. **Preocupa:** cercanía a Mob. **Entusiasma:** masa desproporcionada inmediata.
+
+**E — Cadena Programable — Qué es:** colocas 1 pin + tiras. **Por qué existe:** preparación → ejecución → consecuencia con recurso. **Diferente:** Peggle donde TÚ pones el peg. **Dónde romperse:** puede volverse puzzle de “solución correcta”. **Qué falta:** demostrar que hay varias jugadas buenas, no una. **Preocupa:** cerebralo. **Entusiasma:** pin que divide y explota.
+
+**C y D quedan fuera del TOP 3 por ahora** (C puede ser Clash raro, D puede ser una acción repetida), pero no descartados del todo — son direcciones válidas si B/E/A fallan en prototipo de papel.
+
+> **READY FOR HUMAN DECISION — 3 direcciones, sin código, sin MVP, sin ganador forzado. Elige 1 para prototipar o di “ninguna alcanza el estándar y seguimos investigando”.**
+```
+
