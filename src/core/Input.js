@@ -56,8 +56,26 @@ export class Input {
     const btnJump = document.getElementById('btn-jump');
     const btnReload = document.getElementById('btn-reload');
     const btnSwitch = document.getElementById('btn-switch');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
 
     if (!joystickZone) return;
+
+    // Fullscreen (mobile browsers hide the address bar only in fullscreen;
+    // request must come from a user gesture — this tap is one)
+    if (btnFullscreen) {
+      const goFullscreen = () => {
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else if (req) {
+          const p = req.call(el, { navigationUI: 'hide' });
+          if (p && p.catch) p.catch(()=>{});
+        }
+      };
+      btnFullscreen.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); goFullscreen(); }, { passive: false });
+      btnFullscreen.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); goFullscreen(); });
+    }
 
     // Joystick
     let joystickActive = false;
@@ -133,10 +151,10 @@ export class Input {
       e.preventDefault();
       if (!lookActive) return;
       const t = e.touches[0];
-      const dx = t.clientX - lastLookX;
-      const dy = t.clientY - lastLookY;
-      this._touchLook.x = dx * 0.6;
-      this._touchLook.y = dy * 0.6;
+      // Accumulate raw deltas; consumed (and cleared) by getLookDelta each frame.
+      // Frame-rate independent: the consumer applies a fixed scale, no per-frame decay.
+      this._touchLook.x += (t.clientX - lastLookX);
+      this._touchLook.y += (t.clientY - lastLookY);
       lastLookX = t.clientX;
       lastLookY = t.clientY;
     }, { passive: false });
@@ -201,13 +219,14 @@ export class Input {
     return { reload, switchW };
   }
 
-  // For CameraController to get look delta
+  // For CameraController to get look delta: raw pixels accumulated since last
+  // frame. Consume-and-clear — no decay, no frame-rate dependence.
   getLookDelta() {
-    if (this._touchLook.active) {
+    if (this._touchLook.active || this._touchLook.x !== 0 || this._touchLook.y !== 0) {
       const x = this._touchLook.x;
       const y = this._touchLook.y;
-      this._touchLook.x *= 0.5; // damp
-      this._touchLook.y *= 0.5;
+      this._touchLook.x = 0;
+      this._touchLook.y = 0;
       return { x, y };
     }
     return { x: 0, y: 0 };

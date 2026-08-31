@@ -59,11 +59,14 @@ export class PlayerController {
   update(dt) {
     if (!this.player.isAlive) return;
 
-    // Mobile look from touch
+    // Mobile look from touch — raw pixel delta, fixed scale.
+    // ~0.0038 rad/px: a full swipe across a 400px-tall screen ≈ 87°, matching
+    // standard mobile FPS feel. Dead zone ignores sub-pixel finger jitter.
     const touchLook = this.input.getLookDelta();
-    if (touchLook.x !== 0 || touchLook.y !== 0) {
-      this.yaw -= touchLook.x * 0.015;
-      this.pitch -= touchLook.y * 0.015;
+    const DEAD = 0.6; // px
+    if (Math.abs(touchLook.x) > DEAD || Math.abs(touchLook.y) > DEAD) {
+      this.yaw -= touchLook.x * 0.0038;
+      this.pitch -= touchLook.y * 0.0038;
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
@@ -108,50 +111,47 @@ export class PlayerController {
     }
     this.velocity.y -= this.gravity * dt;
 
-    // Apply movement with simple collision against map
+    // Integrate target position for this frame
     const nextPos = this.player.position.clone().addScaledVector(this.velocity, dt);
-    
-    // Simple ground check: highest walkable surface at or below feet (+step)
-    const feetY = nextPos.y - this.height;
-    const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z, feetY) : 0;
-    const playerBottom = feetY;
-    if (playerBottom <= groundY) {
-      nextPos.y = groundY + this.height;
+
+    // Ground resolve BEFORE wall checks: know the floor under the full next position
+    const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z, nextPos.y - this.height) : 0;
+
+    // Axis-separated movement resolution: try each axis independently from
+    // the CURRENT position; an axis only moves if its result is collision-free.
+    // This cannot tunnel through geometry (each step is validated) and slides
+    // naturally along walls.
+    const cand = this.player.position.clone();
+    // Y axis (gravity/jump)
+    cand.y = nextPos.y;
+    if (cand.y - this.height < groundY) {
+      cand.y = groundY + this.height;
       this.velocity.y = Math.max(0, this.velocity.y);
       this.onGround = true;
     } else {
       this.onGround = false;
     }
-
-    // Wall collision (simple AABB against map boxes)
-    if (this.map) {
-      const collided = this.map.checkCollision(nextPos, this.radius, this.height);
-      if (collided) {
-        // Simple slide: try X only, then Z only
-        const tryX = this.player.position.clone(); tryX.x = nextPos.x;
-        if (!this.map.checkCollision(tryX, this.radius, this.height)) {
-          nextPos.x = tryX.x;
-        } else {
-          this.velocity.x = 0;
-        }
-        const tryZ = this.player.position.clone(); tryZ.z = nextPos.z;
-        if (!this.map.checkCollision(tryZ, this.radius, this.height)) {
-          nextPos.z = tryZ.z;
-        } else {
-          this.velocity.z = 0;
-        }
-        // Y already handled
-        nextPos.y = this.player.position.y + this.velocity.y * dt;
-        if (nextPos.y - this.height <= groundY) {
-          nextPos.y = groundY + this.height;
-          this.onGround = true;
-          this.velocity.y = 0;
-        }
-      }
+    // X axis
+    const tryX = cand.clone(); tryX.x = nextPos.x;
+    if (!this.map || !this.map.checkCollision(tryX, this.radius, this.height)) {
+      cand.x = tryX.x;
+    } else {
+      this.velocity.x = 0;
     }
-
-    this.player.position.copy(nextPos);
-    this.player.position.y = Math.max(this.player.position.y, groundY + this.height);
+    // Z axis
+    const tryZ = cand.clone(); tryZ.z = nextPos.z;
+    if (!this.map || !this.map.checkCollision(tryZ, this.radius, this.height)) {
+      cand.z = tryZ.z;
+    } else {
+      this.velocity.z = 0;
+    }
+    // Final safety: if the combined position is somehow inside geometry
+    // (corner cases), revert to the previous safe position.
+    if (this.map && this.map.checkCollision(cand, this.radius, this.height)) {
+      cand.copy(this.player.position);
+      this.velocity.x = 0; this.velocity.z = 0;
+    }
+    this.player.position.copy(cand);
 
     // Update camera position (eyes) + subtle run bob
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
