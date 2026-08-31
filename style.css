@@ -17,11 +17,21 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #health{ color:#4ade80; font-weight:900; font-size:26px; line-height:1; }
 #ammo{ color:#fff; font-weight:900; font-size:26px; line-height:1; }
 
-/* Mobile: lift bottom HUD above thumb controls */
-@media (pointer: coarse), (max-width: 900px){
+/* Mobile PORTRAIT: lift bottom HUD above thumb controls */
+@media (pointer: coarse) and (orientation: portrait), (max-width: 900px) and (orientation: portrait){
   #hud-bottom{ padding-bottom: 210px; }
   #hud-bottom #health-block, #hud-bottom #ammo-block{ padding:5px 12px; }
   #health, #ammo{ font-size:20px; }
+}
+
+/* Mobile LANDSCAPE: short screen — health/ammo move to the TOP corners
+   (row 1), score chip just below them (row 2); thumb controls keep the bottom */
+@media (pointer: coarse) and (orientation: landscape), (max-width: 900px) and (orientation: landscape) and (max-height: 500px){
+  #hud{ flex-direction:column; justify-content:flex-start; gap:0; }
+  #hud-bottom{ order:-1; justify-content:space-between; padding:8px 14px 0; }
+  #hud-top{ padding:6px 0 0; }
+  #hud-bottom #health-block, #hud-bottom #ammo-block{ padding:4px 10px; }
+  #health, #ammo{ font-size:17px; }
 }
 
 /* Crosshair — 4 ticks */

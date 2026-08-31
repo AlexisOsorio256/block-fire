@@ -88,6 +88,19 @@ python3 -m http.server 8002 --bind 127.0.0.1 --directory /home/alex/Documentos/B
 - `?runTests=1` — smoke tests; no aceptar cambios si no marca 7/7 PASS.
 - `?capture=playing` — partida iniciada para una captura.
 
+### Verificación visual (agentes sin visión nativa)
+
+- `tools/gemini-vision.py` — puente a modelos de visión de Google (pool:
+  `gemini-3.5-flash-lite` default + `gemini-3.1-flash-lite` fallback/segunda
+  opinión; ~500 req/día cada uno). Requiere `GOOGLE_API_KEY` en `.env`
+  (gitignored — el repo es público, jamás hardcodear la key).
+- Regla de calidad: **una mejora visual no está terminada hasta ejecutar el
+  juego, capturar y verificar visualmente la captura** (visión para detectar,
+  análisis de píxeles/proyección para explicar).
+- Layout móvil validado en ambas orientaciones: portrait (HUD elevado sobre
+  controles) y landscape (health/ammo arriba, chip debajo, sin solapes con
+  botones táctiles — verificado por medición de rects y doble visión).
+
 `capturas/` contiene evidencia visual puntual, no documentación de producto.
 El historial de decisiones y cambios es `git log` y GitHub; no mantener diarios
 o logs narrativos dentro del repositorio. Actualiza este README solo al cambiar
