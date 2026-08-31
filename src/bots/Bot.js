@@ -123,6 +123,19 @@ export class Bot {
   takeDamage(amount, hitType, attacker) {
     if (!this.isAlive) return false;
     this.health -= amount;
+    // Hit flinch: short knockback away from the attacker — visible hit confirm
+    if (attacker && this.mesh) {
+      const away = new THREE.Vector3().subVectors(this.position, attacker.position);
+      away.y = 0;
+      if (away.lengthSq() > 0.0001) {
+        away.normalize().multiplyScalar(hitType === 'head' ? 0.5 : 0.3);
+        const next = this.position.clone().add(away);
+        if (!this.map.checkCollision(next, this.radius, this.height)) {
+          this.position.copy(next);
+        }
+        this._flinchT = 0.12;
+      }
+    }
     // Hit flash on body materials only (visor keeps its own glow)
     if (this.mesh) {
       const flashed = [];
@@ -315,6 +328,15 @@ export class Bot {
     this.mesh.position.copy(this.position);
     this.mesh.position.y -= this.height;
     this.mesh.rotation.y = this.yaw;
+
+    // Hit flinch: brief body tilt toward the shot (decays in ~0.12s)
+    if (this._flinchT > 0) {
+      this._flinchT -= dt;
+      const k = Math.max(0, this._flinchT / 0.12);
+      this.mesh.rotation.x = k * 0.35; // recoil tilt
+    } else {
+      this.mesh.rotation.x = 0;
+    }
 
     // Bob legs when moving
     if (move.lengthSq() > 0.01) {

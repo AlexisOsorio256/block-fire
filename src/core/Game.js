@@ -16,13 +16,10 @@ export class Game {
     this.scene.background = new THREE.Color(0x87b5e8);
     this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
 
-    // Renderer — mobile renders at a sharper DPR cap, with a dynamic downscaler
-    // (_adaptResolution) if sustained frame time suffers. See PROJECT_RULES §6.
+    // Renderer — eficiencia: sin antialias en móvil, pixelRatio ≤1.5, sombras 1024
     const isMobile = window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     this.renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
-    this._dpr = { min: 0.9, max: isMobile ? 1.5 : 2.0, value: Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2.0) };
-    this.renderer.setPixelRatio(this._dpr.value);
-    this._frameTimes = [];
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.2 : 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -50,6 +47,7 @@ export class Game {
       name: 'YOU'
     };
     this.playerController = new PlayerController(this.player, this.input, this.camera, this.scene, this.map);
+    this.playerController.audio = this.audio; // for land/jump feedback sounds
     // Create invisible mesh for player (for bots to target)
     const playerGeo = new THREE.BoxGeometry(0.5, 1.6, 0.5);
     const playerMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -221,27 +219,6 @@ export class Game {
     this.weaponSystem.isReloading = false;
   }
 
-  // Dynamic resolution: every ~1.5s of frames, if the average frame time is
-  // over budget (22ms ≈ 45fps), drop DPR a step; if comfortably under budget
-  // (14ms) and DPR below cap, raise it back. Keeps mobile sharp when it can
-  // afford it and smooth when it can't. Small steps avoid visible oscillation.
-  _adaptResolution(dt) {
-    this._frameTimes.push(dt);
-    if (this._frameTimes.length < 90) return; // ~1.5s at 60fps
-    const avg = this._frameTimes.reduce((a,b)=>a+b, 0) / this._frameTimes.length;
-    this._frameTimes.length = 0;
-    const step = 0.15;
-    if (avg > 0.022 && this._dpr.value > this._dpr.min) {
-      this._dpr.value = Math.max(this._dpr.min, this._dpr.value - step);
-      this.renderer.setPixelRatio(this._dpr.value);
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    } else if (avg < 0.014 && this._dpr.value < this._dpr.max) {
-      this._dpr.value = Math.min(this._dpr.max, this._dpr.value + step);
-      this.renderer.setPixelRatio(this._dpr.value);
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-  }
-
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -258,12 +235,12 @@ export class Game {
     } else {
       // Player
       died = this.playerController.takeDamage(amount);
-      // Hit flash
+      // Damage vignette — real overlay above the canvas
       if(!died){
-        this.hitFlash = 0.28;
+        this.hitFlash = 0.3;
+        const v = document.getElementById('damage-vignette');
+        if (v) { v.classList.add('show'); clearTimeout(this._vignTimer); this._vignTimer = setTimeout(()=> v.classList.remove('show'), 240); }
         if(this.audio) this.audio.play('hurt');
-        document.body.style.background = 'radial-gradient(ellipse at center, rgba(255,60,60,0.18) 0%, transparent 70%)';
-        setTimeout(()=> document.body.style.background='', 90);
       }
     }
 
@@ -276,11 +253,15 @@ export class Game {
         this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
         this.hud.showKillBanner(hitType==='head');
         if(this.audio) this.audio.play('kill');
-        // Kill punch: micro hitstop + subtle shake — feels earned, gone fast
+        // Kill punch: micro hitstop + shake strong enough to FEEL it (vision
+        // audit: previous 0.5 was invisible; 1.4 ≈ 3px wobble ≈ clear confirm)
         this._hitstop = 0.055;
-        this._shake = Math.min(1, (this._shake||0) + 0.5);
+        this._shake = Math.min(1.6, (this._shake||0) + 1.4);
       } else if(!target.isBot){
         this.playerDeaths++;
+        // Death transition: red fade + MUERTE banner until respawn
+        const dOv = document.getElementById('death-overlay');
+        if (dOv) dOv.classList.add('show');
       } else if(target.isBot && attacker && attacker.isBot){
         attacker.kills++;
       }
@@ -308,6 +289,8 @@ export class Game {
             }
           }
           this.playerController.respawn(farPos);
+          const dOv2 = document.getElementById('death-overlay');
+          if (dOv2) dOv2.classList.remove('show');
           if(this.audio) this.audio.play('respawn');
         }
       }, 1800);
@@ -416,7 +399,6 @@ export class Game {
 
     // FPS
     this.fps = 1/dt;
-    this._adaptResolution(dt);
 
     if(this.matchState !== 'PLAYING'){
       // Lobby camera: slow orbit over the arena — the game itself is the menu backdrop
@@ -469,8 +451,6 @@ export class Game {
     }
 
     // Weapon
-    // Feed weapon the current horizontal speed for bob/sway, then update it
-    this.weaponSystem.setMoveSpeed(Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z));
     this.weaponSystem.update(dt, this.player.isAlive);
 
     // Shooting (player)
@@ -546,9 +526,9 @@ export class Game {
     // Screen shake (kill punch / damage) — applied as transient camera offset
     if(this._shake > 0.001){
       const s = this._shake;
-      this.camera.position.x += (Math.random()-0.5) * s * 0.09;
-      this.camera.position.y += (Math.random()-0.5) * s * 0.09;
-      this.camera.rotation.z += (Math.random()-0.5) * s * 0.012;
+      this.camera.position.x += (Math.random()-0.5) * s * 0.13;
+      this.camera.position.y += (Math.random()-0.5) * s * 0.13;
+      this.camera.rotation.z += (Math.random()-0.5) * s * 0.02;
       this._shake *= Math.max(0, 1 - dt * 12); // linear-ish decay, ~gone in 0.25s
       if(this._shake < 0.001) this._shake = 0;
     }

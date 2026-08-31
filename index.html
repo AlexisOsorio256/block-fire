@@ -29,6 +29,8 @@
     <div id="killfeed"></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="damage-vignette"></div>
+    <div id="death-overlay"><span>MUERTE</span><label>REAPARECIENDO...</label></div>
     <div id="killbanner"><span class="kb-title">ELIMINADO</span><span class="kb-sub">+100</span></div>
     <div id="hitbanner">HEADSHOT</div>
     <div id="hud-bottom">
@@ -39,29 +41,16 @@
 
   <!-- Mobile controls -->
   <div id="mobile-controls">
-    <button id="btn-fullscreen" aria-label="Pantalla completa">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-    </button>
     <div id="joystick-zone">
       <div id="joystick-base"><div id="joystick-stick"></div></div>
     </div>
     <div id="look-zone"></div>
     <div id="action-buttons">
-      <button id="btn-fire" class="action-btn" aria-label="Disparar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
-      </button>
-      <button id="btn-aim" class="action-btn" aria-label="Apuntar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M2 12h4M18 12h4M12 2v4M12 18v4"/></svg>
-      </button>
-      <button id="btn-jump" class="action-btn" aria-label="Saltar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6"/><path d="M6 11l6-6 6 6"/></svg>
-      </button>
-      <button id="btn-reload" class="action-btn" aria-label="Recargar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 5v6h-6"/></svg>
-      </button>
-      <button id="btn-switch" class="action-btn" aria-label="Cambiar arma">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>
-      </button>
+      <button id="btn-fire" class="action-btn">●</button>
+      <button id="btn-aim" class="action-btn">◎</button>
+      <button id="btn-jump" class="action-btn">↑</button>
+      <button id="btn-reload" class="action-btn">↻</button>
+      <button id="btn-switch" class="action-btn">⇄</button>
     </div>
   </div>
 

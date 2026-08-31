@@ -53,12 +53,16 @@ if (params.has('runTests')) {
       log('6 HUD', hudOk, `hud ${hudOk}`);
       // Test 7: A hitscan kill must reach the match damage system. This covers
       // score/death wiring, not merely that a target mesh can lose health.
+      // NOTE: in ?runTests=1 the match stays in LOADING (lobby orbit cam),
+      // so the test sets its own deterministic camera pose instead of
+      // trusting whatever the lobby left in the camera.
       const bot = game.bots[0];
       const botStart = bot.position.clone();
-      const aim = new THREE.Vector3();
-      game.camera.getWorldDirection(aim);
-      bot.position.copy(game.camera.position).addScaledVector(aim, 4);
-      bot.position.y -= 0.15;
+      const eye = new THREE.Vector3(30, 1.65, 24);
+      game.camera.position.copy(eye);
+      game.camera.lookAt(30, 1.65, 14); // aim straight -Z at torso height
+      game.camera.updateMatrixWorld();
+      bot.position.set(30, 1.65, 14);   // 10u ahead of the muzzle
       bot.health = bot.maxHealth;
       bot.isAlive = true;
       bot.mesh.visible = true;
@@ -66,10 +70,19 @@ if (params.has('runTests')) {
       game.weaponSystem.fireCooldown = 0;
       game.weaponSystem.ammoInMag = game.weaponSystem.currentWeapon.magazineSize;
       let combatResult = null;
+      // Deterministic shots: zero spread for the test (spread is random and
+      // made this test flaky when flinch pushed the bot).
+      const savedSpread = game.weaponSystem.currentWeapon.spread;
+      game.weaponSystem.currentWeapon.spread = 0;
       for(let i=0; i<5 && bot.isAlive; i++) {
         game.weaponSystem.fireCooldown = 0;
+        // Bots flinch on hit (knockback), so re-aim at the moving target each
+        // shot — a real fight tracks the target instead of shooting a fixed spot.
+        game.camera.lookAt(bot.position.x, bot.position.y - 0.5, bot.position.z);
+        game.camera.updateMatrixWorld();
         combatResult = game.weaponSystem.fire(game.player, [bot], null);
       }
+      game.weaponSystem.currentWeapon.spread = savedSpread;
       const combatOk = !bot.isAlive && game.playerKills === 1 && combatResult?.totalDamage > 0;
       const scoreAfterWeapon = game.playerKills;
       bot.respawn(botStart);

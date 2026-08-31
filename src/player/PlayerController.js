@@ -31,6 +31,7 @@ export class PlayerController {
     // Feel details (subtle, cheap)
     this.roll = 0;          // strafe camera roll (radians)
     this.bobTime = 0;       // head bob phase
+    this._landPunch = 0;    // camera dip on landing (never undefined → no NaN)
 
     this.height = 1.65;
     this.radius = 0.35;
@@ -59,14 +60,11 @@ export class PlayerController {
   update(dt) {
     if (!this.player.isAlive) return;
 
-    // Mobile look from touch — raw pixel delta, fixed scale.
-    // ~0.0038 rad/px: a full swipe across a 400px-tall screen ≈ 87°, matching
-    // standard mobile FPS feel. Dead zone ignores sub-pixel finger jitter.
+    // Mobile look from touch
     const touchLook = this.input.getLookDelta();
-    const DEAD = 0.6; // px
-    if (Math.abs(touchLook.x) > DEAD || Math.abs(touchLook.y) > DEAD) {
-      this.yaw -= touchLook.x * 0.0038;
-      this.pitch -= touchLook.y * 0.0038;
+    if (touchLook.x !== 0 || touchLook.y !== 0) {
+      this.yaw -= touchLook.x * 0.015;
+      this.pitch -= touchLook.y * 0.015;
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
@@ -111,7 +109,7 @@ export class PlayerController {
     }
     this.velocity.y -= this.gravity * dt;
 
-    // Integrate target position for this frame
+    // Apply movement with simple collision against map
     const nextPos = this.player.position.clone().addScaledVector(this.velocity, dt);
 
     // Ground resolve BEFORE wall checks: know the floor under the full next position
@@ -125,12 +123,18 @@ export class PlayerController {
     // Y axis (gravity/jump)
     cand.y = nextPos.y;
     if (cand.y - this.height < groundY) {
+      const wasFalling = this.velocity.y < -3; // meaningful fall → landing punch
       cand.y = groundY + this.height;
+      if (wasFalling && !this.onGround) {
+        this._landPunch = 0.09; // camera dip on landing
+        if (this.audio) this.audio.play('jump');
+      }
       this.velocity.y = Math.max(0, this.velocity.y);
       this.onGround = true;
     } else {
       this.onGround = false;
     }
+
     // X axis
     const tryX = cand.clone(); tryX.x = nextPos.x;
     if (!this.map || !this.map.checkCollision(tryX, this.radius, this.height)) {
@@ -153,16 +157,17 @@ export class PlayerController {
     }
     this.player.position.copy(cand);
 
-    // Update camera position (eyes) + subtle run bob
+    // Update camera position (eyes) + subtle run bob + landing punch
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     if (this.onGround && horizSpeed > 1) {
       this.bobTime += dt * (6 + horizSpeed * 0.7);
     } else {
       this.bobTime = 0;
     }
+    if (this._landPunch > 0) this._landPunch = Math.max(0, this._landPunch - dt * 0.5);
     const bob = this.bobTime > 0 ? Math.sin(this.bobTime) * 0.03 * Math.min(1, horizSpeed / this.moveSpeed) : 0;
     this.camera.position.copy(this.player.position);
-    this.camera.position.y += 0.15 + bob; // eye offset + bob
+    this.camera.position.y += 0.15 + bob - this._landPunch; // eye offset + bob - land dip
 
     // Update player mesh (for bots to see) — align feet to ground
     if (this.player.mesh) {
