@@ -1,6 +1,5 @@
 <div align="center">
 
-<<<<<<< HEAD
 # 🔥 BLOCKFIRE
 
 **FPS arcade 3D blocky — partidas rápidas, combate directo, kills constantes.**
