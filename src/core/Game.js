@@ -158,9 +158,42 @@ export class Game {
     const playBtn = document.getElementById('playBtn');
     const retryBtn = document.getElementById('retryBtn');
 
+    // ---- Lobby weapon selector: the chosen weapon is equipped at match start
+    this.lobbyWeapon = parseInt(localStorage.getItem('bf_lobby_weapon') || '0', 10);
+    const weaponBtns = [...document.querySelectorAll('.lobby-weapon')];
+    const refreshWeaponUI = () => {
+      weaponBtns.forEach((b, i) => b.classList.toggle('selected', i === this.lobbyWeapon));
+    };
+    weaponBtns.forEach(b => {
+      b.addEventListener('click', () => {
+        this.lobbyWeapon = parseInt(b.dataset.weapon, 10);
+        localStorage.setItem('bf_lobby_weapon', String(this.lobbyWeapon));
+        refreshWeaponUI();
+        this.audio.play('ui');
+      });
+    });
+    refreshWeaponUI();
+
+    // ---- Lobby last-match stats (localStorage: local only, no server)
+    const statsEl = document.getElementById('lobby-stats');
+    const showLobbyStats = () => {
+      try {
+        const last = JSON.parse(localStorage.getItem('bf_last_match') || 'null');
+        const wins = parseInt(localStorage.getItem('bf_wins') || '0', 10);
+        if (last) {
+          statsEl.innerHTML = `ÚLTIMA PARTIDA: <b>${last.kills}</b> KILLS · <b>${last.deaths}</b> MUERTES${wins ? ` · VICTORIAS: <b>${wins}</b>` : ''}`;
+        } else {
+          statsEl.textContent = 'PRIMERA PARTIDA — 20 KILLS PARA GANAR';
+        }
+      } catch(e){ statsEl.textContent = ''; }
+    };
+    showLobbyStats();
+
     const startGame = ()=>{
       this.audio.init();
       this.audio.play('ui');
+      // Equip the lobby-selected weapon before the match starts
+      this.weaponSystem.switchWeapon(this.lobbyWeapon + 1);
       this.startMatch();
       overlay.classList.add('hidden');
       titleBlock.classList.add('hidden');
@@ -193,6 +226,12 @@ export class Game {
       fk.textContent = this.playerKills;
       fd.textContent = this.playerDeaths;
       fs.textContent = `${this.playerKills} - ${this.playerDeaths}`;
+      // Persist last-match stats + wins for the lobby
+      try {
+        localStorage.setItem('bf_last_match', JSON.stringify({ kills: this.playerKills, deaths: this.playerDeaths }));
+        if (won) localStorage.setItem('bf_wins', String(parseInt(localStorage.getItem('bf_wins') || '0', 10) + 1));
+      } catch(e){ /* storage full/blocked: lobby stats just stay stale */ }
+      showLobbyStats();
       resultBlock.classList.remove('hidden');
       titleBlock.classList.add('hidden');
       overlay.classList.remove('hidden');
@@ -208,8 +247,8 @@ export class Game {
     // Reset player and bots
     const playerSpawn = this.map.getRandomSpawn();
     this.playerController.respawn(playerSpawn);
-    this.playerController.health = 100;
-    this.hud.update({ health: 100, ammo: this.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: '0 - 0', timeLeft: this.matchDuration, fps: 60, pos: this.player.position, botCount: this.bots.length });
+    this.playerController.health = this.playerController.maxHealth;
+    this.hud.update({ health: this.playerController.maxHealth, ammo: this.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: '0 - 0', timeLeft: this.matchDuration, fps: 60, pos: this.player.position, botCount: this.bots.length });
     
     for(const bot of this.bots){
       const pos = this.map.getRandomSpawn(this.player.position);
@@ -276,6 +315,7 @@ export class Game {
         this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
         this.hud.showKillBanner(hitType==='head');
         if(this.audio) this.audio.play('kill');
+        if(this.audio) this.audio.play('kill_banner');
         // Kill punch: micro hitstop + shake strong enough to FEEL it (vision
         // audit: previous 0.5 was invisible; 1.4 ≈ 3px wobble ≈ clear confirm)
         this._hitstop = 0.055;

@@ -255,13 +255,43 @@ export class WeaponSystem {
       const spreadScale = 1 - (this._adsBlend || 0) * 0.65;
       const spreadX = (Math.random()-0.5) * weapon.spread * spreadScale;
       const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
-      
+
       const direction = new THREE.Vector3();
       this.camera.getWorldDirection(direction);
       // Apply spread
       direction.x += spreadX;
       direction.y += spreadY;
       direction.normalize();
+
+      // AIM ASSIST (player only): if the raw shot would pass near a visible
+      // enemy's chest, bend the ray onto the chest. Mobile (coarse pointer)
+      // gets a wider assist cone; PC gets a subtle one. Bots never assist.
+      // Occlusion is still checked afterwards — assist never shoots walls.
+      if (usesPlayerAmmo) {
+        const assistAngle = (this._isTouch || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) ? 0.075 : 0.028;
+        let bestDot = Math.cos(assistAngle);
+        let assistDir = null;
+        for (const target of targets) {
+          if (target === shooter || !target.isAlive) continue;
+          const th = target.height || 1.65;
+          const chest = target.position.clone(); chest.y -= th * 0.38;
+          const toChest = chest.clone().sub(this.camera.position);
+          const dist = toChest.length();
+          if (dist > weapon.range) continue;
+          toChest.normalize();
+          const dot = toChest.dot(direction);
+          if (dot > bestDot) {
+            // Only assist toward enemies the player is actually facing
+            bestDot = dot;
+            assistDir = toChest;
+          }
+        }
+        if (assistDir) {
+          // Blend 70% onto the chest — a nudge, not an aimbot: the ray keeps
+          // most of its original direction so spray still requires tracking.
+          direction.lerp(assistDir, 0.7).normalize();
+        }
+      }
 
       this.raycaster.set(this.camera.position, direction);
       // Check against targets (players/bots + map)
@@ -304,6 +334,10 @@ export class WeaponSystem {
             ? mapHit.point
             : this.camera.position.clone().addScaledVector(direction, 45);
           this.vfx.impact(missPoint, null);
+        }
+        // Wall ricochet sound only when the player's own shot hits geometry
+        if (mapHit && usesPlayerAmmo && this.audio) {
+          this.audio.play('impact_wall');
         }
       }
     }

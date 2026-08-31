@@ -121,6 +121,18 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #title-block h1 span{ color:#ffb400; }
 .tagline{ font-size:13px; letter-spacing:0.34em; font-weight:800; color:#9fb6e0; margin-top:10px; }
 #hint{ font-size:11px; color:rgba(160,180,220,0.65); margin-top:14px; letter-spacing:0.08em; }
+
+/* Lobby weapon selector */
+#lobby-weapons{ display:flex; gap:10px; justify-content:center; margin-top:22px; }
+.lobby-weapon{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#b8c8e2; transition:all 0.15s; }
+.lobby-weapon svg{ width:56px; height:24px; }
+.lobby-weapon label{ font-size:10px; font-weight:800; letter-spacing:0.16em; pointer-events:none; }
+.lobby-weapon:hover{ background:rgba(255,255,255,0.1); }
+.lobby-weapon.selected{ border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,0.1); box-shadow:0 0 18px rgba(255,210,63,0.18); }
+
+/* Lobby last-match stats */
+#lobby-stats{ margin-top:14px; min-height:18px; font-size:12px; font-weight:700; letter-spacing:0.08em; color:#8fa4c8; }
+#lobby-stats b{ color:#ffd23f; }
 #playBtn, #retryBtn{ margin-top:26px; appearance:none; border:none; cursor:pointer; font-size:17px; font-weight:900; letter-spacing:0.18em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:16px 64px; border-radius:14px; box-shadow: 0 6px 0 #8a5a00, 0 14px 30px rgba(0,0,0,0.45); pointer-events:auto; transition: transform 0.06s; }
 #playBtn:active, #retryBtn:active{ transform:translateY(4px); box-shadow: 0 2px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
 #result-block h2{ font-size: clamp(34px, 9vw, 56px); font-weight:900; color:#ffd23f; text-shadow:0 0 22px rgba(255,210,60,0.5); }

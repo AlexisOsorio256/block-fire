@@ -11,7 +11,7 @@ export class PlayerController {
     this.velocity = new THREE.Vector3();
     this.onGround = false;
     this.health = 100;
-    this.maxHealth = 100;
+    this.maxHealth = 125;
 
     this.yaw = 0;
     this.pitch = 0;
@@ -163,7 +163,13 @@ export class PlayerController {
     // Update camera position (eyes) + subtle run bob + landing punch
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     if (this.onGround && horizSpeed > 1) {
+      const prevBob = this.bobTime;
       this.bobTime += dt * (6 + horizSpeed * 0.7);
+      // Footstep on each bob cycle downswing (sin crosses zero downward):
+      // soft pace when walking, faster when sprinting — synced to the camera.
+      if (Math.floor(prevBob / Math.PI) !== Math.floor(this.bobTime / Math.PI)) {
+        if (this.audio) this.audio.play('step');
+      }
     } else {
       this.bobTime = 0;
     }
