@@ -5,7 +5,11 @@ export class Bot {
     this.id = id;
     this.isBot = true;
     this.isAlive = true;
-    this.position = position.clone();
+    this.map = map;
+    this.scene = scene;
+    // Snap spawn Y to actual ground (covers platforms correctly)
+    const gy = map ? map.getGroundY(position.x, position.z) : 0;
+    this.position = new THREE.Vector3(position.x, gy + 1.65, position.z);
     this.health = 100;
     this.maxHealth = 100;
     this.kills = 0;
@@ -28,9 +32,6 @@ export class Bot {
     // Head mesh for headshot
     this.headMesh = this.mesh.getObjectByName('head');
 
-    this.map = map;
-    this.scene = scene;
-
     // AI state
     this.state = 'wander'; // wander, chase, attack
     this.target = null;
@@ -43,79 +44,105 @@ export class Bot {
 
   _createMesh() {
     const group = new THREE.Group();
-    
-    // Body - blocky
-    const bodyGeo = new THREE.BoxGeometry(0.6, 0.9, 0.35);
-    const bodyMat = new THREE.MeshStandardMaterial({ 
-      color: this._getTeamColor(),
-      roughness: 0.8
+
+    // Palette: saturated body readable against light concrete map
+    const bodyColor = this._getTeamColor();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.65 });
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: 0x10141f, roughness: 0.3, metalness: 0.5,
+      emissive: 0x8844ff, emissiveIntensity: 0.55
     });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
+
+    // Torso — slightly tapered block
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.9, 0.36), bodyMat);
     body.position.y = 0.9;
     body.castShadow = true;
     group.add(body);
+    // Chest plate detail
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.06), darkMat);
+    chest.position.set(0, 1.02, 0.19);
+    group.add(chest);
+    // Belt
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.1, 0.38), darkMat);
+    belt.position.y = 0.52;
+    group.add(belt);
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.9 });
-    const head = new THREE.Mesh(headGeo, headMat);
+    // Head + glowing visor (enemy readability)
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), darkMat);
     head.position.y = 1.55;
     head.name = 'head';
     head.castShadow = true;
     group.add(head);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.05), visorMat);
+    visor.position.set(0, 1.57, 0.22);
+    group.add(visor);
+    this._visorMat = visorMat;
 
     // Arms
     const armGeo = new THREE.BoxGeometry(0.18, 0.55, 0.18);
-    const armMat = new THREE.MeshStandardMaterial({ color: 0x2a2f45 });
-    const leftArm = new THREE.Mesh(armGeo, armMat);
+    const leftArm = new THREE.Mesh(armGeo, bodyMat);
     leftArm.position.set(-0.42, 0.85, 0);
     group.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, armMat);
+    const rightArm = new THREE.Mesh(armGeo, bodyMat);
     rightArm.position.set(0.42, 0.85, 0);
     group.add(rightArm);
 
     // Legs
     const legGeo = new THREE.BoxGeometry(0.22, 0.6, 0.22);
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x1a2332 });
-    const leftLeg = new THREE.Mesh(legGeo, legMat);
+    const leftLeg = new THREE.Mesh(legGeo, darkMat);
     leftLeg.position.set(-0.16, 0.3, 0);
+    leftLeg.userData._baseY = 0.3;
     group.add(leftLeg);
-    const rightLeg = new THREE.Mesh(legGeo, legMat);
+    const rightLeg = new THREE.Mesh(legGeo, darkMat);
     rightLeg.position.set(0.16, 0.3, 0);
+    rightLeg.userData._baseY = 0.3;
     group.add(rightLeg);
+    this._lLeg = leftLeg;
+    this._rLeg = rightLeg;
 
-    // Weapon (simple)
-    const gunGeo = new THREE.BoxGeometry(0.08, 0.08, 0.55);
-    const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const gun = new THREE.Mesh(gunGeo, gunMat);
+    // Blocky rifle held at hip
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.58), darkMat);
     gun.position.set(0.42, 0.85, 0.35);
     group.add(gun);
 
+    // group.position is feet position; mesh is 1.76 tall vs collider 1.65
+    // so feet are exactly on groundY when group.y = position.y - height
     group.position.copy(this.position);
-    group.position.y -= this.height - 0.9;
+    group.position.y -= this.height;
 
     return group;
   }
 
   _getTeamColor() {
-    // FFA: each bot has slightly different tint
-    const hues = [0.02, 0.08, 0.55, 0.65, 0.75, 0.85];
-    const hue = hues[this.id % hues.length];
-    const color = new THREE.Color().setHSL(hue, 0.65, 0.5);
-    return color.getHex();
+    // FFA: saturated enemy tones that pop against light concrete
+    const colors = [0xd94f4f, 0xd97b2d, 0x2d9dd9, 0x8a44d9, 0xd92d86, 0x2dd98a];
+    return colors[this.id % colors.length];
   }
 
   takeDamage(amount, hitType, attacker) {
     if (!this.isAlive) return false;
     this.health -= amount;
-    // Flash
+    // Hit flash on body materials only (visor keeps its own glow)
     if (this.mesh) {
+      const flashed = [];
       this.mesh.children.forEach(c => {
-        if (c.material) {
-          c.material.emissive = new THREE.Color(0xff0000);
-          setTimeout(()=> { if(c.material) c.material.emissive.setHex(0x000000); }, 90);
+        if (c.material && c.material.emissive && c.material !== this._visorMat) {
+          c.userData._savedEmissive = c.material.emissive.getHex();
+          c.material.emissive.setHex(0xff2222);
+          flashed.push(c);
         }
       });
+      if (flashed.length) {
+        clearTimeout(this._flashTimer);
+        this._flashTimer = setTimeout(()=> {
+          flashed.forEach(c => {
+            if (c.material && c.userData._savedEmissive !== undefined) {
+              c.material.emissive.setHex(c.userData._savedEmissive);
+            }
+          });
+        }, 80);
+      }
     }
     if (this.health <= 0) {
       this.health = 0;
@@ -127,13 +154,14 @@ export class Bot {
   }
 
   respawn(pos) {
-    this.position.copy(pos);
-    this.position.y = this.map.getGroundY(pos.x, pos.z) + this.height;
+    // pos may be a spawn point with stale Y — always snap to ground
+    const gy = this.map ? this.map.getGroundY(pos.x, pos.z) : 0;
+    this.position.set(pos.x, gy + this.height, pos.z);
     this.health = this.maxHealth;
     this.isAlive = true;
     this.mesh.visible = true;
     this.mesh.position.copy(this.position);
-    this.mesh.position.y -= this.height - 0.9;
+    this.mesh.position.y -= this.height;
     this.velocity.set(0,0,0);
     this.yaw = Math.random() * Math.PI * 2;
     this.targetYaw = this.yaw;
@@ -156,10 +184,12 @@ export class Bot {
       const d = this.position.distanceTo(c.position);
       // Check line of sight (simple: no wall between)
       if (d < nearestDist && d < 28) {
-        // Ray check against map
-        const dir = new THREE.Vector3().subVectors(c.position, this.position).normalize();
-        const dist = this.position.distanceTo(c.position);
-        const hit = map.raycast(this.position.clone().add(new THREE.Vector3(0, 0.6, 0)), dir, dist);
+        // Ray from bot eyes (head) to target chest
+        const eye = this.position.clone(); eye.y -= 0.12;
+        const targetChest = c.position.clone(); targetChest.y -= 0.35;
+        const dir = new THREE.Vector3().subVectors(targetChest, eye).normalize();
+        const dist = eye.distanceTo(targetChest);
+        const hit = map.raycast(eye, dir, dist);
         if (!hit) {
           nearest = c;
           nearestDist = d;
@@ -247,8 +277,8 @@ export class Bot {
     // Apply movement
     if (move.lengthSq() > 0.01) {
       const nextPos = this.position.clone().addScaledVector(move, this.speed * dt);
-      // Ground
-      const groundY = map.getGroundY(nextPos.x, nextPos.z);
+      // Ground: only platforms reachable from current feet height
+      const groundY = map.getGroundY(nextPos.x, nextPos.z, this.position.y - this.height);
       nextPos.y = groundY + this.height;
       if (!map.checkCollision(nextPos, this.radius, this.height)) {
         this.position.copy(nextPos);
@@ -281,16 +311,19 @@ export class Bot {
     while (yawDiff < -Math.PI) yawDiff += Math.PI*2;
     this.yaw += yawDiff * Math.min(1, dt * 6);
 
-    // Update mesh
+    // Update mesh: feet stay on groundY
     this.mesh.position.copy(this.position);
-    this.mesh.position.y -= this.height - 0.9;
+    this.mesh.position.y -= this.height;
     this.mesh.rotation.y = this.yaw;
 
     // Bob legs when moving
     if (move.lengthSq() > 0.01) {
       const bob = Math.sin(Date.now() * 0.012) * 0.08;
-      this.mesh.children[3].position.y = 0.3 + bob;
-      this.mesh.children[4].position.y = 0.3 - bob;
+      const lLeg = this._lLeg, rLeg = this._rLeg;
+      if (lLeg && rLeg) {
+        lLeg.position.y = (lLeg.userData._baseY ?? 0.3) + bob;
+        rLeg.position.y = (rLeg.userData._baseY ?? 0.3) - bob;
+      }
     }
 
     // Shooting

@@ -16,10 +16,10 @@ export class Map {
 
   _createGround() {
     const groundGeo = new THREE.PlaneGeometry(this.size*2, this.size*2);
-    const groundMat = new THREE.MeshStandardMaterial({ 
-      color: 0x1a2332, 
-      roughness: 0.85,
-      metalness: 0.05
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x8d99a8,
+      roughness: 0.92,
+      metalness: 0.02
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI/2;
@@ -27,8 +27,8 @@ export class Map {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Grid texture illusion with lines
-    const gridHelper = new THREE.GridHelper(this.size*2, 24, 0x2a3a5a, 0x1e2a44);
+    // Subtle grid keeps blocky identity without darkening the floor
+    const gridHelper = new THREE.GridHelper(this.size*2, 24, 0x74869c, 0x8093a6);
     gridHelper.position.y = 0.02;
     this.scene.add(gridHelper);
   }
@@ -57,16 +57,17 @@ export class Map {
     const s = this.size;
     const h = this.wallHeight;
     const t = 1.0;
-    // Outer walls
-    this._createBox(0, 0, -s, s*2, h, t, 0x1e2a44);
-    this._createBox(0, 0, s, s*2, h, t, 0x1e2a44);
-    this._createBox(-s, 0, 0, t, h, s*2, 0x1e2a44);
-    this._createBox(s, 0, 0, t, h, s*2, 0x1e2a44);
+    // Outer walls — darker rim, clearly "boundary"
+    this._createBox(0, 0, -s, s*2, h, t, 0x5a6b80);
+    this._createBox(0, 0, s, s*2, h, t, 0x5a6b80);
+    this._createBox(-s, 0, 0, t, h, s*2, 0x5a6b80);
+    this._createBox(s, 0, 0, t, h, s*2, 0x5a6b80);
   }
 
   _createCover() {
     // Central cover clusters - designed for frequent encounters, not a maze
-    const colors = [0x2a344a, 0x2a3a4a, 0x344a5a, 0x3a4a6a];
+    // Warm-lit concrete tones: readable cover vs floor vs walls
+    const colors = [0xb9c4cf, 0xcabdae, 0xa8b6c4, 0xd4c5b0];
     const pick = () => colors[Math.floor(Math.random()*colors.length)];
 
     // Cluster 1 - near center
@@ -77,7 +78,7 @@ export class Map {
     // Cluster 2 - NW
     this._createBox(-14, 0, -12, 4, 2.8, 1.2, pick());
     this._createBox(-12, 0, -14, 1.2, 1.6, 4, pick());
-    this._createBox(-16, 0, -8, 2, 1.2, 2, 0x2a3a4a);
+    this._createBox(-16, 0, -8, 2, 1.2, 2, pick());
 
     // Cluster 3 - SE
     this._createBox(14, 0, 12, 4, 2.2, 1.2, pick());
@@ -92,11 +93,11 @@ export class Map {
     this._createBox(-12, 0, 14, 3, 2.0, 1.2, pick());
     this._createBox(-14, 0, 10, 1.2, 1.6, 3, pick());
 
-    // Platforms (second height)
-    this._createBox(0, 2.2, 8, 8, 0.4, 4, 0x1e2a44);
-    this._createBox(0, 2.2, -8, 6, 0.4, 4, 0x1e2a44);
-    this._createBox(-8, 1.2, 0, 4, 0.4, 6, 0x1e2a44);
-    this._createBox(8, 1.2, 0, 4, 0.4, 6, 0x1e2a44);
+    // Platforms — distinct elevated tone + accent edges
+    this._createBox(0, 2.2, 8, 8, 0.4, 4, 0x9fb06a);
+    this._createBox(0, 2.2, -8, 6, 0.4, 4, 0x9fb06a);
+    this._createBox(-8, 1.2, 0, 4, 0.4, 6, 0x9fb06a);
+    this._createBox(8, 1.2, 0, 4, 0.4, 6, 0x9fb06a);
 
     // Small cover boxes scattered
     for(let i=0;i<6;i++){
@@ -135,20 +136,19 @@ export class Map {
     return pick.clone().add(jitter);
   }
 
-  getGroundY(x, z) {
-    // Simple: ground is at 0, but platforms are at y=2.2
-    // For now, just return 0, but could check if over platform
-    // Check platforms: they are at y=2.2 with height 0.4, so top at 2.6
-    // But for MVP, keep ground at 0, platforms are just cover, not walkable? For simplicity, make platforms walkable by checking AABB top
+  // Highest walkable surface at (x,z) whose top is reachable from feetY
+  // (within stepUp). Platforms above the entity's head are ceilings, not floor.
+  getGroundY(x, z, feetY = Infinity, stepUp = 0.5) {
+    let best = 0;
     for(const box of this.boxes){
-      if(box.h < 1) {
-        // Platform
-        if(x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z){
-          if(box.max.y > 1) return box.max.y;
-        }
+      if(box.h >= 1) continue; // not a walkable platform
+      if(box.max.y <= 0.5) continue;
+      if(box.max.y > feetY + stepUp) continue; // above feet: not ground for this entity
+      if(x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z){
+        if(box.max.y > best) best = box.max.y;
       }
     }
-    return 0;
+    return best;
   }
 
   checkCollision(pos, radius, height) {
@@ -160,7 +160,9 @@ export class Map {
       if(maxX < box.min.x || minX > box.max.x) continue;
       if(maxZ < box.min.z || minZ > box.max.z) continue;
       if(maxY < box.min.y || minY > box.max.y) continue;
-      // Skip ground (y=0) - ground is not a wall, handled separately
+      // Skip walkable platforms when standing on top — they are floors, not walls
+      if(box.h < 1 && minY >= box.max.y - 0.05) continue;
+      // Thin ground debris not collidable (defensive)
       if(box.min.y === 0 && box.max.y < 1) continue;
       return true;
     }
@@ -170,30 +172,61 @@ export class Map {
   }
 
   raycast(start, dir, maxDist) {
-    // Simple ray against boxes
-    const ray = new THREE.Ray(start, dir);
+    // Robust slab ray-AABB — guarantees real wall occlusion
     let closest = null;
     let closestDist = maxDist;
 
     for(const box of this.boxes){
-      // Skip small ground boxes? Keep them as cover
-      const boxMesh = box.mesh;
-      // Use Three's Raycaster for mesh
-      // For performance, do AABB check first
-      const invDir = new THREE.Vector3(1/dir.x, 1/dir.y, 1/dir.z);
-      // Simplified: just check distance to box center
-      const center = new THREE.Vector3((box.min.x+box.max.x)/2, (box.min.y+box.max.y)/2, (box.min.z+box.max.z)/2);
-      const toCenter = center.clone().sub(start);
-      const proj = toCenter.dot(dir);
-      if(proj < 0 || proj > closestDist) continue;
-      const closestPoint = start.clone().addScaledVector(dir, proj);
-      const dx = Math.max(box.min.x - closestPoint.x, 0, closestPoint.x - box.max.x);
-      const dy = Math.max(box.min.y - closestPoint.y, 0, closestPoint.y - box.max.y);
-      const dz = Math.max(box.min.z - closestPoint.z, 0, closestPoint.z - box.max.z);
-      const distSq = dx*dx + dy*dy + dz*dz;
-      if(distSq < 0.01 && proj < closestDist){
-        closestDist = proj;
-        closest = { distance: proj, point: closestPoint, box };
+      const min = box.min, max = box.max;
+      let tmin = -Infinity, tmax = Infinity;
+
+      // X slab
+      if (Math.abs(dir.x) < 1e-8) {
+        if (start.x < min.x || start.x > max.x) continue;
+      } else {
+        const inv = 1 / dir.x;
+        let t1 = (min.x - start.x) * inv;
+        let t2 = (max.x - start.x) * inv;
+        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) continue;
+      }
+      // Y slab
+      if (Math.abs(dir.y) < 1e-8) {
+        if (start.y < min.y || start.y > max.y) continue;
+      } else {
+        const inv = 1 / dir.y;
+        let t1 = (min.y - start.y) * inv;
+        let t2 = (max.y - start.y) * inv;
+        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) continue;
+      }
+      // Z slab
+      if (Math.abs(dir.z) < 1e-8) {
+        if (start.z < min.z || start.z > max.z) continue;
+      } else {
+        const inv = 1 / dir.z;
+        let t1 = (min.z - start.z) * inv;
+        let t2 = (max.z - start.z) * inv;
+        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) continue;
+      }
+
+      // tmin is entry, tmax is exit
+      if (tmax < 0) continue; // behind
+      const dist = tmin >= 0 ? tmin : tmax;
+      if (dist < 0 || dist > closestDist) continue;
+      // Skip if ray origin inside the box and exiting immediately (defensive: still counts as hit at 0)
+      // but for walls we want to treat origin inside as not occluding self — ignore hits <0.08
+      if (dist < 0.08) continue;
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = { distance: dist, point: start.clone().addScaledVector(dir, dist), box };
       }
     }
     return closest;

@@ -13,8 +13,8 @@ export class Game {
     
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0f1e);
-    this.scene.fog = new THREE.Fog(0x0a0f1e, 28, 72);
+    this.scene.background = new THREE.Color(0x87b5e8);
+    this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
 
     // Renderer — eficiencia: sin antialias en móvil, pixelRatio ≤1.5, sombras 1024
     const isMobile = window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -55,6 +55,7 @@ export class Game {
 
     // Weapon
     this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this, this.applyDamage.bind(this));
+    this.weaponSystem.playerController = this.playerController;
 
     // Bots
     this.bots = [];
@@ -76,17 +77,24 @@ export class Game {
 
     // Effects — pooling para eficiencia (no crear Geometry/Material por disparo)
     this.hitFlash = 0;
+    this._hitstop = 0;
+    this._shake = 0;
     this._activeFlashes = [];
     this._activeImpacts = [];
     this._activeBloods = [];
+    this._activeRings = [];
     // Geometrías compartidas
-    this._geoMuzzle = new THREE.SphereGeometry(0.035, 6, 6);
-    this._matMuzzle = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.75 });
+    this._geoMuzzle = new THREE.SphereGeometry(0.06, 6, 6);
+    this._matMuzzle = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 });
+    this._geoMuzzleCore = new THREE.SphereGeometry(0.035, 6, 6);
+    this._matMuzzleCore = new THREE.MeshBasicMaterial({ color: 0xfff8e0 });
     this._geoImpact = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-    this._matImpact = new THREE.MeshStandardMaterial({ color: 0x8ea0c0, transparent: true, opacity: 1 });
-    this._matImpactHead = new THREE.MeshStandardMaterial({ color: 0xff4444, transparent: true, opacity: 1 });
-    this._geoBlood = new THREE.SphereGeometry(0.04, 4, 4);
-    this._matBlood = new THREE.MeshBasicMaterial({ color: 0xcc2222, transparent: true, opacity: 0.8 });
+    this._matImpact = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 });
+    this._matImpactHead = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 1 });
+    this._geoBlood = new THREE.SphereGeometry(0.05, 4, 4);
+    this._matBlood = new THREE.MeshBasicMaterial({ color: 0xcc2222, transparent: true, opacity: 0.85 });
+    this._geoRing = new THREE.RingGeometry(0.1, 0.16, 12);
+    this._matRing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
 
     // Time
     this.clock = new THREE.Clock();
@@ -104,10 +112,13 @@ export class Game {
   }
 
   _setupLights() {
-    const ambient = new THREE.HemisphereLight(0x8ecbff, 0x1a2332, 0.85);
+    // Bright arcade-military daylight: readable, not washed out
+    this.renderer.toneMappingExposure = 1.15;
+
+    const ambient = new THREE.HemisphereLight(0xbfd9ff, 0x3d4a5f, 1.15);
     this.scene.add(ambient);
 
-    const dir = new THREE.DirectionalLight(0xfff4cc, 1.1);
+    const dir = new THREE.DirectionalLight(0xfff2d4, 1.35);
     dir.position.set(18, 28, 12);
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024, 1024);
@@ -120,8 +131,8 @@ export class Game {
     dir.shadow.bias = -0.0006;
     this.scene.add(dir);
 
-    // Fill light
-    const fill = new THREE.DirectionalLight(0x4a8bff, 0.32);
+    // Cool fill from opposite side — separates bots from walls
+    const fill = new THREE.DirectionalLight(0x7db4ff, 0.45);
     fill.position.set(-12, 14, -18);
     this.scene.add(fill);
   }
@@ -145,6 +156,7 @@ export class Game {
 
     const startGame = ()=>{
       this.audio.init();
+      this.audio.play('ui');
       this.startMatch();
       overlay.classList.add('hidden');
       titleBlock.classList.add('hidden');
@@ -225,6 +237,7 @@ export class Game {
       // Hit flash
       if(!died){
         this.hitFlash = 0.28;
+        if(this.audio) this.audio.play('hurt');
         document.body.style.background = 'radial-gradient(ellipse at center, rgba(255,60,60,0.18) 0%, transparent 70%)';
         setTimeout(()=> document.body.style.background='', 90);
       }
@@ -237,16 +250,15 @@ export class Game {
       if(attacker && !attacker.isBot){
         this.playerKills++;
         this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
+        this.hud.showKillBanner(hitType==='head');
         if(this.audio) this.audio.play('kill');
+        // Kill punch: micro hitstop + subtle shake — feels earned, gone fast
+        this._hitstop = 0.055;
+        this._shake = Math.min(1, (this._shake||0) + 0.5);
       } else if(!target.isBot){
         this.playerDeaths++;
       } else if(target.isBot && attacker && attacker.isBot){
         attacker.kills++;
-      } else if(target.isBot){
-        // Bot killed by player
-        if(attacker && !attacker.isBot){
-          // already counted
-        }
       }
 
       // Respawn after 1.8s
@@ -272,6 +284,7 @@ export class Game {
             }
           }
           this.playerController.respawn(farPos);
+          if(this.audio) this.audio.play('respawn');
         }
       }, 1800);
 
@@ -290,29 +303,42 @@ export class Game {
 
   // VFX helpers — pooling + loop central (sin rAF por partícula)
   muzzleFlash(pos, dir) {
-    const mat = this._matMuzzle.clone();
-    const flash = new THREE.Mesh(this._geoMuzzle, mat);
-    flash.position.copy(pos).addScaledVector(dir, 0.75);
+    // Two-layer flash: glowing shell + hot core, at the muzzle tip
+    const flash = new THREE.Mesh(this._geoMuzzle, this._matMuzzle.clone());
+    flash.position.copy(pos).addScaledVector(dir, 0.10);
+    flash.scale.set(1.6, 1.6, 2.4);
     this.scene.add(flash);
-    this._activeFlashes.push({ mesh: flash, life: 0.05 });
+    this._activeFlashes.push({ mesh: flash, life: 0.055, maxLife: 0.055 });
+
+    const core = new THREE.Mesh(this._geoMuzzleCore, this._matMuzzleCore);
+    core.position.copy(flash.position);
+    this.scene.add(core);
+    this._activeFlashes.push({ mesh: core, life: 0.04, maxLife: 0.04 });
   }
 
   impact(point, isHeadshot) {
-    const mat = (isHeadshot ? this._matImpactHead.clone() : this._matImpact.clone());
+    // Impact cube + expanding ring decal (always faces camera)
+    const mat = (isHeadshot ? this._matImpactHead : this._matImpact).clone();
     const cube = new THREE.Mesh(this._geoImpact, mat);
     cube.position.copy(point);
     this.scene.add(cube);
     this._activeImpacts.push({ mesh: cube, life: 0.36, maxLife: 0.36 });
+
+    const ring = new THREE.Mesh(this._geoRing, this._matRing.clone());
+    ring.position.copy(point);
+    ring.quaternion.copy(this.camera.quaternion);
+    this.scene.add(ring);
+    this._activeRings.push({ mesh: ring, life: 0.22, maxLife: 0.22 });
   }
 
   blood(point) {
-    for(let i=0;i<4;i++){
+    for(let i=0;i<5;i++){
       const mat = this._matBlood.clone();
       const p = new THREE.Mesh(this._geoBlood, mat);
       p.position.copy(point);
       p.position.y += 0.12;
       this.scene.add(p);
-      const vel = new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.2+0.4, (Math.random()-0.5)*2);
+      const vel = new THREE.Vector3((Math.random()-0.5)*2.4, Math.random()*1.5+0.5, (Math.random()-0.5)*2.4);
       this._activeBloods.push({ mesh: p, vel, life: 0.42, maxLife: 0.42 });
     }
   }
@@ -323,13 +349,28 @@ export class Game {
       const f = this._activeFlashes[i];
       f.life -= dt;
       if(f.life <= 0){ this.scene.remove(f.mesh); this._activeFlashes.splice(i,1); }
+      else if (f.mesh.material.transparent) {
+        f.mesh.material.opacity = Math.max(0, f.life / f.maxLife) * 0.9;
+      }
     }
     // Impacts
     for(let i=this._activeImpacts.length-1;i>=0;i--){
       const it = this._activeImpacts[i];
       it.life -= dt;
       if(it.life <= 0){ this.scene.remove(it.mesh); this._activeImpacts.splice(i,1); }
-      else { it.mesh.position.y += dt * 1.2; it.mesh.material.opacity = it.life / it.maxLife; }
+      else { it.mesh.position.y += dt * 1.2; it.mesh.material.opacity = it.life / it.maxLife; it.mesh.rotation.x += dt*6; it.mesh.rotation.y += dt*4; }
+    }
+    // Rings
+    for(let i=this._activeRings.length-1;i>=0;i--){
+      const r = this._activeRings[i];
+      r.life -= dt;
+      if(r.life <= 0){ this.scene.remove(r.mesh); this._activeRings.splice(i,1); }
+      else {
+        const k = 1 - r.life / r.maxLife;
+        const s = 1 + k * 2.2;
+        r.mesh.scale.set(s, s, s);
+        r.mesh.material.opacity = (1 - k) * 0.7;
+      }
     }
     // Blood
     for(let i=this._activeBloods.length-1;i>=0;i--){
@@ -346,15 +387,35 @@ export class Game {
 
   animate() {
     requestAnimationFrame(()=> this.animate());
-    const dt = Math.min(this.clock.getDelta(), 0.033);
+    let dt = Math.min(this.clock.getDelta(), 0.033);
     const time = this.clock.elapsedTime;
 
     // FPS
     this.fps = 1/dt;
 
     if(this.matchState !== 'PLAYING'){
+      // Lobby camera: slow orbit over the arena — the game itself is the menu backdrop
+      const t = this.clock.elapsedTime;
+      const r = 26, h = 12;
+      this.camera.position.set(Math.sin(t * 0.08) * r, h, Math.cos(t * 0.08) * r);
+      this.camera.lookAt(0, 1, 0);
+      // Bots wander during lobby so the arena feels alive (no shooting: the
+      // player ghost is hidden from targeting while in menu)
+      const playerWasTargetable = this.player.isAlive;
+      this.player.isAlive = false;
+      for (const bot of this.bots) bot.update(Math.min(dt, 0.033), this.player, this.bots, this.map);
+      this.player.isAlive = playerWasTargetable;
+      this._updateVFX(Math.min(dt, 0.033));
+      // Hide first-person viewmodel while in menu
+      if (this.weaponSystem && this.weaponSystem.weaponMesh) this.weaponSystem.weaponMesh.visible = false;
       this.renderer.render(this.scene, this.camera);
       return;
+    }
+
+    // Kill hitstop: 55ms of 45% time-scale — punchy, never interruptive
+    if(this._hitstop > 0){
+      dt *= 0.45;
+      this._hitstop -= Math.min(this._hitstop, 1/60);
     }
 
     this.matchTime += dt;
@@ -374,8 +435,8 @@ export class Game {
     // Player
     this.playerController.update(dt);
 
-    // ADS is intentionally only a camera zoom in this prototype: it makes the
-    // advertised aim input useful without introducing a second movement model.
+    // ADS is a camera zoom + weapon centering: one aim input, one feel.
+    this.weaponSystem.setAim(this.input.aim, dt);
     const targetFov = this.input.aim ? 62 : 78;
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1, dt * 14));
@@ -395,9 +456,8 @@ export class Game {
     for(const bot of this.bots){
       const action = bot.update(dt, this.player, this.bots, this.map);
       if(action && action.shoot && bot.isAlive){
-        // Bot shooting: need to handle like player but from bot position/orientation
-        // Create a fake camera at bot eyes for WeaponSystem
-        const botEyePos = bot.position.clone(); botEyePos.y += 0.6;
+        // Bot shooting: eye is at head, not 0.6 above top
+        const botEyePos = bot.position.clone(); botEyePos.y -= 0.12;
         const botDir = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
         // Add slight vertical aim to target if target is higher/lower
         if(action.target){
@@ -447,7 +507,8 @@ export class Game {
       deaths: this.playerDeaths,
       fps: this.fps,
       pos: this.player.position,
-      botCount: aliveBots
+      botCount: aliveBots,
+      weaponName: this.weaponSystem.currentWeapon.name
     });
 
     // Hit flash fade
@@ -455,8 +516,22 @@ export class Game {
       this.hitFlash -= dt;
     }
 
+    // Screen shake (kill punch / damage) — applied as transient camera offset
+    if(this._shake > 0.001){
+      const s = this._shake;
+      this.camera.position.x += (Math.random()-0.5) * s * 0.09;
+      this.camera.position.y += (Math.random()-0.5) * s * 0.09;
+      this.camera.rotation.z += (Math.random()-0.5) * s * 0.012;
+      this._shake *= Math.max(0, 1 - dt * 12); // linear-ish decay, ~gone in 0.25s
+      if(this._shake < 0.001) this._shake = 0;
+    }
+
     this._updateVFX(dt);
 
     this.renderer.render(this.scene, this.camera);
+
+    // Shake offsets must not persist into the next simulation step:
+    // PlayerController.update() overwrites camera.position/rotation from
+    // authoritative player state each frame, so no restore is needed.
   }
 }

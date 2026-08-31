@@ -75,22 +75,46 @@ export class WeaponSystem {
 
   _createWeaponMesh() {
     const group = new THREE.Group();
-    // Body
-    const bodyGeo = new THREE.BoxGeometry(0.12, 0.08, 0.42);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2f45, roughness: 0.7 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.set(0.28, -0.18, -0.42);
-    group.add(body);
+    const dark = new THREE.MeshStandardMaterial({ color: 0x23283c, roughness: 0.6, metalness: 0.35 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.45 });
+    const accent = new THREE.MeshStandardMaterial({ color: 0xffb400, roughness: 0.4, metalness: 0.3, emissive: 0x302000 });
+
+    const add = (geo, mat, x, y, z, rotX = 0) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      if (rotX) m.rotation.x = rotX;
+      group.add(m);
+      return m;
+    };
+
+    // Receiver (main body)
+    add(new THREE.BoxGeometry(0.09, 0.11, 0.34), dark, 0, 0, 0);
+    // Upper rail
+    add(new THREE.BoxGeometry(0.05, 0.03, 0.30), black, 0, 0.075, -0.02);
     // Barrel
-    const barrelGeo = new THREE.BoxGeometry(0.04, 0.04, 0.32);
-    const barrelMat = new THREE.MeshStandardMaterial({ color: 0x1a1f33 });
-    const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-    barrel.position.set(0.28, -0.15, -0.62);
-    group.add(barrel);
-    // Muzzle point
-    this.muzzlePos = new THREE.Vector3(0.28, -0.15, -0.78);
-    group.muzzle = barrel;
+    add(new THREE.BoxGeometry(0.045, 0.045, 0.30), black, 0, 0.01, -0.30);
+    // Muzzle brake
+    add(new THREE.BoxGeometry(0.07, 0.07, 0.06), black, 0, 0.01, -0.46);
+    // Magazine (slightly angled)
+    add(new THREE.BoxGeometry(0.06, 0.16, 0.09), black, 0, -0.125, 0.04, 0.12);
+    // Grip
+    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), black, 0, -0.11, 0.16, -0.25);
+    // Stock
+    add(new THREE.BoxGeometry(0.07, 0.10, 0.16), dark, 0, -0.01, 0.24);
+    // Front sight/accent block
+    add(new THREE.BoxGeometry(0.025, 0.05, 0.04), accent, 0, 0.10, -0.16);
+
+    group.userData.parts = { dark, black, accent };
     return group;
+  }
+
+  // Per-weapon viewmodel presets (position offset + scale)
+  _weaponViewPresets() {
+    return {
+      rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0 },
+      pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9 },
+      shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15 },
+    };
   }
 
   update(dt, canShoot) {
@@ -103,32 +127,62 @@ export class WeaponSystem {
         this.ammoInMag += toLoad;
         this.reserveAmmo -= toLoad;
         this.isReloading = false;
-        if (this.audio) this.audio.play('reload');
+        if (this.audio) this.audio.play('reloadEnd');
       }
     }
-    // Recoil recovery
-    this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, dt * 8);
+    // Recoil recovery (spring back)
+    this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, Math.min(1, dt * 9));
+    this.recoilKick = THREE.MathUtils.lerp(this.recoilKick || 0, 0, Math.min(1, dt * 10));
 
-    // Update weapon mesh position (attached to camera)
+    // Hide viewmodel outside a live match (lobby orbit shows the arena)
+    if (this.weaponMesh) this.weaponMesh.visible = canShoot !== false;
+    if (canShoot === false) return;
+
+    // Weapon viewmodel follows camera with ADS blend + recoil kickback
     if (this.weaponMesh) {
-      // Position relative to camera
+      const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
+      // ADS pulls the weapon to center
+      const ads = this._adsBlend;
+      const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads);
+      const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
+      const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + (this.recoilKick || 0) * 0.09;
+
+      // Smooth follow for position
+      this._vmPos = this._vmPos || preset.pos.clone();
+      this._vmPos.x = THREE.MathUtils.lerp(this._vmPos.x, targetX, Math.min(1, dt * 14));
+      this._vmPos.y = THREE.MathUtils.lerp(this._vmPos.y, targetY, Math.min(1, dt * 14));
+      this._vmPos.z = THREE.MathUtils.lerp(this._vmPos.z, targetZ, Math.min(1, dt * 14));
+
       this.weaponMesh.position.copy(this.camera.position);
       this.weaponMesh.quaternion.copy(this.camera.quaternion);
-      // Offset forward/right/down
-      const offset = new THREE.Vector3(0.28, -0.18 - this.recoilOffset*0.04, -0.42);
+      const offset = this._vmPos.clone();
       offset.applyQuaternion(this.camera.quaternion);
       this.weaponMesh.position.add(offset);
-      // Recoil kick
-      this.weaponMesh.rotation.x = this.camera.rotation.x - this.recoilOffset * 0.04;
+
+      // Recoil pitch on viewmodel
+      this.weaponMesh.rotation.x = this.camera.rotation.x - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
       this.weaponMesh.rotation.y = this.camera.rotation.y;
       this.weaponMesh.rotation.z = this.camera.rotation.z;
+      const s = preset.scale * (1 - ads * 0.12);
+      this.weaponMesh.scale.setScalar(s);
     }
+  }
+
+  // ADS state blend (0..1), driven by Input.aim from Game
+  setAim(aiming, dt) {
+    const target = aiming ? 1 : 0;
+    this._adsBlend = THREE.MathUtils.lerp(this._adsBlend || 0, target, Math.min(1, dt * 12));
   }
 
   canFire(usesPlayerAmmo = true) {
     if (this.isReloading) return false;
     if (usesPlayerAmmo && this.fireCooldown > 0) return false;
     if (usesPlayerAmmo && this.ammoInMag <= 0) {
+      // Dry-fire click only when actively trying to shoot (not on spam frames)
+      if (!this._emptyClickAt || performance.now() - this._emptyClickAt > 250) {
+        this._emptyClickAt = performance.now();
+        if (this.audio) this.audio.play('empty');
+      }
       this.reload();
       return false;
     }
@@ -146,6 +200,13 @@ export class WeaponSystem {
       this.ammoInMag--;
       this.fireCooldown = weapon.fireRate;
       this.recoilOffset += weapon.recoil;
+      this.recoilKick = Math.min(1.4, (this.recoilKick || 0) + weapon.recoil * 0.5);
+      // Camera recoil kick — handled by the controller that owns the camera
+      if (this.playerController && this.playerController.addRecoil) {
+        const ads = this._adsBlend || 0;
+        const scale = 1 - ads * 0.35;
+        this.playerController.addRecoil(weapon.recoil * 0.011 * scale, (Math.random()-0.5) * weapon.recoil * 0.006);
+      }
     }
 
     // Crosshair feedback
@@ -156,14 +217,25 @@ export class WeaponSystem {
 
     if (this.audio) this.audio.play('shoot', weapon.name);
 
-    // Muzzle flash
-    if (usesPlayerAmmo && this.vfx) this.vfx.muzzleFlash(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+    // Muzzle flash — from viewmodel muzzle in world space
+    if (usesPlayerAmmo && this.vfx) {
+      const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
+      const ads = this._adsBlend || 0;
+      const mx = THREE.MathUtils.lerp(preset.pos.x, 0, ads);
+      const my = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
+      const mz = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) - 0.48; // muzzle tip
+      const muzzleLocal = new THREE.Vector3(mx, my + 0.01, mz);
+      const muzzleWorld = muzzleLocal.applyQuaternion(this.camera.quaternion).add(this.camera.position);
+      this.vfx.muzzleFlash(muzzleWorld, this.camera.getWorldDirection(new THREE.Vector3()));
+    }
 
     // Raycast for each pellet
     let hits = [];
     for (let p = 0; p < weapon.pellets; p++) {
-      const spreadX = (Math.random()-0.5) * weapon.spread;
-      const spreadY = (Math.random()-0.5) * weapon.spread;
+      // ADS tightens spread (stable aim)
+      const spreadScale = 1 - (this._adsBlend || 0) * 0.65;
+      const spreadX = (Math.random()-0.5) * weapon.spread * spreadScale;
+      const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
       
       const direction = new THREE.Vector3();
       this.camera.getWorldDirection(direction);
@@ -186,17 +258,18 @@ export class WeaponSystem {
       for (const target of targets) {
         if (target === shooter) continue;
         if (!target.isAlive) continue;
-        // Simple sphere check (head is higher)
-        const toTarget = new THREE.Vector3().subVectors(target.position, this.camera.position);
-        const projDist = toTarget.dot(direction);
+        // Target.position is eye height: feet = y - height. Hitboxes must be
+        // measured DOWN from eye, matching the visible mesh:
+        // head cube center ≈ feet+1.55 → eye-0.10, body torso ≈ eye-0.62.
+        const h = target.height || 1.65;
+        const bodyPos = target.position.clone(); bodyPos.y -= h * 0.38;
+        const headPos = target.position.clone(); headPos.y -= 0.10;
+        const toBody = new THREE.Vector3().subVectors(bodyPos, this.camera.position);
+        const projDist = toBody.dot(direction);
         if (projDist < 0 || projDist > closestDist) continue;
         const closestPoint = this.camera.position.clone().addScaledVector(direction, projDist);
-        const distToCenter = closestPoint.distanceTo(target.position);
-        // Body radius 0.4, head is 0.25 at y+0.5
-        const bodyHit = distToCenter < 0.45;
-        const headPos = target.position.clone(); headPos.y += 0.55;
-        const headDist = closestPoint.distanceTo(headPos);
-        const headHit = headDist < 0.22;
+        const bodyHit = closestPoint.distanceTo(bodyPos) < 0.55;
+        const headHit = closestPoint.distanceTo(headPos) < 0.28;
 
         if (bodyHit || headHit) {
           closestDist = projDist;
@@ -251,7 +324,9 @@ export class WeaponSystem {
     // Hitmarker
     if (usesPlayerAmmo && hits.length > 0) {
       this.showHitmarker(killed);
-      if (this.audio) this.audio.play(killed ? 'kill' : 'hit');
+      const headshot = hits.some(h => h.headshot);
+      if (this.audio) this.audio.play(killed ? 'kill' : (headshot ? 'headshot' : 'hit'));
+      if (headshot && !killed && this.vfx && this.vfx.hud) this.vfx.hud.showHitBanner(true);
     }
 
     // Auto reload if empty
@@ -266,12 +341,13 @@ export class WeaponSystem {
   showHitmarker(killed) {
     if (!this.hitmarker) return;
     this.hitmarker.classList.add('show');
-    this.hitmarker.style.borderColor = killed ? '#ff4444' : '#ffd23f';
-    this.hitmarker.style.transform = 'translate(-50%,-50%) scale(1.4)';
-    setTimeout(()=> {
+    const ticks = this.hitmarker.querySelectorAll('i');
+    const color = killed ? '#ff4444' : '#ffd23f';
+    ticks.forEach(t => t.style.background = color);
+    clearTimeout(this._hmTimer);
+    this._hmTimer = setTimeout(()=> {
       this.hitmarker.classList.remove('show');
-      this.hitmarker.style.transform = 'translate(-50%,-50%) scale(1)';
-    }, 140);
+    }, killed ? 220 : 130);
     if (this.crosshair) {
       this.crosshair.classList.add('hit');
       setTimeout(()=> this.crosshair.classList.remove('hit'), 120);
@@ -284,7 +360,7 @@ export class WeaponSystem {
     if (this.reserveAmmo <= 0) return;
     this.isReloading = true;
     this.reloadTimer = this.currentWeapon.reloadTime;
-    if (this.audio) this.audio.play('reload');
+    if (this.audio) this.audio.play('reloadStart');
   }
 
   switchWeapon(dir) {
@@ -298,21 +374,21 @@ export class WeaponSystem {
     if (idx === this.currentIndex) return;
     this.currentIndex = idx;
     this.currentWeapon = WeaponData[this.weapons[this.currentIndex]];
-    // Keep ammo? For prototype, keep same ammo but update mag size to new weapon's mag if needed
-    // For simplicity, refill on switch
+    // Fresh mag on switch keeps the loop simple; ammo economy is not a goal.
     this.ammoInMag = this.currentWeapon.magazineSize;
     this.reserveAmmo = this.currentWeapon.magazineSize * 3;
     this.isReloading = false;
     this.fireCooldown = 0.2;
+    if (this.audio) this.audio.play('switch');
     this._updateWeaponMesh();
   }
 
   _updateWeaponMesh() {
     if (!this.weaponMesh) return;
-    // Change color based on weapon
-    const colors = { rifle: 0x2a2f45, pistol: 0x3a2f2a, shotgun: 0x2a3a2f };
-    const color = colors[this.weapons[this.currentIndex]] || 0x2a2f45;
-    this.weaponMesh.children[0].material.color.setHex(color);
+    // Accent block color hints at weapon type
+    const accents = { rifle: 0xffb400, pistol: 0x4ade80, shotgun: 0xff5a3c };
+    const parts = this.weaponMesh.userData.parts;
+    if (parts) parts.accent.color.setHex(accents[this.weapons[this.currentIndex]] || 0xffb400);
   }
 
   getAmmoText() {

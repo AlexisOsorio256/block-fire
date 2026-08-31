@@ -17,10 +17,20 @@ export class PlayerController {
     this.pitch = 0;
     this.sensitivity = 0.0022;
 
-    this.moveSpeed = 5.2;
-    this.sprintSpeed = 7.0;
-    this.jumpForce = 7.5;
-    this.gravity = 22;
+    // Fast arcade FPS feel: base run is already fast, sprint is a boost.
+    this.moveSpeed = 6.0;
+    this.sprintSpeed = 7.8;
+    this.jumpForce = 8.2;
+    this.gravity = 26;
+
+    // Accel: snap toward wish velocity; friction stops without gluing mid-air
+    this.groundAccel = 52;
+    this.groundFriction = 36;
+    this.airAccel = 24;
+
+    // Feel details (subtle, cheap)
+    this.roll = 0;          // strafe camera roll (radians)
+    this.bobTime = 0;       // head bob phase
 
     this.height = 1.65;
     this.radius = 0.35;
@@ -57,10 +67,12 @@ export class PlayerController {
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
-    // Apply rotation to camera
+    // Apply rotation to camera — yaw/pitch + subtle strafe roll
+    this.roll = THREE.MathUtils.lerp(this.roll, -this.input.move.x * 0.018, Math.min(1, dt * 10));
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+    this.camera.rotation.z = this.roll;
 
     // Movement
     const move = this.input.move;
@@ -78,14 +90,16 @@ export class PlayerController {
     wishDir.addScaledVector(forward, move.y);
     wishDir.addScaledVector(right, move.x);
     if (wishDir.lengthSq() > 0) wishDir.normalize();
-
-    // Apply velocity
-    const accel = this.onGround ? 38 : 12;
     const wishVel = wishDir.multiplyScalar(speed);
-    
-    // Simple lerp for acceleration
-    this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, wishVel.x, Math.min(1, accel * dt));
-    this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, wishVel.z, Math.min(1, accel * dt));
+
+    // Acceleration toward wish velocity. Separate accel/friction gives
+    // instant response + precise stops without feeling glued mid-air.
+    const accel = this.onGround
+      ? (wishDir.lengthSq() > 0 ? this.groundAccel : this.groundFriction)
+      : this.airAccel;
+    const t = Math.min(1, accel * dt);
+    this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, wishVel.x, t);
+    this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, wishVel.z, t);
 
     // Gravity and jump
     if (this.input.jump && this.onGround) {
@@ -97,9 +111,10 @@ export class PlayerController {
     // Apply movement with simple collision against map
     const nextPos = this.player.position.clone().addScaledVector(this.velocity, dt);
     
-    // Simple ground check (ray down)
-    const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z) : 0;
-    const playerBottom = nextPos.y - this.height;
+    // Simple ground check: highest walkable surface at or below feet (+step)
+    const feetY = nextPos.y - this.height;
+    const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z, feetY) : 0;
+    const playerBottom = feetY;
     if (playerBottom <= groundY) {
       nextPos.y = groundY + this.height;
       this.velocity.y = Math.max(0, this.velocity.y);
@@ -138,16 +153,29 @@ export class PlayerController {
     this.player.position.copy(nextPos);
     this.player.position.y = Math.max(this.player.position.y, groundY + this.height);
 
-    // Update camera position (eyes)
+    // Update camera position (eyes) + subtle run bob
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    if (this.onGround && horizSpeed > 1) {
+      this.bobTime += dt * (6 + horizSpeed * 0.7);
+    } else {
+      this.bobTime = 0;
+    }
+    const bob = this.bobTime > 0 ? Math.sin(this.bobTime) * 0.03 * Math.min(1, horizSpeed / this.moveSpeed) : 0;
     this.camera.position.copy(this.player.position);
-    this.camera.position.y += 0.15; // eye offset
+    this.camera.position.y += 0.15 + bob; // eye offset + bob
 
-    // Update player mesh (for bots to see)
+    // Update player mesh (for bots to see) — align feet to ground
     if (this.player.mesh) {
       this.player.mesh.position.copy(this.player.position);
-      this.player.mesh.position.y -= this.height - 0.9;
+      this.player.mesh.position.y -= this.height;
       this.player.mesh.rotation.y = this.yaw;
     }
+  }
+
+  // Small camera recoil kick (pitch up + random yaw), applied by WeaponSystem
+  addRecoil(pitchKick, yawKick) {
+    this.pitch = Math.min(Math.PI/2 - 0.1, this.pitch + pitchKick);
+    this.yaw += yawKick;
   }
 
   takeDamage(amount) {
@@ -162,8 +190,8 @@ export class PlayerController {
   }
 
   respawn(pos) {
-    this.player.position.copy(pos);
-    this.player.position.y = this.map ? this.map.getGroundY(pos.x, pos.z) + this.height : this.height;
+    const gy = this.map ? this.map.getGroundY(pos.x, pos.z) : 0;
+    this.player.position.set(pos.x, gy + this.height, pos.z);
     this.velocity.set(0,0,0);
     this.health = this.maxHealth;
     this.player.isAlive = true;
