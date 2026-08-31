@@ -13,7 +13,36 @@ export class Game {
     
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87b5e8);
+    // Gradient sky dome — cheap (1 sphere, BackSide, no lighting) but reads
+    // as "sky" instead of a flat color. Horizon haze matches the fog.
+    const skyGeo = new THREE.SphereGeometry(160, 16, 12);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        top: { value: new THREE.Color(0x4a90d9) },
+        horizon: { value: new THREE.Color(0xbfe0f5) },
+        below: { value: new THREE.Color(0x87b5e8) }
+      },
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 top; uniform vec3 horizon; uniform vec3 below;
+        varying vec3 vDir;
+        void main() {
+          float h = vDir.y;
+          vec3 c = h > 0.0
+            ? mix(horizon, top, pow(h, 0.55))
+            : mix(horizon, below, pow(-h, 0.7));
+          gl_FragColor = vec4(c, 1.0);
+        }`
+    });
+    this.scene.add(new THREE.Mesh(skyGeo, skyMat));
     this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
 
     // Renderer — mobile renders at a sharper DPR cap, with a dynamic downscaler
@@ -313,7 +342,11 @@ export class Game {
       if(attacker && !attacker.isBot){
         this.playerKills++;
         this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
-        this.hud.showKillBanner(hitType==='head');
+        // Player kill streak: consecutive kills within 3.5s escalate the banner
+        const now = performance.now();
+        this._streakCount = (now - (this._lastKillAt || 0) < 3500) ? (this._streakCount || 0) + 1 : 1;
+        this._lastKillAt = now;
+        this.hud.showKillBanner(hitType==='head', this._streakCount);
         if(this.audio) this.audio.play('kill');
         if(this.audio) this.audio.play('kill_banner');
         // Kill punch: micro hitstop + shake strong enough to FEEL it (vision
@@ -322,6 +355,8 @@ export class Game {
         this._shake = Math.min(1.6, (this._shake||0) + 1.4);
       } else if(!target.isBot){
         this.playerDeaths++;
+        // Player death breaks any active streak
+        this._streakCount = 0;
         // Death transition: red fade + MUERTE banner until respawn
         const dOv = document.getElementById('death-overlay');
         if (dOv) dOv.classList.add('show');
@@ -474,7 +509,10 @@ export class Game {
       // player ghost is hidden from targeting while in menu)
       const playerWasTargetable = this.player.isAlive;
       this.player.isAlive = false;
-      for (const bot of this.bots) bot.update(Math.min(dt, 0.033), this.player, this.bots, this.map);
+      for (const bot of this.bots) {
+        if (!bot.isAlive) { if (bot._dyingT > 0) bot._updateDying(Math.min(dt, 0.033)); continue; }
+        bot.update(Math.min(dt, 0.033), this.player, this.bots, this.map);
+      }
       this.player.isAlive = playerWasTargetable;
       this._updateVFX(Math.min(dt, 0.033));
       // Hide first-person viewmodel while in menu
@@ -515,6 +553,8 @@ export class Game {
     }
 
     // Weapon
+    // Feed the weapon the player's horizontal speed for walk bob/sway
+    this.weaponSystem.setMoveSpeed(Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z));
     this.weaponSystem.update(dt, this.player.isAlive);
 
     // Shooting (player)
@@ -523,8 +563,13 @@ export class Game {
       this.weaponSystem.fire(this.player, allTargets, this.map);
     }
 
-    // Bots
+    // Bots: dying bots animate their tumble (they no longer run AI); alive
+    // bots run full behavior. Same loop, same contract as before.
     for(const bot of this.bots){
+      if (!bot.isAlive) {
+        if (bot._dyingT > 0) bot._updateDying(dt);
+        continue;
+      }
       const action = bot.update(dt, this.player, this.bots, this.map);
       if(action && action.shoot && bot.isAlive){
         // Bot shooting: eye is at head, not 0.6 above top

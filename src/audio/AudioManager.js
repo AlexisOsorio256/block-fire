@@ -126,6 +126,18 @@ export class AudioManager {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
 
+    // Voice throttle: identical sounds fired within this window replace the
+    // previous one instead of stacking (10 rifle shots/s must not become a
+    // wall of noise). Per-event class so steps don't block shots.
+    const throttleClass = name.startsWith('shoot') ? 'shoot' : name;
+    this._lastPlay = this._lastPlay || {};
+    const minGap = { shoot: 0.03, step: 0.05, hit: 0.02, impact_wall: 0.05 }[throttleClass] || 0;
+    if (minGap && t - (this._lastPlay[throttleClass] || -1) < minGap) {
+      this._lastPlay[throttleClass] = t;
+      return; // too soon after the previous identical sound
+    }
+    this._lastPlay[throttleClass] = t;
+
     // Map game events to real samples first
     const sampleMap = {
       'shoot': variant === 'Shotgun' ? 'shoot-shotgun' : variant === 'Pistol' ? 'shoot-pistol' : 'shoot-rifle',

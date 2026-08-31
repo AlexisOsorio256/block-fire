@@ -190,10 +190,40 @@ export class Bot {
     if (this.health <= 0) {
       this.health = 0;
       this.isAlive = false;
-      this.mesh.visible = false;
+      // DEATH Tumble: visible 0.6s — fall back + spin, then hide. The Game
+      // VFX loop drives _dyingT so no new timer system is needed.
+      this._dyingT = 0.6;
+      this._dyingDir = attacker ? Math.atan2(
+        this.position.x - attacker.position.x,
+        this.position.z - attacker.position.z
+      ) : this.yaw;
       return true;
     }
     return false;
+  }
+
+  // Driven by Game._updateVFX-like flow from update(): animates the death
+  // tumble. Returns false when the death animation is over.
+  _updateDying(dt) {
+    if (this._dyingT <= 0) return false;
+    this._dyingT -= dt;
+    const k = Math.max(0, this._dyingT / 0.6); // 1 → 0
+    if (this.mesh) {
+      // Tilt backward around the base, away from the killer
+      this.mesh.rotation.y = this.yaw;
+      this.mesh.rotation.x = (1 - k) * (Math.PI / 2) * 0.9; // fall back
+      this.mesh.position.y = this.position.y - this.height - (1 - k) * 0.25; // slight sink
+      // Fade out at the end so the hide isn't a pop
+      const fade = Math.min(1, k * 3);
+      this.mesh.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = fade; } });
+      if (this._dyingT <= 0) {
+        this.mesh.visible = false;
+        // Restore materials for next respawn (opacity/transparent are shared
+        // per-bot instances, reset once here)
+        this.mesh.traverse(o => { if (o.material) { o.material.opacity = 1; o.material.transparent = false; } });
+      }
+    }
+    return this._dyingT > 0;
   }
 
   respawn(pos) {
@@ -202,7 +232,9 @@ export class Bot {
     this.position.set(pos.x, gy + this.height, pos.z);
     this.health = this.maxHealth;
     this.isAlive = true;
+    this._dyingT = 0;
     this.mesh.visible = true;
+    this.mesh.rotation.set(0, this.yaw, 0);
     this.mesh.position.copy(this.position);
     this.mesh.position.y -= this.height;
     this.velocity.set(0,0,0);

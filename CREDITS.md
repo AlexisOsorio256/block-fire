@@ -12,9 +12,9 @@ atribución obligatoria. Agradecimiento de cortesía a sus creadores:
   — https://kenney.nl/assets/interface-sounds — © Kenney, CC0
 
 ## Texturas (`assets/textures/`)
-- **Kenney "Prototype Textures"** (texture_01–08, variantes de color)
-  — https://kenney.nl/assets/prototype-textures — © Kenney, CC0
-  Reescaladas a 256px para web/móvil.
+- **Generadas proceduralmente por el proyecto** (PIL): paneles biselados,
+  muro de bloques, crate y plataforma industrial. Sin dependencia externa,
+  dominio propio del proyecto.
 
 ## Procesamiento
 - OGG mono 44.1kHz optimizado con ffmpeg; PNG 256px optimizado con PIL.

@@ -26,6 +26,10 @@ export class HUD {
     if (this.healthEl) {
       this.healthEl.textContent = Math.max(0, Math.round(health));
       this.healthEl.style.color = health > 60 ? '#4ade80' : health > 30 ? '#facc15' : '#f87171';
+      // Low-HP urgency: pulsing red border + heartbeat urgency below 30%
+      if (this.healthEl.parentElement) {
+        this.healthEl.parentElement.classList.toggle('critical', health <= 30 && health > 0);
+      }
     }
     if (this.ammoEl) {
       this.ammoEl.textContent = ammo || '0/0';
@@ -62,13 +66,22 @@ export class HUD {
     }, 2200);
   }
 
-  // Big centered kill confirmation — strong but brief
-  showKillBanner(isHeadshot) {
+  // Big centered kill confirmation — strong but brief. Streak escalation:
+  // 1 kill = ELIMINADO; 2 in 3.5s = DOBLE BAJA; 3+ = RACHA xN.
+  showKillBanner(isHeadshot, streak = 1) {
     if (!this.killbannerEl) return;
     const title = this.killbannerEl.querySelector('.kb-title');
     const sub = this.killbannerEl.querySelector('.kb-sub');
-    title.textContent = 'ELIMINADO';
-    sub.textContent = isHeadshot ? 'HEADSHOT +100' : '+100';
+    if (streak >= 3) {
+      title.textContent = 'RACHA';
+      sub.textContent = `x${streak} ${isHeadshot ? '· HEADSHOT ' : ''}+${100 * streak}`;
+    } else if (streak === 2) {
+      title.textContent = 'DOBLE BAJA';
+      sub.textContent = isHeadshot ? 'HEADSHOT +200' : '+200';
+    } else {
+      title.textContent = 'ELIMINADO';
+      sub.textContent = isHeadshot ? 'HEADSHOT +100' : '+100';
+    }
     this.killbannerEl.classList.remove('show');
     void this.killbannerEl.offsetWidth; // restart animation
     this.killbannerEl.classList.add('show');
