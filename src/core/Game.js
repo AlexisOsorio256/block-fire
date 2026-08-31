@@ -444,6 +444,8 @@ export class Game {
     }
 
     // Weapon
+    // Feed weapon the current horizontal speed for bob/sway, then update it
+    this.weaponSystem.setMoveSpeed(Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z));
     this.weaponSystem.update(dt, this.player.isAlive);
 
     // Shooting (player)

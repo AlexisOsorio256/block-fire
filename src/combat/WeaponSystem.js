@@ -139,15 +139,25 @@ export class WeaponSystem {
     if (canShoot === false) return;
 
     // Weapon viewmodel follows camera with ADS blend + recoil kickback
+    // + walk bob & sway so the gun feels physically held, not glued to screen
     if (this.weaponMesh) {
       const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
       // ADS pulls the weapon to center
       const ads = this._adsBlend;
+
+      // Bob/sway driven by player horizontal speed (shared via Game each frame)
+      this._bobPhase = (this._bobPhase || 0) + dt * (5 + this.moveSpeedNow * 1.1);
+      const speed01 = Math.min(1, this.moveSpeedNow / 6); // 0..1 normalized
+      const bobAmt = (1 - ads * 0.85) * speed01;          // ADS nearly stills the gun
+      const bobY = Math.sin(this._bobPhase * 2) * 0.024 * bobAmt;
+      const bobX = Math.cos(this._bobPhase) * 0.030 * bobAmt;
+
       const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads);
       const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
       const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + (this.recoilKick || 0) * 0.09;
 
-      // Smooth follow for position
+      // Smooth follow for the BASE position only; bob is applied directly
+      // afterwards so the lerp cannot damp it away.
       this._vmPos = this._vmPos || preset.pos.clone();
       this._vmPos.x = THREE.MathUtils.lerp(this._vmPos.x, targetX, Math.min(1, dt * 14));
       this._vmPos.y = THREE.MathUtils.lerp(this._vmPos.y, targetY, Math.min(1, dt * 14));
@@ -156,16 +166,22 @@ export class WeaponSystem {
       this.weaponMesh.position.copy(this.camera.position);
       this.weaponMesh.quaternion.copy(this.camera.quaternion);
       const offset = this._vmPos.clone();
+      offset.x += bobX; offset.y += bobY;    // bob on top of smoothed base
       offset.applyQuaternion(this.camera.quaternion);
       this.weaponMesh.position.add(offset);
 
-      // Recoil pitch on viewmodel
+      // Recoil pitch on viewmodel + subtle sway roll with bob
       this.weaponMesh.rotation.x = this.camera.rotation.x - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
       this.weaponMesh.rotation.y = this.camera.rotation.y;
-      this.weaponMesh.rotation.z = this.camera.rotation.z;
+      this.weaponMesh.rotation.z = this.camera.rotation.z + bobX * 1.2;
       const s = preset.scale * (1 - ads * 0.12);
       this.weaponMesh.scale.setScalar(s);
     }
+  }
+
+  // Game feeds the player's horizontal speed each frame for bob/sway
+  setMoveSpeed(speed) {
+    this.moveSpeedNow = speed;
   }
 
   // ADS state blend (0..1), driven by Input.aim from Game

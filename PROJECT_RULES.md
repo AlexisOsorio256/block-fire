@@ -179,6 +179,26 @@ compatibilidad. Los cambios deben recibir evidencia proporcional a su riesgo:
   FPS o frame time observados; no extrapolar entre dispositivos.
 - Android: prueba táctil y de rendimiento en hardware Android real.
 
+### 8.1 Verificación visual asistida (añadido 2026-08-31, validado con evidencia)
+
+Cuando el agente carezca de visión nativa, puede usar el puente
+`tools/gemini-vision.py` (modelos de visión de Google; key en `.env`,
+gitignored — el repo es público) sujeto a estas reglas, aprendidas de ground
+truth instrumental:
+
+- **Visión detecta, instrumento explica.** Los modelos detectan anomalías y
+  describen escenas con fiabilidad, pero fallan al atribuir causas (ej.
+  real: banda oscura = chip HUD; visión: "vignette"/"banding"). Toda causa
+  afirmada en un reporte debe verificarla píxeles, proyección 3D→2D o código.
+- **La visión NO detecta movimiento fino en video completo** (falso negativo
+  validado: 14 px/frame de bob invisibles para ambos modelos; con crops
+  amplificados de la misma región lo midieron con precisión). Para game feel:
+  medir movimiento con análisis de píxeles o crops agrandados entre frames;
+  el video completo sirve para HUD, composición y glitches gruesos.
+- Reportar siempre el análisis como "vía <modelo>", nunca como observación
+  propia; con preguntas neutras, sin sugerir la respuesta esperada.
+- El análisis visual nunca sustituye a los tests: complementa la evidencia.
+
 Una modificación está lista solo si no degrada el núcleo, respeta estas reglas,
 queda probada en el alcance que tocó y deja al siguiente agente una base más
 clara, no más confusa.
@@ -196,7 +216,10 @@ una conversación anterior.
   material de producto con propósito explícito. Preferir archivos comprimidos y
   representativos.
 - No commitear secretos, credenciales, datos personales, builds efímeros,
-  dependencias generadas ni basura de herramientas.
+  dependencias generadas ni basura de herramientas. El repo es **público**:
+  toda API key o token vive en `.env` (gitignored) y jamás hardcodeada en
+  código, docs o historial. Si un secret llegó a un commit, rotar la
+  credencial de inmediato antes de cualquier otra cosa.
 - Usar mensajes de commit que describan el resultado, no intenciones vagas.
 - Eliminar documentación histórica o duplicada: Git conserva el historial. El
   README y este archivo son las únicas guías raíz permanentes.
