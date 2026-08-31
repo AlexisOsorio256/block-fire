@@ -16,10 +16,13 @@ export class Game {
     this.scene.background = new THREE.Color(0x87b5e8);
     this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
 
-    // Renderer — eficiencia: sin antialias en móvil, pixelRatio ≤1.5, sombras 1024
+    // Renderer — mobile renders at a sharper DPR cap, with a dynamic downscaler
+    // (_adaptResolution) if sustained frame time suffers. See PROJECT_RULES §6.
     const isMobile = window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     this.renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.2 : 1.5));
+    this._dpr = { min: 0.9, max: isMobile ? 1.5 : 2.0, value: Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2.0) };
+    this.renderer.setPixelRatio(this._dpr.value);
+    this._frameTimes = [];
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -219,6 +222,26 @@ export class Game {
     this.weaponSystem.isReloading = false;
   }
 
+  // Dynamic resolution: every ~1.5s of frames, if the average frame time is
+  // over budget (22ms), drop DPR a step; if comfortably under (14ms) and below
+  // cap, raise it back. Small steps avoid visible oscillation.
+  _adaptResolution(dt) {
+    this._frameTimes.push(dt);
+    if (this._frameTimes.length < 90) return;
+    const avg = this._frameTimes.reduce((a,b)=>a+b, 0) / this._frameTimes.length;
+    this._frameTimes.length = 0;
+    const step = 0.15;
+    if (avg > 0.022 && this._dpr.value > this._dpr.min) {
+      this._dpr.value = Math.max(this._dpr.min, this._dpr.value - step);
+      this.renderer.setPixelRatio(this._dpr.value);
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    } else if (avg < 0.014 && this._dpr.value < this._dpr.max) {
+      this._dpr.value = Math.min(this._dpr.max, this._dpr.value + step);
+      this.renderer.setPixelRatio(this._dpr.value);
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  }
+
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -399,6 +422,7 @@ export class Game {
 
     // FPS
     this.fps = 1/dt;
+    this._adaptResolution(dt);
 
     if(this.matchState !== 'PLAYING'){
       // Lobby camera: slow orbit over the arena — the game itself is the menu backdrop
