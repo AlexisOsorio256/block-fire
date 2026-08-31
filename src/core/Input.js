@@ -56,8 +56,43 @@ export class Input {
     const btnJump = document.getElementById('btn-jump');
     const btnReload = document.getElementById('btn-reload');
     const btnSwitch = document.getElementById('btn-switch');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
 
     if (!joystickZone) return;
+
+    // Fullscreen — mobile browsers hide the address bar only in fullscreen.
+    // Handles insecure-context (LAN IP) where requestFullscreen can reject:
+    // we show an inline message instead of failing silently, and always try
+    // both standard and webkit variants. Also tries to lock orientation.
+    if (btnFullscreen) {
+      const goFullscreen = async () => {
+        const el = document.documentElement;
+        const already = document.fullscreenElement || document.webkitFullscreenElement;
+        try {
+          if (already) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            return;
+          }
+          const req = el.requestFullscreen || el.webkitRequestFullscreen || el.requestFullScreen || el.webkitRequestFullScreen;
+          if (!req) throw new Error('Fullscreen API unavailable');
+          const p = req.call(el, { navigationUI: 'hide' });
+          if (p && p.catch) await p;
+          // In fullscreen, try landscape lock (best effort; ignores rejection)
+          const so = screen.orientation && (screen.orientation.lock || screen.lockOrientation);
+          if (so) { try { so.call(screen.orientation || screen, 'landscape'); } catch(e){} }
+        } catch (err) {
+          // Insecure context (LAN IP, http) or user gesture lost — inform the player
+          btnFullscreen.title = err.message || 'fullscreen failed';
+          const label = document.createElement('div');
+          label.textContent = 'Pantalla completa no disponible aquí. Prueba localhost o instalá la app.';
+          label.style.cssText = 'position:absolute;top:46px;right:12px;background:rgba(0,0,0,.75);color:#fff;font-size:11px;padding:6px 10px;border-radius:8px;z-index:9;max-width:220px';
+          btnFullscreen.parentElement.appendChild(label);
+          setTimeout(()=> label.remove(), 3200);
+        }
+      };
+      btnFullscreen.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); goFullscreen(); }, { passive: false });
+      btnFullscreen.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); goFullscreen(); });
+    }
 
     // Joystick
     let joystickActive = false;
@@ -133,10 +168,10 @@ export class Input {
       e.preventDefault();
       if (!lookActive) return;
       const t = e.touches[0];
-      const dx = t.clientX - lastLookX;
-      const dy = t.clientY - lastLookY;
-      this._touchLook.x = dx * 0.6;
-      this._touchLook.y = dy * 0.6;
+      // Accumulate raw deltas; consumed (and cleared) by getLookDelta each frame.
+      // Frame-rate independent: the consumer applies a fixed scale, no per-frame decay.
+      this._touchLook.x += (t.clientX - lastLookX);
+      this._touchLook.y += (t.clientY - lastLookY);
       lastLookX = t.clientX;
       lastLookY = t.clientY;
     }, { passive: false });
@@ -201,13 +236,14 @@ export class Input {
     return { reload, switchW };
   }
 
-  // For CameraController to get look delta
+  // For CameraController to get look delta: raw pixels accumulated since last
+  // frame. Consume-and-clear — no decay, no frame-rate dependence.
   getLookDelta() {
-    if (this._touchLook.active) {
+    if (this._touchLook.active || this._touchLook.x !== 0 || this._touchLook.y !== 0) {
       const x = this._touchLook.x;
       const y = this._touchLook.y;
-      this._touchLook.x *= 0.5; // damp
-      this._touchLook.y *= 0.5;
+      this._touchLook.x = 0;
+      this._touchLook.y = 0;
       return { x, y };
     }
     return { x: 0, y: 0 };

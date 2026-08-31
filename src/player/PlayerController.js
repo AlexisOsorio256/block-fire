@@ -60,11 +60,14 @@ export class PlayerController {
   update(dt) {
     if (!this.player.isAlive) return;
 
-    // Mobile look from touch
+    // Mobile look from touch — raw pixel delta, fixed scale.
+    // ~0.0038 rad/px: a full swipe across a 400px-tall screen ≈ 87°, matching
+    // standard mobile FPS feel. Dead zone ignores sub-pixel finger jitter.
     const touchLook = this.input.getLookDelta();
-    if (touchLook.x !== 0 || touchLook.y !== 0) {
-      this.yaw -= touchLook.x * 0.015;
-      this.pitch -= touchLook.y * 0.015;
+    const DEAD = 0.6; // px
+    if (Math.abs(touchLook.x) > DEAD || Math.abs(touchLook.y) > DEAD) {
+      this.yaw -= touchLook.x * 0.0038;
+      this.pitch -= touchLook.y * 0.0038;
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
