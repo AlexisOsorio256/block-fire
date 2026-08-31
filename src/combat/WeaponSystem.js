@@ -14,6 +14,8 @@ export const WeaponData = {
     pellets: 1,
     automatic: true,
     bulletSpeed: 0, // hitscan
+    falloffStart: 40, // full damage to 40u, then decays to 75% at 90u
+    falloffMin: 0.75,
   },
   pistol: {
     name: 'Pistol',
@@ -28,10 +30,12 @@ export const WeaponData = {
     pellets: 1,
     automatic: false,
     bulletSpeed: 0,
+    falloffStart: 30, // full damage to 30u, then decays to 80% at 70u
+    falloffMin: 0.8,
   },
   shotgun: {
     name: 'Shotgun',
-    damage: 14,
+    damage: 21, // 21x6=126 > 125HP: a bocajarro (todas las postas) es kill de 1 disparo
     headshotMul: 1.5,
     fireRate: 0.72,
     magazineSize: 6,
@@ -42,6 +46,8 @@ export const WeaponData = {
     pellets: 6,
     automatic: false,
     bulletSpeed: 0,
+    falloffStart: 6, // full damage to 6u, then falls hard to 35% at 22u
+    falloffMin: 0.35,
   }
 };
 
@@ -75,9 +81,12 @@ export class WeaponSystem {
 
   _createWeaponMesh() {
     const group = new THREE.Group();
-    const dark = new THREE.MeshStandardMaterial({ color: 0x23283c, roughness: 0.6, metalness: 0.35 });
-    const black = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.45 });
-    const accent = new THREE.MeshStandardMaterial({ color: 0xffb400, roughness: 0.4, metalness: 0.3, emissive: 0x302000 });
+    // Three-material scheme with real contrast: gunmetal body, deep-black
+    // furniture, warm amber accents. Not flat black — reads as a designed prop.
+    const bodyM = new THREE.MeshStandardMaterial({ color: 0x3d4557, roughness: 0.55, metalness: 0.45 });
+    const blackM = new THREE.MeshStandardMaterial({ color: 0x191d2c, roughness: 0.45, metalness: 0.55 });
+    const accentM = new THREE.MeshStandardMaterial({ color: 0xffb400, roughness: 0.35, metalness: 0.3, emissive: 0x402800, emissiveIntensity: 0.35 });
+    const gripM = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0.1 });
 
     const add = (geo, mat, x, y, z, rotX = 0) => {
       const m = new THREE.Mesh(geo, mat);
@@ -87,24 +96,34 @@ export class WeaponSystem {
       return m;
     };
 
-    // Receiver (main body)
-    add(new THREE.BoxGeometry(0.09, 0.11, 0.34), dark, 0, 0, 0);
-    // Upper rail
-    add(new THREE.BoxGeometry(0.05, 0.03, 0.30), black, 0, 0.075, -0.02);
-    // Barrel
-    add(new THREE.BoxGeometry(0.045, 0.045, 0.30), black, 0, 0.01, -0.30);
-    // Muzzle brake
-    add(new THREE.BoxGeometry(0.07, 0.07, 0.06), black, 0, 0.01, -0.46);
-    // Magazine (slightly angled)
-    add(new THREE.BoxGeometry(0.06, 0.16, 0.09), black, 0, -0.125, 0.04, 0.12);
-    // Grip
-    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), black, 0, -0.11, 0.16, -0.25);
-    // Stock
-    add(new THREE.BoxGeometry(0.07, 0.10, 0.16), dark, 0, -0.01, 0.24);
-    // Front sight/accent block
-    add(new THREE.BoxGeometry(0.025, 0.05, 0.04), accent, 0, 0.10, -0.16);
+    // Receiver — main body with top rail in accent
+    add(new THREE.BoxGeometry(0.09, 0.11, 0.34), bodyM, 0, 0, 0);
+    add(new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
+    // Rail accent stripe (the weapon's "identity line")
+    add(new THREE.BoxGeometry(0.058, 0.012, 0.28), accentM, 0, 0.062, -0.02);
+    // Barrel + handguard with vents
+    add(new THREE.BoxGeometry(0.045, 0.045, 0.30), blackM, 0, 0.01, -0.30);
+    add(new THREE.BoxGeometry(0.07, 0.07, 0.16), bodyM, 0, 0.005, -0.24);
+    add(new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM, 0, 0.045, -0.20); // vent accent
+    add(new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM, 0, 0.045, -0.27);
+    // Muzzle brake (chunkier, with amber tip ring)
+    add(new THREE.BoxGeometry(0.075, 0.075, 0.06), blackM, 0, 0.01, -0.46);
+    add(new THREE.BoxGeometry(0.082, 0.082, 0.012), accentM, 0, 0.01, -0.435);
+    // Magazine (angled, with baseplate accent)
+    add(new THREE.BoxGeometry(0.06, 0.16, 0.09), blackM, 0, -0.125, 0.04, 0.12);
+    add(new THREE.BoxGeometry(0.064, 0.02, 0.094), accentM, 0, -0.20, 0.052, 0.12);
+    // Grip + trigger guard
+    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gripM, 0, -0.11, 0.16, -0.25);
+    add(new THREE.BoxGeometry(0.03, 0.02, 0.09), blackM, 0, -0.055, 0.10);
+    // Stock (two-tone)
+    add(new THREE.BoxGeometry(0.07, 0.10, 0.16), bodyM, 0, -0.01, 0.24);
+    add(new THREE.BoxGeometry(0.072, 0.04, 0.05), gripM, 0, -0.045, 0.30);
+    // Front sight
+    add(new THREE.BoxGeometry(0.025, 0.05, 0.04), accentM, 0, 0.115, -0.16);
+    // Rear sight
+    add(new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.105, 0.10);
 
-    group.userData.parts = { dark, black, accent };
+    group.userData.parts = { dark: bodyM, black: blackM, accent: accentM };
     return group;
   }
 
@@ -156,15 +175,26 @@ export class WeaponSystem {
     const dip = dipT * 0.16; // meters the gun drops during reload/switch
 
     // Weapon viewmodel follows camera with ADS blend + recoil kickback
+    // + walk bob/sway so the gun feels physically held, not glued to screen
     if (this.weaponMesh) {
       const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
       // ADS pulls the weapon to center
       const ads = this._adsBlend;
+
+      // Walk bob driven by the player's horizontal speed (Game feeds it each
+      // frame via setMoveSpeed). Bob is applied AFTER the smoothed base so the
+      // lerp can never damp it away (validated with pixel ground-truth).
+      this._bobPhase = (this._bobPhase || 0) + dt * (5 + (this.moveSpeedNow || 0) * 1.1);
+      const speed01 = Math.min(1, (this.moveSpeedNow || 0) / 6);
+      const bobAmt = (1 - ads * 0.85) * speed01;          // ADS nearly stills the gun
+      const bobY = Math.sin(this._bobPhase * 2) * 0.024 * bobAmt;
+      const bobX = Math.cos(this._bobPhase) * 0.030 * bobAmt;
+
       const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads);
       const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads) - dip;
       const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + (this.recoilKick || 0) * 0.09;
 
-      // Smooth follow for position
+      // Smooth follow for the BASE position only
       this._vmPos = this._vmPos || preset.pos.clone();
       this._vmPos.x = THREE.MathUtils.lerp(this._vmPos.x, targetX, Math.min(1, dt * 14));
       this._vmPos.y = THREE.MathUtils.lerp(this._vmPos.y, targetY, Math.min(1, dt * 14));
@@ -173,16 +203,22 @@ export class WeaponSystem {
       this.weaponMesh.position.copy(this.camera.position);
       this.weaponMesh.quaternion.copy(this.camera.quaternion);
       const offset = this._vmPos.clone();
+      offset.x += bobX; offset.y += bobY;    // bob on top of smoothed base
       offset.applyQuaternion(this.camera.quaternion);
       this.weaponMesh.position.add(offset);
 
-      // Recoil pitch on viewmodel
+      // Recoil pitch on viewmodel + subtle roll with the bob
       this.weaponMesh.rotation.x = this.camera.rotation.x - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
       this.weaponMesh.rotation.y = this.camera.rotation.y;
-      this.weaponMesh.rotation.z = this.camera.rotation.z;
+      this.weaponMesh.rotation.z = this.camera.rotation.z + bobX * 1.2;
       const s = preset.scale * (1 - ads * 0.12);
       this.weaponMesh.scale.setScalar(s);
     }
+  }
+
+  // Game feeds the player's horizontal speed each frame for bob/sway
+  setMoveSpeed(speed) {
+    this.moveSpeedNow = speed;
   }
 
   // ADS state blend (0..1), driven by Input.aim from Game
@@ -356,8 +392,16 @@ export class WeaponSystem {
       let damage = 0;
       let isHeadshot = false;
       for (const h of targetHits) {
-        const d = weapon.damage * (h.headshot ? weapon.headshotMul : 1);
-        damage += d;
+        // Damage falloff by distance: full damage up to falloffStart, then
+        // linear decay to falloffMin at weapon range. Gives each weapon a
+        // combat-distance identity (shotgun = close monster, rifle = mid-long).
+        let dmg = weapon.damage * (h.headshot ? weapon.headshotMul : 1);
+        const start = weapon.falloffStart ?? weapon.range * 0.5;
+        if (h.distance > start && weapon.range > start) {
+          const k = (h.distance - start) / (weapon.range - start);
+          dmg *= 1 - (1 - (weapon.falloffMin ?? 0.5)) * k;
+        }
+        damage += dmg;
         if (h.headshot) isHeadshot = true;
       }
       // Game owns scores, death feedback and respawns for both player and bots.

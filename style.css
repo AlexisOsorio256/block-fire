@@ -14,6 +14,8 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #hud label{ font-size:9px; letter-spacing:0.12em; color:#8fa4c8; font-weight:800; }
 #hud-bottom{ display:flex; justify-content:space-between; align-items:flex-end; }
 #health-block, #ammo-block{ display:flex; align-items:baseline; gap:8px; background: rgba(10,16,28,0.55); border:1px solid rgba(255,255,255,0.1); padding:8px 16px; border-radius:10px; backdrop-filter: blur(6px); }
+#health-block.critical{ border-color:rgba(255,60,50,0.85); animation:hpCritical 0.9s ease-in-out infinite; }
+@keyframes hpCritical{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,50,40,0); } 50%{ box-shadow:0 0 18px 2px rgba(255,50,40,0.55); } }
 #health{ color:#4ade80; font-weight:900; font-size:26px; line-height:1; }
 #ammo{ color:#fff; font-weight:900; font-size:26px; line-height:1; }
 #ammo.low{ color:#ffd23f; animation: ammoPulse 0.8s ease-in-out infinite; }
