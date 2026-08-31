@@ -138,26 +138,33 @@ export class WeaponSystem {
     if (this.weaponMesh) this.weaponMesh.visible = canShoot !== false;
     if (canShoot === false) return;
 
+    // Reload/switch animation: weapon dips down and comes back up.
+    // reloadTimer counts DOWN to 0; dip peaks mid-reload. Same for switch
+    // (0.28s pull-down + rise with the new model).
+    let dipT = 0;
+    if (this.isReloading) {
+      const total = this.currentWeapon.reloadTime;
+      const elapsed = total - this.reloadTimer;
+      const k = Math.min(1, elapsed / total);        // 0..1 progress
+      dipT = Math.sin(k * Math.PI);                  // smooth dip curve
+    } else if (this._switchAnim > 0) {
+      this._switchAnim = Math.max(0, this._switchAnim - dt);
+      const k = 1 - (this._switchAnim / 0.28);       // 0..1 progress
+      dipT = Math.sin((1 - k) * Math.PI) * (this._switchReady ? 1 : 1);
+      if (this._switchAnim === 0) this._switchReady = false;
+    }
+    const dip = dipT * 0.16; // meters the gun drops during reload/switch
+
     // Weapon viewmodel follows camera with ADS blend + recoil kickback
-    // + walk bob & sway so the gun feels physically held, not glued to screen
     if (this.weaponMesh) {
       const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
       // ADS pulls the weapon to center
       const ads = this._adsBlend;
-
-      // Bob/sway driven by player horizontal speed (shared via Game each frame)
-      this._bobPhase = (this._bobPhase || 0) + dt * (5 + this.moveSpeedNow * 1.1);
-      const speed01 = Math.min(1, this.moveSpeedNow / 6); // 0..1 normalized
-      const bobAmt = (1 - ads * 0.85) * speed01;          // ADS nearly stills the gun
-      const bobY = Math.sin(this._bobPhase * 2) * 0.024 * bobAmt;
-      const bobX = Math.cos(this._bobPhase) * 0.030 * bobAmt;
-
       const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads);
-      const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
+      const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads) - dip;
       const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + (this.recoilKick || 0) * 0.09;
 
-      // Smooth follow for the BASE position only; bob is applied directly
-      // afterwards so the lerp cannot damp it away.
+      // Smooth follow for position
       this._vmPos = this._vmPos || preset.pos.clone();
       this._vmPos.x = THREE.MathUtils.lerp(this._vmPos.x, targetX, Math.min(1, dt * 14));
       this._vmPos.y = THREE.MathUtils.lerp(this._vmPos.y, targetY, Math.min(1, dt * 14));
@@ -166,22 +173,16 @@ export class WeaponSystem {
       this.weaponMesh.position.copy(this.camera.position);
       this.weaponMesh.quaternion.copy(this.camera.quaternion);
       const offset = this._vmPos.clone();
-      offset.x += bobX; offset.y += bobY;    // bob on top of smoothed base
       offset.applyQuaternion(this.camera.quaternion);
       this.weaponMesh.position.add(offset);
 
-      // Recoil pitch on viewmodel + subtle sway roll with bob
+      // Recoil pitch on viewmodel
       this.weaponMesh.rotation.x = this.camera.rotation.x - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
       this.weaponMesh.rotation.y = this.camera.rotation.y;
-      this.weaponMesh.rotation.z = this.camera.rotation.z + bobX * 1.2;
+      this.weaponMesh.rotation.z = this.camera.rotation.z;
       const s = preset.scale * (1 - ads * 0.12);
       this.weaponMesh.scale.setScalar(s);
     }
-  }
-
-  // Game feeds the player's horizontal speed each frame for bob/sway
-  setMoveSpeed(speed) {
-    this.moveSpeedNow = speed;
   }
 
   // ADS state blend (0..1), driven by Input.aim from Game
@@ -217,11 +218,13 @@ export class WeaponSystem {
       this.fireCooldown = weapon.fireRate;
       this.recoilOffset += weapon.recoil;
       this.recoilKick = Math.min(1.4, (this.recoilKick || 0) + weapon.recoil * 0.5);
-      // Camera recoil kick — handled by the controller that owns the camera
+      // Camera recoil kick — handled by the controller that owns the camera.
+      // Amplitude tuned so ONE shot is visible at a glance (per vision audit:
+      // previous 0.011 was imperceptible).
       if (this.playerController && this.playerController.addRecoil) {
         const ads = this._adsBlend || 0;
         const scale = 1 - ads * 0.35;
-        this.playerController.addRecoil(weapon.recoil * 0.011 * scale, (Math.random()-0.5) * weapon.recoil * 0.006);
+        this.playerController.addRecoil(weapon.recoil * 0.028 * scale, (Math.random()-0.5) * weapon.recoil * 0.014);
       }
     }
 
@@ -395,6 +398,9 @@ export class WeaponSystem {
     this.reserveAmmo = this.currentWeapon.magazineSize * 3;
     this.isReloading = false;
     this.fireCooldown = 0.2;
+    // Visible switch animation: gun dips and rises with the new model
+    this._switchAnim = 0.28;
+    this._switchReady = true;
     if (this.audio) this.audio.play('switch');
     this._updateWeaponMesh();
   }

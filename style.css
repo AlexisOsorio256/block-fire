@@ -16,6 +16,8 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #health-block, #ammo-block{ display:flex; align-items:baseline; gap:8px; background: rgba(10,16,28,0.55); border:1px solid rgba(255,255,255,0.1); padding:8px 16px; border-radius:10px; backdrop-filter: blur(6px); }
 #health{ color:#4ade80; font-weight:900; font-size:26px; line-height:1; }
 #ammo{ color:#fff; font-weight:900; font-size:26px; line-height:1; }
+#ammo.low{ color:#ffd23f; animation: ammoPulse 0.8s ease-in-out infinite; }
+@keyframes ammoPulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.45; } }
 
 /* Mobile PORTRAIT: lift bottom HUD above thumb controls */
 @media (pointer: coarse) and (orientation: portrait), (max-width: 900px) and (orientation: portrait){
@@ -56,6 +58,22 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 .kill-entry{ background: rgba(0,0,0,0.6); border-left:3px solid #ffd23f; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:800; color:#fff; animation: killIn 0.3s ease; transition: opacity 0.3s, transform 0.3s; }
 @keyframes killIn{ from{ transform:translateX(20px); opacity:0 } to{ transform:translateX(0); opacity:1 } }
 
+/* Damage vignette — REAL overlay over the canvas (body-paint was hidden
+   behind the opaque canvas, so the flash was never visible before) */
+#damage-vignette{ position:fixed; inset:0; z-index:4; pointer-events:none; opacity:0;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(255,30,20,0.42) 100%);
+  transition: opacity 0.30s ease-out; }
+#damage-vignette.show{ opacity:1; transition: opacity 0.05s; }
+
+/* Death overlay — red fade to dark + respawn text */
+#death-overlay{ position:fixed; inset:0; z-index:5; pointer-events:none; opacity:0;
+  background: radial-gradient(ellipse at center, rgba(120,0,0,0.55) 0%, rgba(20,0,0,0.82) 100%);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  transition: opacity 0.45s ease; }
+#death-overlay.show{ opacity:1; transition: opacity 0.18s; }
+#death-overlay span{ font-size:42px; font-weight:900; letter-spacing:0.14em; color:#ff5a4a; text-shadow:0 0 24px rgba(255,40,30,0.6), 0 3px 0 rgba(0,0,0,0.8); }
+#death-overlay label{ font-size:12px; font-weight:800; letter-spacing:0.28em; color:rgba(255,255,255,0.75); }
+
 /* Kill banner — big, brief, celebratory */
 #killbanner{ position:fixed; left:50%; top:34%; transform:translate(-50%,-50%) scale(0.8); z-index:5; display:flex; flex-direction:column; align-items:center; gap:2px; opacity:0; pointer-events:none; }
 #killbanner .kb-title{ font-size:34px; font-weight:900; letter-spacing:0.08em; color:#ffd23f; text-shadow:0 0 18px rgba(255,180,0,0.55), 0 2px 0 rgba(0,0,0,0.7); }
@@ -79,20 +97,12 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 @media (pointer: coarse), (max-width: 900px){
   #mobile-controls{ display:block; }
 }
-#btn-fullscreen{ position:absolute; top:10px; right:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; }
-#btn-fullscreen svg{ width:20px; height:20px; }
-#btn-fullscreen:active{ background: rgba(255,210,60,0.25); }
-/* hide when already fullscreen (and in landscape where space is scarce) */
-:fullscreen #btn-fullscreen{ display:none; }
 #joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:45%; pointer-events:auto; }
 #joystick-base{ position:absolute; left:24px; bottom:24px; width:110px; height:110px; border-radius:50%; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); backdrop-filter: blur(6px); }
 #joystick-stick{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:48px; height:48px; border-radius:50%; background: rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.18); transition: transform 0.05s; }
 #look-zone{ position:absolute; right:0; top:0; width:58%; height:100%; pointer-events:auto; }
 #action-buttons{ position:absolute; right:16px; bottom:16px; display:flex; gap:10px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; max-width:180px; }
-.action-btn{ width:54px; height:54px; border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
-.action-btn svg{ width:30px; height:30px; pointer-events:none; }
-#btn-fire svg{ color:#ff5a4a; }
-#btn-aim:active svg{ color:#ffd23f; }
+.action-btn{ width:54px; height:54px; border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; font-size:18px; font-weight:900; backdrop-filter: blur(6px); touch-action:none; }
 .action-btn:active{ transform:scale(0.92); background: rgba(255,210,60,0.22); border-color: rgba(255,210,60,0.4); }
 
 /* Lobby / Overlay */

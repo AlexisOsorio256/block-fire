@@ -30,7 +30,13 @@ export class HUD {
     if (this.ammoEl) {
       this.ammoEl.textContent = ammo || '0/0';
       const parts = String(ammo).split('/');
-      if (this.ammoEl) this.ammoEl.style.color = Number(parts[0]) === 0 ? '#f87171' : '#fff';
+      const inMag = Number(parts[0]);
+      // Low ammo warning: pulse when ≤ 8 rounds, red at 0
+      this.ammoEl.style.color = inMag === 0 ? '#f87171' : '#fff';
+      if (this.ammoEl) {
+        if (inMag > 0 && inMag <= 8) this.ammoEl.classList.add('low');
+        else this.ammoEl.classList.remove('low');
+      }
     }
     if (this.weaponNameEl) this.weaponNameEl.textContent = (weaponName || 'RIFLE').toUpperCase();
 
