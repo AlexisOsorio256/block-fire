@@ -8,6 +8,29 @@ export class Map {
     this.size = 48; // Half size
     this.wallHeight = 5;
 
+    // Real CC0 textures (Kenney, see CREDITS.md). If a file fails to load the
+    // material keeps its flat color — the map never breaks, just degrades.
+    const loader = new THREE.TextureLoader();
+    const loadTex = (file, repeatX, repeatY, fallbackColor) => {
+      const tex = loader.load(`assets/textures/${file}`, undefined, undefined, () => {});
+      if (tex) {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(repeatX, repeatY);
+        tex.anisotropy = 4;
+      }
+      return new THREE.MeshStandardMaterial({
+        color: fallbackColor,
+        map: tex || null,
+        roughness: 0.85,
+        metalness: 0.05
+      });
+    };
+    // Scale repeats so texels read at arcade scale (not noisy)
+    this._matGround = loadTex('ground.png', 24, 24, 0x9aa5b3);
+    this._matWall = loadTex('wall.png', 24, 1, 0x5a6b80);
+    this._matCover = loadTex('cover.png', 1.6, 1.6, 0xc9b8a0);
+    this._matPlatform = loadTex('platform.png', 2.5, 1.5, 0x9fb06a);
+
     this._createGround();
     this._createWalls();
     this._createCover();
@@ -16,29 +39,19 @@ export class Map {
 
   _createGround() {
     const groundGeo = new THREE.PlaneGeometry(this.size*2, this.size*2);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x8d99a8,
-      roughness: 0.92,
-      metalness: 0.02
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(groundGeo, this._matGround);
     ground.rotation.x = -Math.PI/2;
     ground.position.y = 0;
     ground.receiveShadow = true;
     this.scene.add(ground);
-
-    // Subtle grid keeps blocky identity without darkening the floor
-    const gridHelper = new THREE.GridHelper(this.size*2, 24, 0x74869c, 0x8093a6);
-    gridHelper.position.y = 0.02;
-    this.scene.add(gridHelper);
   }
 
-  _createBox(x, y, z, w, h, d, color) {
+  // material: 'wall' | 'cover' | 'platform' (shared textured material)
+  _createBox(x, y, z, w, h, d, material = 'cover') {
     const geo = new THREE.BoxGeometry(w, h, d);
-    const mat = new THREE.MeshStandardMaterial({ 
-      color: color || 0x2a344a,
-      roughness: 0.75
-    });
+    const mat = material === 'wall' ? this._matWall
+      : material === 'platform' ? this._matPlatform
+      : this._matCover;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y + h/2, z);
     mesh.castShadow = true;
@@ -58,53 +71,57 @@ export class Map {
     const h = this.wallHeight;
     const t = 1.0;
     // Outer walls — darker rim, clearly "boundary"
-    this._createBox(0, 0, -s, s*2, h, t, 0x5a6b80);
-    this._createBox(0, 0, s, s*2, h, t, 0x5a6b80);
-    this._createBox(-s, 0, 0, t, h, s*2, 0x5a6b80);
-    this._createBox(s, 0, 0, t, h, s*2, 0x5a6b80);
+    this._createBox(0, 0, -s, s*2, h, t, 'wall');
+    this._createBox(0, 0, s, s*2, h, t, 'wall');
+    this._createBox(-s, 0, 0, t, h, s*2, 'wall');
+    this._createBox(s, 0, 0, t, h, s*2, 'wall');
   }
 
   _createCover() {
     // Central cover clusters - designed for frequent encounters, not a maze
-    // Warm-lit concrete tones: readable cover vs floor vs walls
-    const colors = [0xb9c4cf, 0xcabdae, 0xa8b6c4, 0xd4c5b0];
-    const pick = () => colors[Math.floor(Math.random()*colors.length)];
 
     // Cluster 1 - near center
-    this._createBox(0, 0, 0, 6, 2.2, 1.2, pick());
-    this._createBox(3, 0, -2, 1.2, 1.8, 4, pick());
-    this._createBox(-3, 0, 2, 1.2, 1.8, 4, pick());
+    this._createBox(0, 0, 0, 6, 2.2, 1.2, 'cover');
+    this._createBox(3, 0, -2, 1.2, 1.8, 4, 'cover');
+    this._createBox(-3, 0, 2, 1.2, 1.8, 4, 'cover');
 
     // Cluster 2 - NW
-    this._createBox(-14, 0, -12, 4, 2.8, 1.2, pick());
-    this._createBox(-12, 0, -14, 1.2, 1.6, 4, pick());
-    this._createBox(-16, 0, -8, 2, 1.2, 2, pick());
+    this._createBox(-14, 0, -12, 4, 2.8, 1.2, 'cover');
+    this._createBox(-12, 0, -14, 1.2, 1.6, 4, 'cover');
+    this._createBox(-16, 0, -8, 2, 1.2, 2, 'cover');
 
     // Cluster 3 - SE
-    this._createBox(14, 0, 12, 4, 2.2, 1.2, pick());
-    this._createBox(12, 0, 14, 1.2, 1.8, 4, pick());
-    this._createBox(16, 0, 8, 2, 1.4, 2, pick());
+    this._createBox(14, 0, 12, 4, 2.2, 1.2, 'cover');
+    this._createBox(12, 0, 14, 1.2, 1.8, 4, 'cover');
+    this._createBox(16, 0, 8, 2, 1.4, 2, 'cover');
 
     // Cluster 4 - NE
-    this._createBox(12, 0, -14, 3, 2.0, 1.2, pick());
-    this._createBox(14, 0, -10, 1.2, 1.6, 3, pick());
+    this._createBox(12, 0, -14, 3, 2.0, 1.2, 'cover');
+    this._createBox(14, 0, -10, 1.2, 1.6, 3, 'cover');
 
     // Cluster 5 - SW
-    this._createBox(-12, 0, 14, 3, 2.0, 1.2, pick());
-    this._createBox(-14, 0, 10, 1.2, 1.6, 3, pick());
+    this._createBox(-12, 0, 14, 3, 2.0, 1.2, 'cover');
+    this._createBox(-14, 0, 10, 1.2, 1.6, 3, 'cover');
 
     // Platforms — distinct elevated tone + accent edges
-    this._createBox(0, 2.2, 8, 8, 0.4, 4, 0x9fb06a);
-    this._createBox(0, 2.2, -8, 6, 0.4, 4, 0x9fb06a);
-    this._createBox(-8, 1.2, 0, 4, 0.4, 6, 0x9fb06a);
-    this._createBox(8, 1.2, 0, 4, 0.4, 6, 0x9fb06a);
+    this._createBox(0, 2.2, 8, 8, 0.4, 4, 'platform');
+    this._createBox(0, 2.2, -8, 6, 0.4, 4, 'platform');
+    this._createBox(-8, 1.2, 0, 4, 0.4, 6, 'platform');
+    this._createBox(8, 1.2, 0, 4, 0.4, 6, 'platform');
 
-    // Small cover boxes scattered
+    // Small cover boxes scattered — positions validated against spawn points
+    // so a prop can never sit on top of a spawn. tryPlace gives up after 20
+    // attempts (skip) rather than blocking map creation.
+    const spawnBlocked = (x, z) => this.spawns.some(s => Math.hypot(s.x - x, s.z - z) < 2.6);
     for(let i=0;i<6;i++){
-      const x = (Math.random()-0.5)*36;
-      const z = (Math.random()-0.5)*36;
-      if(Math.hypot(x,z) < 8) continue;
-      this._createBox(x, 0, z, 1.6, 1.0, 1.6, pick());
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const x = (Math.random()-0.5)*36;
+        const z = (Math.random()-0.5)*36;
+        if(Math.hypot(x,z) < 8) continue;
+        if (spawnBlocked(x, z)) continue;
+        this._createBox(x, 0, z, 1.6, 1.0, 1.6, 'cover');
+        break;
+      }
     }
   }
 
@@ -122,18 +139,48 @@ export class Map {
     ];
   }
 
+  // A spawn position is valid when the entity's collision AABB fits there
+  // without touching any solid box. Position.y is eye height (see rules).
+  isSpawnClear(x, z, radius = 0.45, height = 1.65) {
+    const probe = new THREE.Vector3(x, height, z);
+    const feetGround = this.getGroundY(x, z, 0);
+    // If the ground under the spawn is a raised platform, the entity must fit
+    // between platform top and any geometry above — the plain AABB check with
+    // feet at platform level covers that.
+    probe.y = feetGround + height;
+    return !this.checkCollision(probe, radius, height);
+  }
+
   getRandomSpawn(excludePos = null, minDist = 8) {
-    // Find spawn far from excludePos
+    // Candidates: farthest 3 from excludePos (usually the player) so bots
+    // spawn across the arena, never in the player's face.
     let candidates = this.spawns.slice();
     if (excludePos) {
       candidates.sort((a,b) => b.distanceTo(excludePos) - a.distanceTo(excludePos));
-      // Pick from farthest 3
       candidates = candidates.slice(0, 3);
     }
-    const pick = candidates[Math.floor(Math.random()*candidates.length)];
-    // Add jitter
-    const jitter = new THREE.Vector3((Math.random()-0.5)*2, 0, (Math.random()-0.5)*2);
-    return pick.clone().add(jitter);
+    // Try spawns in random order; within each, try the exact point first, then
+    // jittered offsets. First CLEAR position wins — no spawning inside walls,
+    // cover boxes or scattered props.
+    const shuffled = candidates.slice().sort(() => Math.random() - 0.5);
+    const jitters = [
+      [0, 0], [0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8],
+      [1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6], [1.2, 1.2], [-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2]
+    ];
+    for (const base of shuffled) {
+      for (const [jx, jz] of jitters) {
+        const x = base.x + jx, z = base.z + jz;
+        if (Math.abs(x) > this.size - 1.2 || Math.abs(z) > this.size - 1.2) continue;
+        if (this.isSpawnClear(x, z)) {
+          const gy = this.getGroundY(x, z, 0);
+          return new THREE.Vector3(x, gy + 1.65, z);
+        }
+      }
+    }
+    // Defensive fallback: exact spawn point, snapped to its ground (all 8 base
+    // spawns sit in open ground by design; this should never run).
+    const fallback = this.spawns[0];
+    return new THREE.Vector3(fallback.x, this.getGroundY(fallback.x, fallback.z, 0) + 1.65, fallback.z);
   }
 
   // Highest walkable surface at (x,z) whose top is reachable from feetY

@@ -11,7 +11,7 @@ export class Bot {
     const gy = map ? map.getGroundY(position.x, position.z) : 0;
     this.position = new THREE.Vector3(position.x, gy + 1.65, position.z);
     this.health = 100;
-    this.maxHealth = 100;
+    this.maxHealth = 125;
     this.kills = 0;
     this.deaths = 0;
 
@@ -49,18 +49,21 @@ export class Bot {
     const bodyColor = this._getTeamColor();
     const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.65 });
+    const gearMat = new THREE.MeshStandardMaterial({ color: 0x2e3950, roughness: 0.6, metalness: 0.15 });
+    // Per-skin visor color: each bot reads as a distinct "operator"
+    const visorColors = [0x8844ff, 0xff8329, 0x39d7ff, 0xff3d71, 0x9dff3d, 0xffd23f, 0x4dffd2];
     const visorMat = new THREE.MeshStandardMaterial({
       color: 0x10141f, roughness: 0.3, metalness: 0.5,
-      emissive: 0x8844ff, emissiveIntensity: 0.55
+      emissive: visorColors[this.id % visorColors.length], emissiveIntensity: 0.7
     });
 
-    // Torso — slightly tapered block
+    // Torso
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.9, 0.36), bodyMat);
     body.position.y = 0.9;
     body.castShadow = true;
     group.add(body);
-    // Chest plate detail
-    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.06), darkMat);
+    // Chest plate
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.06), gearMat);
     chest.position.set(0, 1.02, 0.19);
     group.add(chest);
     // Belt
@@ -79,29 +82,56 @@ export class Bot {
     group.add(visor);
     this._visorMat = visorMat;
 
-    // Arms
-    const armGeo = new THREE.BoxGeometry(0.18, 0.55, 0.18);
-    const leftArm = new THREE.Mesh(armGeo, bodyMat);
-    leftArm.position.set(-0.42, 0.85, 0);
-    group.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, bodyMat);
-    rightArm.position.set(0.42, 0.85, 0);
-    group.add(rightArm);
+    // SKIN DETAIL by id: helmet crest / antenna / shoulder pads — visual
+    // differentiation between bots without any inventory/skin SYSTEM.
+    if (this.id % 3 === 0) {
+      // Helmet crest
+      const crest = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.3), visorMat);
+      crest.position.set(0, 1.82, 0);
+      group.add(crest);
+    } else if (this.id % 3 === 1) {
+      // Shoulder pads
+      const padGeo = new THREE.BoxGeometry(0.24, 0.14, 0.3);
+      const padL = new THREE.Mesh(padGeo, gearMat); padL.position.set(-0.45, 1.28, 0); group.add(padL);
+      const padR = new THREE.Mesh(padGeo, gearMat); padR.position.set(0.45, 1.28, 0); group.add(padR);
+    } else {
+      // Antenna backpack
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.16), gearMat);
+      pack.position.set(0, 1.05, -0.24); group.add(pack);
+      const ant = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.4, 0.03), visorMat);
+      ant.position.set(0.12, 1.42, -0.3); group.add(ant);
+    }
 
-    // Legs
-    const legGeo = new THREE.BoxGeometry(0.22, 0.6, 0.22);
-    const leftLeg = new THREE.Mesh(legGeo, darkMat);
-    leftLeg.position.set(-0.16, 0.3, 0);
-    leftLeg.userData._baseY = 0.3;
-    group.add(leftLeg);
-    const rightLeg = new THREE.Mesh(legGeo, darkMat);
-    rightLeg.position.set(0.16, 0.3, 0);
-    rightLeg.userData._baseY = 0.3;
-    group.add(rightLeg);
-    this._lLeg = leftLeg;
-    this._rLeg = rightLeg;
+    // ARMS with SHOULDER PIVOTS — real walk-cycle swing, not position bob.
+    // The pivot sits at the shoulder; the arm hangs below and rotates in Z.
+    const makeArm = (side) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.42, 1.12, 0);          // shoulder height
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), bodyMat);
+      arm.position.y = -0.28;                            // hangs from pivot
+      arm.castShadow = true;
+      pivot.add(arm);
+      group.add(pivot);
+      return pivot;
+    };
+    this._lArm = makeArm(-1);
+    this._rArm = makeArm(1);
 
-    // Blocky rifle held at hip
+    // LEGS with HIP PIVOTS — knees lift forward/back like a stride.
+    const makeLeg = (side) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.16, 0.62, 0);          // hip height
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.62, 0.24), darkMat);
+      leg.position.y = -0.31;                            // hangs from pivot
+      leg.castShadow = true;
+      pivot.add(leg);
+      group.add(pivot);
+      return pivot;
+    };
+    this._lLeg = makeLeg(-1);
+    this._rLeg = makeLeg(1);
+
+    // Blocky rifle held at hip (parented to right arm pivot so it swings too)
     const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.58), darkMat);
     gun.position.set(0.42, 0.85, 0.35);
     group.add(gun);
@@ -176,6 +206,7 @@ export class Bot {
     this.mesh.position.copy(this.position);
     this.mesh.position.y -= this.height;
     this.velocity.set(0,0,0);
+    this._stridePhase = 0;
     this.yaw = Math.random() * Math.PI * 2;
     this.targetYaw = this.yaw;
     this.state = 'wander';
@@ -287,20 +318,28 @@ export class Bot {
       move.multiplyScalar(0.85);
     }
 
-    // Apply movement
-    if (move.lengthSq() > 0.01) {
-      const nextPos = this.position.clone().addScaledVector(move, this.speed * dt);
+    // Apply movement with SMOOTH ACCELERATION — bots ease into their stride
+    // instead of snapping to full speed (kills the "ghost sliding" look).
+    // velocity lerps toward the wish velocity; position integrates velocity.
+    const wish = move.lengthSq() > 0.01 ? move.clone().multiplyScalar(this.speed) : new THREE.Vector3();
+    const accelT = Math.min(1, (move.lengthSq() > 0.01 ? 6.5 : 9) * dt);
+    this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, wish.x, accelT);
+    this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, wish.z, accelT);
+    if (Math.hypot(this.velocity.x, this.velocity.z) > 0.02) {
+      const nextPos = this.position.clone().addScaledVector(this.velocity, dt);
       // Ground: only platforms reachable from current feet height
       const groundY = map.getGroundY(nextPos.x, nextPos.z, this.position.y - this.height);
       nextPos.y = groundY + this.height;
       if (!map.checkCollision(nextPos, this.radius, this.height)) {
         this.position.copy(nextPos);
       } else {
-        // Try slide
-        const tryX = this.position.clone(); tryX.x = nextPos.x;
+        // Try slide axis-separated (same contract as the player)
+        const tryX = this.position.clone(); tryX.x = nextPos.x; tryX.y = nextPos.y;
         if (!map.checkCollision(tryX, this.radius, this.height)) this.position.x = tryX.x;
-        const tryZ = this.position.clone(); tryZ.z = nextPos.z;
+        const tryZ = this.position.clone(); tryZ.z = nextPos.z; tryZ.y = nextPos.y;
         if (!map.checkCollision(tryZ, this.radius, this.height)) this.position.z = tryZ.z;
+        // Blocked head-on: cut velocity so the bot doesn't push into walls
+        this.velocity.multiplyScalar(0.4);
       }
       // Face movement direction if not looking at target
       if (!lookAtTarget && move.lengthSq() > 0.01) {
@@ -338,14 +377,27 @@ export class Bot {
       this.mesh.rotation.x = 0;
     }
 
-    // Bob legs when moving
-    if (move.lengthSq() > 0.01) {
-      const bob = Math.sin(Date.now() * 0.012) * 0.08;
-      const lLeg = this._lLeg, rLeg = this._rLeg;
-      if (lLeg && rLeg) {
-        lLeg.position.y = (lLeg.userData._baseY ?? 0.3) + bob;
-        rLeg.position.y = (rLeg.userData._baseY ?? 0.3) - bob;
-      }
+    // WALK CYCLE — hip/shoulder pivots swing like a real stride. Speed drives
+    // stride frequency; still bots settle to neutral pose smoothly.
+    const speedNow = Math.hypot(this.velocity.x, this.velocity.z);
+    const moving = move.lengthSq() > 0.01;
+    this._stridePhase = (this._stridePhase || 0) + dt * (4 + speedNow * 1.6);
+    const strideAmp = moving ? Math.min(0.55, 0.25 + speedNow * 0.09) : 0;
+    const swing = Math.sin(this._stridePhase) * strideAmp;
+    if (this._lLeg && this._rLeg) {
+      // Smooth toward target so stopping reads as deceleration, not a freeze
+      this._lLeg.rotation.x = THREE.MathUtils.lerp(this._lLeg.rotation.x, swing, Math.min(1, dt * 12));
+      this._rLeg.rotation.x = THREE.MathUtils.lerp(this._rLeg.rotation.x, -swing, Math.min(1, dt * 12));
+    }
+    if (this._lArm && this._rArm) {
+      // Arms counter-swing the legs; right arm swings less (holds the rifle)
+      this._lArm.rotation.x = THREE.MathUtils.lerp(this._lArm.rotation.x, -swing * 0.8, Math.min(1, dt * 12));
+      this._rArm.rotation.x = THREE.MathUtils.lerp(this._rArm.rotation.x, swing * 0.35, Math.min(1, dt * 12));
+    }
+    // Subtle body bounce synced to the stride (feet stay planted on ground)
+    if (this.mesh) {
+      const bounce = moving ? Math.abs(Math.sin(this._stridePhase)) * 0.03 * (speedNow / 4) : 0;
+      this.mesh.position.y = this.position.y - this.height + bounce;
     }
 
     // Shooting

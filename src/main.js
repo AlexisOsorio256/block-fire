@@ -74,11 +74,13 @@ if (params.has('runTests')) {
       // made this test flaky when flinch pushed the bot).
       const savedSpread = game.weaponSystem.currentWeapon.spread;
       game.weaponSystem.currentWeapon.spread = 0;
-      for(let i=0; i<5 && bot.isAlive; i++) {
+      for(let i=0;i<6 && bot.isAlive; i++) {
         game.weaponSystem.fireCooldown = 0;
         // Bots flinch on hit (knockback), so re-aim at the moving target each
-        // shot — a real fight tracks the target instead of shooting a fixed spot.
-        game.camera.lookAt(bot.position.x, bot.position.y - 0.5, bot.position.z);
+        // shot — a real fight tracks the target instead of a fixed spot.
+        // Aim at the head: 125 HP / headshot 48 → 3 shots kill; 6 shots give
+        // headroom so the test is deterministic regardless of body/head ratio.
+        game.camera.lookAt(bot.position.x, bot.position.y - 0.08, bot.position.z);
         game.camera.updateMatrixWorld();
         combatResult = game.weaponSystem.fire(game.player, [bot], null);
       }
@@ -87,7 +89,7 @@ if (params.has('runTests')) {
       const scoreAfterWeapon = game.playerKills;
       bot.respawn(botStart);
       game.playerKills = 0;
-      game.applyDamage(bot, 100, 'body', game.player);
+      game.applyDamage(bot, 200, 'body', game.player);
       const directDamageOk = game.playerKills === 1;
       log('7 COMBAT + SCORE', combatOk && directDamageOk, `weaponKills ${scoreAfterWeapon} directKills ${game.playerKills} damage ${combatResult?.totalDamage || 0}`);
       bot.respawn(botStart);
