@@ -10,6 +10,7 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #hud-top{ display:flex; justify-content:center; }
 #score-chip{ display:flex; gap:12px; align-items:center; background: rgba(10,16,28,0.55); border:1px solid rgba(255,255,255,0.1); padding:7px 16px; border-radius:10px; backdrop-filter: blur(6px); }
 #score-chip #kills{ color:#ffd23f; font-weight:900; font-size:22px; line-height:1; }
+#score-chip #leader{ color:#ff8a5c; font-weight:900; font-size:22px; line-height:1; }
 #score-chip #timer{ font-weight:900; font-size:16px; letter-spacing:0.05em; color:#fff; line-height:1; }
 #hud label{ font-size:9px; letter-spacing:0.12em; color:#8fa4c8; font-weight:800; }
 #hud-bottom{ display:flex; justify-content:space-between; align-items:flex-end; }

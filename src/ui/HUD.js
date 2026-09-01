@@ -12,11 +12,13 @@ export class HUD {
     this.killbannerEl = document.getElementById('killbanner');
     this.hitbannerEl = document.getElementById('hitbanner');
     this.weaponNameEl = document.getElementById('weapon-name');
+    this.leaderEl = document.getElementById('leader');
     this._killTimer = null;
     this._hitTimer = null;
   }
 
-  update({ score, timeLeft, health, ammo, kills, deaths, fps, pos, botCount, weaponName }) {
+  update({ score, timeLeft, health, ammo, kills, deaths, fps, pos, botCount, weaponName, leader }) {
+    if (this.leaderEl) this.leaderEl.textContent = leader !== undefined ? leader : (this.leaderEl.textContent || '0');
     if (this.timerEl) {
       const m = Math.floor(timeLeft / 60);
       const s = Math.floor(timeLeft % 60);
@@ -68,19 +70,22 @@ export class HUD {
 
   // Big centered kill confirmation — strong but brief. Streak escalation:
   // 1 kill = ELIMINADO; 2 in 3.5s = DOBLE BAJA; 3+ = RACHA xN.
+  // No fake "+100" points: the only score in BLOCKFIRE is kills, so the
+  // banner must not advertise a scoring system that doesn't exist.
   showKillBanner(isHeadshot, streak = 1) {
     if (!this.killbannerEl) return;
     const title = this.killbannerEl.querySelector('.kb-title');
     const sub = this.killbannerEl.querySelector('.kb-sub');
+    const hsTag = isHeadshot ? 'HEADSHOT' : '';
     if (streak >= 3) {
       title.textContent = 'RACHA';
-      sub.textContent = `x${streak} ${isHeadshot ? '· HEADSHOT ' : ''}+${100 * streak}`;
+      sub.textContent = `x${streak}${hsTag ? ' · ' + hsTag : ''}`;
     } else if (streak === 2) {
       title.textContent = 'DOBLE BAJA';
-      sub.textContent = isHeadshot ? 'HEADSHOT +200' : '+200';
+      sub.textContent = hsTag;
     } else {
       title.textContent = 'ELIMINADO';
-      sub.textContent = isHeadshot ? 'HEADSHOT +100' : '+100';
+      sub.textContent = hsTag;
     }
     this.killbannerEl.classList.remove('show');
     void this.killbannerEl.offsetWidth; // restart animation

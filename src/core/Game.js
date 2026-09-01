@@ -106,7 +106,9 @@ export class Game {
     this.killTarget = 20;
     this.playerKills = 0;
     this.playerDeaths = 0;
+    this._resultShown = false;
     this.killFeed = [];
+    this._pendingRespawns = []; // setTimeout ids of scheduled respawns
 
     // Effects — pooling para eficiencia (no crear Geometry/Material por disparo)
     this.hitFlash = 0;
@@ -172,9 +174,11 @@ export class Game {
 
   _setupEvents() {
     // Weapon switch via input will be handled in update
-    // Debug toggle
+    // Debug toggle — F3 only. Shift+D was removed: Shift is sprint and
+    // sprint-strafing right (Shift+D) fired keydown repeats that toggled the
+    // debug overlay on and off mid-sprint.
     window.addEventListener('keydown', e=>{
-      if(e.code==='F3' || (e.shiftKey && e.code==='KeyD')){
+      if(e.code==='F3'){
         this.hud.toggleDebug();
       }
     });
@@ -244,6 +248,11 @@ export class Game {
 
     // Unlock pointer on overlay show
     this.showResult = (won)=>{
+      // Exactly once per match: the kill-win path and the frame's "Check win"
+      // scan can both fire in the same frame, which used to double-count
+      // bf_wins and re-pop the result screen.
+      if (this._resultShown) return;
+      this._resultShown = true;
       const title = document.getElementById('result-title');
       const sub = document.getElementById('result-sub');
       const fk = document.getElementById('finalKills');
@@ -273,6 +282,20 @@ export class Game {
     this.matchTime = 0;
     this.playerKills = 0;
     this.playerDeaths = 0;
+    this._resultShown = false; // showResult must fire exactly once per match
+    // Rule §4: a restart returns ALL temporal state to clean. Pending respawn
+    // timers from the previous match would teleport entities 1.8s in; leftover
+    // fire/shake/cooldown state would bleed into the new match.
+    for (const t of this._pendingRespawns) clearTimeout(t);
+    this._pendingRespawns.length = 0;
+    // The cancelled timers were also what hid the death overlay — do it here.
+    const dOv = document.getElementById('death-overlay');
+    if (dOv) dOv.classList.remove('show');
+    this.weaponSystem.fireCooldown = 0;
+    this.weaponSystem._switchAnim = 0;
+    this._hitstop = 0;
+    this._shake = 0;
+    this.hitFlash = 0;
     // Reset player and bots
     const playerSpawn = this.map.getRandomSpawn();
     this.playerController.respawn(playerSpawn);
@@ -318,7 +341,9 @@ export class Game {
 
   // DamageSystem central
   applyDamage(target, amount, hitType, attacker) {
-    if(!target.isAlive) return false;
+    // Once a match is decided, late damage (stray bullets in the same frame)
+    // must not change scores or retrigger the result screen.
+    if(!target.isAlive || this.matchState === 'FINISHED') return false;
     
     let died = false;
     if(target.isBot){
@@ -336,8 +361,6 @@ export class Game {
     }
 
     if(died){
-      // Death handling
-      if(this.audio) this.audio.play('death');
       // Score
       if(attacker && !attacker.isBot){
         this.playerKills++;
@@ -357,15 +380,33 @@ export class Game {
         this.playerDeaths++;
         // Player death breaks any active streak
         this._streakCount = 0;
+        // The death drone belongs to the player's own death. Bot deaths already
+        // carry their feedback (VFX + kill jingle); playing it for every bot
+        // kill — including bot-vs-bot across the map — was constant bass mud.
+        if(this.audio) this.audio.play('death');
         // Death transition: red fade + MUERTE banner until respawn
         const dOv = document.getElementById('death-overlay');
         if (dOv) dOv.classList.add('show');
       } else if(target.isBot && attacker && attacker.isBot){
         attacker.kills++;
+        // Bots killing each other (or the player) belong in the feed: in an
+        // FFA the leaderboard race must stay legible, not only your own kills.
+        this.hud.showKill(attacker.name || 'BOT', target.isBot ? (target.name || 'BOT') : 'YOU', hitType==='head');
+      }
+      // A bot reaching the kill target wins the FFA: the match must end in
+      // defeat here, not keep running until the timer silently decides.
+      const botLeader = target.isBot && attacker && attacker.isBot ? Math.max(attacker.kills, 0) : 0;
+      if(botLeader >= this.killTarget){
+        this.matchState = 'FINISHED';
+        this.showResult(false);
+        return died;
       }
 
-      // Respawn after 1.8s
-      setTimeout(()=>{
+      // Respawn after 1.8s — tracked so startMatch can cancel them. A shotgun
+      // blast can kill TWO entities in the same frame: each death schedules
+      // its own timer, so this must be a list (a single handle let stale
+      // timers from the previous match teleport entities mid-next-match).
+      const respawnTimer = setTimeout(()=>{
         if(target.isBot){
           const pos = this.map.getRandomSpawn(this.player.position);
           target.respawn(pos);
@@ -392,18 +433,53 @@ export class Game {
           if(this.audio) this.audio.play('respawn');
         }
       }, 1800);
+      this._pendingRespawns.push(respawnTimer);
 
-      // Check win condition
+      // Check win condition (player reached the target)
       if(this.playerKills >= this.killTarget){
         this.matchState = 'FINISHED';
         this.showResult(true);
-      } else {
-        // Check if any bot reached target (for fun, but FFA is player vs all, so only player win matters for prototype)
-        // Could also check if any bot has 20 kills, then player loses if time runs out and bot has more
       }
     }
 
     return died;
+  }
+
+  // Entity-entity separation (player + bots): resolve overlaps in XZ so
+  // nobody stands inside anyone else. Each overlap pushes both parties apart
+  // by half; every push is validated against map geometry so a shove can
+  // never push anyone through a wall or off a platform edge into geometry.
+  // 8 entities → 28 pairs of cheap distance checks per frame.
+  _separateEntities() {
+    const ents = this.player.isAlive ? [this.player, ...this.bots.filter(b => b.isAlive)] : this.bots.filter(b => b.isAlive);
+    const RADII = ents.map(e => e.isBot ? 0.38 : 0.35);
+    for (let i = 0; i < ents.length; i++) {
+      for (let j = i + 1; j < ents.length; j++) {
+        const a = ents[i], b = ents[j];
+        const dx = b.position.x - a.position.x;
+        const dz = b.position.z - a.position.z;
+        const minDist = RADII[i] + RADII[j];
+        const dSq = dx * dx + dz * dz;
+        if (dSq >= minDist * minDist || dSq === 0) continue;
+        const d = Math.sqrt(dSq);
+        const overlap = (minDist - d) / 2;
+        const nx = dx / d, nz = dz / d;
+        // Candidate positions: push each entity half the overlap apart
+        const tryA = { x: a.position.x - nx * overlap, z: a.position.z - nz * overlap };
+        const tryB = { x: b.position.x + nx * overlap, z: b.position.z + nz * overlap };
+        const probe = new THREE.Vector3();
+        probe.copy(a.position); probe.x = tryA.x; probe.z = tryA.z;
+        if (!this.map.checkCollision(probe, RADII[i], a.height || 1.65)) {
+          a.position.x = tryA.x; a.position.z = tryA.z;
+          if (a.isBot && a.mesh) { a.mesh.position.x = a.position.x; a.mesh.position.z = a.position.z; }
+        }
+        probe.copy(b.position); probe.x = tryB.x; probe.z = tryB.z;
+        if (!this.map.checkCollision(probe, RADII[j], b.height || 1.65)) {
+          b.position.x = tryB.x; b.position.z = tryB.z;
+          if (b.isBot && b.mesh) { b.mesh.position.x = b.position.x; b.mesh.position.z = b.position.z; }
+        }
+      }
+    }
   }
 
   // VFX helpers — pooling + loop central (sin rAF por partícula)
@@ -534,6 +610,7 @@ export class Game {
       this.matchState = 'FINISHED';
       const won = this.playerKills >= Math.max(...this.bots.map(b=>b.kills), 0);
       this.showResult(won);
+      return; // match is over — do not simulate or render another gameplay frame
     }
 
     // Input
@@ -598,7 +675,9 @@ export class Game {
         this.camera.updateMatrixWorld();
 
         const allTargets = [this.player, ...this.bots];
-        const result = this.weaponSystem.fire(bot, allTargets, this.map);
+        // savedPos IS the real listener (player camera): fire() must measure
+        // bot-shot distance from here, not from the hijacked bot-eye camera.
+        const result = this.weaponSystem.fire(bot, allTargets, this.map, savedPos);
 
         // Restore camera
         this.camera.position.copy(savedPos);
@@ -612,16 +691,24 @@ export class Game {
       }
     }
 
-    // Check win
-    if(this.playerKills >= this.killTarget){
+    // Keep combatants out of each other's bodies. Without this, bots bumble
+    // INTO the player and the camera fills with giant polygons at point-blank.
+    // XZ-only push-apart, validated against the map (never shove through walls).
+    this._separateEntities();
+
+    // Check win (guarded: applyDamage already finishes + shows the result)
+    if(this.matchState === 'PLAYING' && this.playerKills >= this.killTarget){
       this.matchState = 'FINISHED';
       this.showResult(true);
+      return;
     }
 
     // HUD
     const aliveBots = this.bots.filter(b=>b.isAlive).length;
+    const botLeader = this.bots.reduce((a,b)=>Math.max(a,b.kills),0);
     this.hud.update({
-      score: `${this.playerKills} - ${this.bots.reduce((a,b)=>Math.max(a,b.kills),0)}`,
+      score: `${this.playerKills} - ${botLeader}`,
+      leader: botLeader,
       timeLeft,
       health: this.playerController.health,
       ammo: this.weaponSystem.getAmmoText(),

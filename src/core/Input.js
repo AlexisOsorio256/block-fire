@@ -28,7 +28,7 @@ export class Input {
       if (e.code === 'Digit2') this.switchWeapon = 2;
       if (e.code === 'Digit3') this.switchWeapon = 3;
       if (e.code === 'KeyQ') this.switchWeapon = -1;
-      if (e.code === 'KeyE') this.switchWeapon = 1;
+      if (e.code === 'KeyE') this.switchWeapon = 'next';
     });
     window.addEventListener('keyup', e => {
       this._keys.delete(e.code);
@@ -196,7 +196,9 @@ export class Input {
     bindButton(btnAim, () => this.aim = true, () => this.aim = false);
     bindButton(btnJump, () => this.jump = true, () => setTimeout(()=>this.jump=false, 120));
     bindButton(btnReload, () => this.reload = true, () => this.reload = false);
-    bindButton(btnSwitch, () => this.switchWeapon = 1, () => {});
+    // 'next' cycles rifle → pistol → shotgun; a fixed slot (pistol) made the
+    // button a dead end for mobile players on the other two weapons.
+    bindButton(btnSwitch, () => this.switchWeapon = 'next', () => {});
   }
 
   // Called each frame to compute final move vector from keys + joystick
