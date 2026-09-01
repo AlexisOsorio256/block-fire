@@ -120,7 +120,7 @@ export class AudioManager {
     o.start(t0); o.stop(t0 + dur + 0.02);
   }
 
-  play(name, variant) {
+  play(name, variant, opts = {}) {
     if (!this.enabled) return;
     this._ensure();
     if (!this.ctx) return;
@@ -128,10 +128,12 @@ export class AudioManager {
 
     // Voice throttle: identical sounds fired within this window replace the
     // previous one instead of stacking (10 rifle shots/s must not become a
-    // wall of noise). Per-event class so steps don't block shots.
-    const throttleClass = name.startsWith('shoot') ? 'shoot' : name;
+    // wall of noise). Per-event class so steps don't block shots; callers can
+    // override the class (bot gunfire uses its own so it never mutes the
+    // player's own gunshot).
+    const throttleClass = opts.throttleClass || (name.startsWith('shoot') ? 'shoot' : name);
+    const minGap = { shoot: 0.03, shootBot: 0.06, step: 0.05, hit: 0.02, impact_wall: 0.05 }[throttleClass] || 0;
     this._lastPlay = this._lastPlay || {};
-    const minGap = { shoot: 0.03, step: 0.05, hit: 0.02, impact_wall: 0.05 }[throttleClass] || 0;
     if (minGap && t - (this._lastPlay[throttleClass] || -1) < minGap) {
       this._lastPlay[throttleClass] = t;
       return; // too soon after the previous identical sound
@@ -164,6 +166,8 @@ export class AudioManager {
         if (variant === 'Shotgun') { rate *= 0.68; vol *= 1.25; }
         else if (variant === 'Pistol') { rate *= 1.22; vol *= 0.85; }
       }
+      // Distance/scale factor from the caller (e.g. bot gunfire fades with range)
+      if (opts.volumeScale !== undefined) vol *= opts.volumeScale;
       if (this._playSample(key, vol, rate)) return;
       // fall through to procedural fallback below
     }

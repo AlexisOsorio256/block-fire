@@ -19,7 +19,10 @@ Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 | Mirar | Ratón | Deslizar pantalla |
 | Disparar | Click izq | Botón rojo 🔴 |
 | Apuntar (ADS) | Click der | Botón mira |
-| Saltar / Recargar / Cambiar arma | Espacio / R / 1-2-3 | Botones |
+| Saltar / Recargar | Espacio / R | Botones |
+| Cambiar arma | 1-2-3 · Q/E cicla | Botón ⟳ cicla |
+
+> El juego es horizontal en todas las plataformas. En móvil usa pantalla completa (botón ⛶).
 
 - **Elige tu arma en el lobby** (rifle, pistola o escopeta) antes de entrar.
 - **Asistencia de apuntado** activa en móvil: si apuntas cerca del pecho, la

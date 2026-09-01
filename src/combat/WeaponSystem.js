@@ -127,13 +127,15 @@ export class WeaponSystem {
     return group;
   }
 
-  // Per-weapon viewmodel presets (position offset + scale)
-  _weaponViewPresets() {
-    return {
+  // Per-weapon viewmodel presets (position offset + scale). Built ONCE:
+  // update() ran this every frame (3 Vector3 + object per frame → GC churn).
+  _viewPresets() {
+    if (!this._presetsCache) this._presetsCache = {
       rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0 },
       pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9 },
       shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15 },
     };
+    return this._presetsCache;
   }
 
   update(dt, canShoot) {
@@ -177,7 +179,7 @@ export class WeaponSystem {
     // Weapon viewmodel follows camera with ADS blend + recoil kickback
     // + walk bob/sway so the gun feels physically held, not glued to screen
     if (this.weaponMesh) {
-      const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
+      const preset = this._viewPresets()[this.weapons[this.currentIndex]] || this._viewPresets().rifle;
       // ADS pulls the weapon to center
       const ads = this._adsBlend;
 
@@ -228,7 +230,10 @@ export class WeaponSystem {
   }
 
   canFire(usesPlayerAmmo = true) {
-    if (this.isReloading) return false;
+    // isReloading is exclusively the player's state (bots never reload). It
+    // must NOT gate bots: probing showed every bot went silent for the whole
+    // player reload (1.1–1.9s), gifting the player a free-push window.
+    if (usesPlayerAmmo && this.isReloading) return false;
     if (usesPlayerAmmo && this.fireCooldown > 0) return false;
     if (usesPlayerAmmo && this.ammoInMag <= 0) {
       // Dry-fire click only when actively trying to shoot (not on spam frames)
@@ -242,13 +247,20 @@ export class WeaponSystem {
     return true;
   }
 
-  fire(shooter, targets, map = null) {
+  fire(shooter, targets, map = null, listenerPos = null) {
     // Bots share the hitscan implementation, but never share the player's
     // magazine/cooldown. Their own cadence is controlled by Bot.shootCooldown.
+    // Bots always engage with the rifle: letting them inherit the player's
+    // loadout coupled bot damage/range to the player's lobby pick (picking the
+    // shotgun silently nerfed every bot in the match).
+    // listenerPos: where the shot is heard from. Game.js temporarily moves the
+    // camera to the bot's eye before calling fire(), so bots must pass the
+    // real listener (the player camera) or distance attenuation measures ~0.12
+    // and every bot gunshot plays at full volume.
     const usesPlayerAmmo = !shooter.isBot;
     if (!this.canFire(usesPlayerAmmo)) return null;
 
-    const weapon = this.currentWeapon;
+    const weapon = shooter.isBot ? WeaponData.rifle : this.currentWeapon;
     if (usesPlayerAmmo) {
       this.ammoInMag--;
       this.fireCooldown = weapon.fireRate;
@@ -264,17 +276,30 @@ export class WeaponSystem {
       }
     }
 
-    // Crosshair feedback
+    // Crosshair feedback (player only)
     if (usesPlayerAmmo && this.crosshair) {
       this.crosshair.classList.add('fire');
       setTimeout(()=> this.crosshair.classList.remove('fire'), 80);
     }
 
-    if (this.audio) this.audio.play('shoot', weapon.name);
+    // Gunfire audio. Bot shots: separate throttle class (so a bot firing
+    // within 30ms of the player's shot can no longer mute the player's own
+    // gunshot) and distance attenuation (far gunfire must not be as loud as
+    // the weapon in your hands).
+    if (this.audio) {
+      if (usesPlayerAmmo) {
+        this.audio.play('shoot', weapon.name);
+      } else {
+        const listener = listenerPos || this.camera.position;
+        const dist = shooter.position ? listener.distanceTo(shooter.position) : 20;
+        const vol = Math.max(0.12, Math.min(0.85, 1 - dist / 45));
+        this.audio.play('shoot', weapon.name, { throttleClass: 'shootBot', volumeScale: vol });
+      }
+    }
 
     // Muzzle flash — from viewmodel muzzle in world space
     if (usesPlayerAmmo && this.vfx) {
-      const preset = this._weaponViewPresets()[this.weapons[this.currentIndex]] || this._weaponViewPresets().rifle;
+      const preset = this._viewPresets()[this.weapons[this.currentIndex]] || this._viewPresets().rifle;
       const ads = this._adsBlend || 0;
       const mx = THREE.MathUtils.lerp(preset.pos.x, 0, ads);
       const my = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
@@ -289,17 +314,23 @@ export class WeaponSystem {
 
     // Raycast for each pellet
     let hits = [];
+    // Spread in CAMERA space: world-space x/y offsets made the cone collapse
+    // to a line when facing ±X (east/west), so shotgun spread depended on
+    // where you were looking, not where you aimed.
+    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     for (let p = 0; p < weapon.pellets; p++) {
-      // ADS tightens spread (stable aim)
-      const spreadScale = 1 - (this._adsBlend || 0) * 0.65;
+      // ADS tightens spread (stable aim) — PLAYER ONLY: _adsBlend is the
+      // player's aim state; bots inheriting it made the whole bot squad
+      // silently sharpen whenever the player aimed down sights.
+      const spreadScale = usesPlayerAmmo ? 1 - (this._adsBlend || 0) * 0.65 : 1;
       const spreadX = (Math.random()-0.5) * weapon.spread * spreadScale;
       const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
 
       const direction = new THREE.Vector3();
       this.camera.getWorldDirection(direction);
-      // Apply spread
-      direction.x += spreadX;
-      direction.y += spreadY;
+      // Apply spread around the camera's own axes
+      direction.addScaledVector(camRight, spreadX).addScaledVector(camUp, spreadY);
       direction.normalize();
 
       // AIM ASSIST (player only): if the raw shot would pass near a visible
@@ -431,12 +462,6 @@ export class WeaponSystem {
       if (headshot && !killed && this.vfx && this.vfx.hud) this.vfx.hud.showHitBanner(true);
     }
 
-    // Auto reload if empty
-    if (this.ammoInMag <= 0 && this.reserveAmmo > 0 && !this.isReloading) {
-      // Don't auto reload immediately, let player press R, but for bots auto
-      if (shooter.isBot) this.reload();
-    }
-
     return { hits, totalDamage, killed };
   }
 
@@ -468,10 +493,15 @@ export class WeaponSystem {
     if (this.audio) this.audio.play('reloadStart');
   }
 
+  // dir: 1-3 selects a slot, -1 cycles to the previous weapon, 'next' cycles
+  // forward (KeyE / mobile switch button — a fixed slot would trap mobile
+  // players on the pistol).
   switchWeapon(dir) {
     if (this.isReloading) return;
     let idx = this.currentIndex;
-    if (typeof dir === 'number' && dir >= 1 && dir <= 3) {
+    if (dir === 'next') {
+      idx = (idx + 1) % this.weapons.length;
+    } else if (typeof dir === 'number' && dir >= 1 && dir <= 3) {
       idx = dir - 1;
     } else {
       idx = (idx + dir + this.weapons.length) % this.weapons.length;

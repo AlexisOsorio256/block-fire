@@ -122,6 +122,9 @@ export class PlayerController {
     if (this.input.jump && this.onGround) {
       this.velocity.y = this.jumpForce;
       this.onGround = false;
+      // Takeoff blip: the rising sample belongs to the jump itself. It used to
+      // fire on landing, where the camera dip already carries the feedback.
+      if (this.audio) this.audio.play('jump');
     }
     this.velocity.y -= this.gravity * dt;
 
@@ -142,8 +145,7 @@ export class PlayerController {
       const wasFalling = this.velocity.y < -3; // meaningful fall → landing punch
       cand.y = groundY + this.height;
       if (wasFalling && !this.onGround) {
-        this._landPunch = 0.09; // camera dip on landing
-        if (this.audio) this.audio.play('jump');
+        this._landPunch = 0.09; // camera dip on landing (feedback is the dip, not a sound)
       }
       this.velocity.y = Math.max(0, this.velocity.y);
       this.onGround = true;
