@@ -79,13 +79,3 @@ src/ui/HUD.js                  HUD, kill feed y banners
 src/audio/AudioManager.js      samples CC0 + fallback procedural
 ```
 
-Convenciones críticas:
-
-- `position.y` = altura de **ojo**; pies en `y − height`. Meshes apoyados con
-  pies exactos en `getGroundY()`.
-- `Map.raycast` (slab AABB) resuelve oclusión **antes** de aplicar daño.
-- Spawns se validan contra colisión (`isSpawnClear`) — nadie nace dentro de
-  paredes.
-- `?runTests=1` — **7/7 PASS obligatorio** antes de aceptar cualquier cambio.
-- Assets externos: solo CC0, listados en [`CREDITS.md`](CREDITS.md).
-- Verificación visual: `tools/gemini-vision.py` (key en `.env`, gitignored).
