@@ -103,6 +103,9 @@ PC y Android son objetivos de primera clase. Ninguna plataforma es una versión
 de segunda categoría ni una excusa para bifurcar el juego.
 
 - Diseñar primero reglas, UI y flujo que funcionen con mouse/teclado y táctil.
+- **BLOCKFIRE se juega EN HORIZONTAL** en todas las plataformas y en todas las
+  pantallas (lobby, partida, configuración y cualquier pantalla futura). Ninguna
+  interfaz principal se diseña para portrait y no existe una versión vertical.
 - Tratar tamaño, orientación, densidad, área segura, foco, pausa/interrupción,
   audio y rendimiento móvil como requisitos reales, no como detalles finales.
 - No declarar “móvil listo” por CSS o emulación. Validar controles y rendimiento

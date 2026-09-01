@@ -29,6 +29,12 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
   #health, #ammo{ font-size:20px; }
 }
 
+/* Gameplay-only UI: HUD + touch controls render ONLY during a match.
+   In the lobby they bled through the translucent overlay (and stayed
+   interactive underneath on touch devices). */
+body:not(.playing) #hud,
+body:not(.playing) #mobile-controls{ display:none !important; }
+
 /* Mobile LANDSCAPE: short screen — health/ammo move to the TOP corners
    (row 1), score chip just below them (row 2); thumb controls keep the bottom */
 @media (pointer: coarse) and (orientation: landscape), (max-width: 900px) and (orientation: landscape) and (max-height: 500px){
@@ -68,6 +74,18 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
   background: radial-gradient(ellipse at center, transparent 42%, rgba(255,30,20,0.42) 100%);
   transition: opacity 0.30s ease-out; }
 #damage-vignette.show{ opacity:1; transition: opacity 0.05s; }
+/* Critical health: ambient pulsing rim — you KNOW you're about to die */
+#damage-vignette.low{ opacity:0.55; animation: lowHp 1.1s ease-in-out infinite; }
+@keyframes lowHp{ 0%,100%{ opacity:0.35; } 50%{ opacity:0.62; } }
+
+/* Directional damage wedge — points at the attacker, orbits the crosshair */
+#damage-direction{ position:fixed; left:50%; top:50%; width:150px; height:150px; z-index:4;
+  pointer-events:none; opacity:0; transform:translate(-50%,-50%); }
+#damage-direction.show{ animation: dmgDir 0.65s ease-out forwards; }
+#damage-direction i{ position:absolute; left:50%; top:-6px; width:0; height:0;
+  margin-left:-14px; border-left:16px solid transparent; border-right:16px solid transparent;
+  border-bottom:20px solid rgba(255,60,40,0.95); filter:drop-shadow(0 0 6px rgba(255,40,20,0.8)); }
+@keyframes dmgDir{ 0%{ opacity:0; } 12%{ opacity:1; } 70%{ opacity:0.85; } 100%{ opacity:0; } }
 
 /* Death overlay — red fade to dark + respawn text */
 #death-overlay{ position:fixed; inset:0; z-index:5; pointer-events:none; opacity:0;
@@ -97,25 +115,47 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 @keyframes hbPop{ 0%{ opacity:0; transform:translate(-50%,-50%) scale(0.7);} 15%{ opacity:1; transform:translate(-50%,-50%) scale(1.1);} 30%{ transform:translate(-50%,-50%) scale(1);} 100%{ opacity:0; transform:translate(-50%,-54%);} }
 
 /* Mobile controls */
-#mobile-controls{ position:fixed; inset:0; z-index:3; pointer-events:none; display:none; }
+#mobile-controls{ position:fixed; inset:0; z-index:3; pointer-events:none; display:none;
+  --btn-scale:1; --btn-opacity:1; }
 @media (pointer: coarse), (max-width: 900px){
-  #mobile-controls{ display:block; }
+  #mobile-controls{ display:block; opacity:var(--btn-opacity); }
 }
-#joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:45%; pointer-events:auto; }
+#joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:45%; pointer-events:auto; touch-action:none; }
 #joystick-base{ position:absolute; left:24px; bottom:24px; width:110px; height:110px; border-radius:50%; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); backdrop-filter: blur(6px); }
 #joystick-stick{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:48px; height:48px; border-radius:50%; background: rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.18); transition: transform 0.05s; }
-#look-zone{ position:absolute; right:0; top:0; width:58%; height:100%; pointer-events:auto; }
-#action-buttons{ position:absolute; right:16px; bottom:16px; display:flex; gap:10px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; max-width:180px; }
+#look-zone{ position:absolute; right:0; top:0; width:58%; height:100%; pointer-events:auto; touch-action:none; }
+#action-buttons{ position:absolute; right:16px; bottom:16px; display:flex; gap:10px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; max-width:220px; }
 #btn-fullscreen{ position:absolute; top:10px; right:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; z-index:4; }
 #btn-fullscreen svg{ width:20px; height:20px; }
 #btn-fullscreen:active{ background: rgba(255,210,60,0.25); }
 :fullscreen #btn-fullscreen{ display:none; }
 
-.action-btn{ width:54px; height:54px; border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
-.action-btn svg{ width:30px; height:30px; pointer-events:none; }
+.action-btn{ width: calc(54px * var(--btn-scale)); height: calc(54px * var(--btn-scale)); border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
+.action-btn svg{ width:56%; height:56%; pointer-events:none; }
 #btn-fire svg{ color:#ff5a4a; }
 #btn-aim:active svg{ color:#ffd23f; }
 .action-btn:active{ transform:scale(0.92); background: rgba(255,210,60,0.22); border-color: rgba(255,210,60,0.4); }
+
+/* Landscape gate — BLOCKFIRE se juega EN HORIZONTAL. Shown over everything
+   while a coarse-pointer screen is in portrait; lobby, menús y gameplay incluidos. */
+#rotate-gate{ position:fixed; inset:0; z-index:60; display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+  background: linear-gradient(180deg, #0a0f1e 0%, #101a30 100%); color:#e6eefc; text-align:center; }
+#rotate-gate.show{ display:flex; }
+#rotate-gate .rg-phone{ width:56px; color:#9fb6e0; animation: rgTilt 1.6s ease-in-out infinite; }
+@keyframes rgTilt{ 0%,20%{ transform:rotate(0deg);} 55%,80%{ transform:rotate(-90deg); } 100%{ transform:rotate(-90deg); } }
+#rotate-gate h2{ font-size:20px; font-weight:900; letter-spacing:0.16em; }
+#rotate-gate p{ font-size:12px; color:#8fa4c8; font-weight:700; letter-spacing:0.06em; }
+
+/* Onboarding de primera partida (táctil) — breve, cerrable, no bloquea el juego */
+#touch-hint{ position:fixed; inset:0; z-index:55; display:flex; align-items:center; justify-content:center; padding:12px; }
+#touch-hint.hidden{ display:none; }
+#touch-hint .th-card{ background: rgba(8,12,24,0.92); border:1px solid rgba(255,210,63,0.35); border-radius:16px; padding:14px 18px; max-width:520px; width:100%; box-shadow:0 18px 50px rgba(0,0,0,0.6); }
+#touch-hint .th-row{ display:flex; align-items:center; gap:12px; padding:8px 2px; font-size:12.5px; color:#dbe6f8; border-bottom:1px solid rgba(255,255,255,0.07); }
+#touch-hint .th-row:last-of-type{ border-bottom:none; }
+#touch-hint .th-row svg{ width:26px; height:26px; flex:none; color:#9fb6e0; }
+#touch-hint .th-row b{ color:#ffd23f; }
+#th-close{ margin-top:10px; width:100%; appearance:none; border:none; cursor:pointer; font-size:14px; font-weight:900; letter-spacing:0.16em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:12px 0; border-radius:10px; box-shadow: 0 4px 0 #8a5a00; }
+#th-close:active{ transform:translateY(3px); box-shadow:0 1px 0 #8a5a00; }
 
 /* Lobby / Overlay */
 #overlay{ position:fixed; inset:0; z-index:6; display:grid; place-items:center; background: linear-gradient(180deg, rgba(8,12,24,0.42) 0%, rgba(8,12,24,0.62) 55%, rgba(8,12,24,0.88) 100%); backdrop-filter: blur(2px); padding:20px; transition: opacity 0.3s, visibility 0.3s; }
@@ -125,6 +165,8 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #title-block h1 span{ color:#ffb400; }
 .tagline{ font-size:13px; letter-spacing:0.34em; font-weight:800; color:#9fb6e0; margin-top:10px; }
 #hint{ font-size:11px; color:rgba(160,180,220,0.65); margin-top:14px; letter-spacing:0.08em; }
+#title-block .credits{ font-size:9px; color:rgba(140,160,200,0.45); margin-top:10px; letter-spacing:0.04em; }
+#title-block .credits a{ color:rgba(160,180,220,0.6); text-decoration:underline; }
 
 /* Lobby weapon selector */
 #lobby-weapons{ display:flex; gap:10px; justify-content:center; margin-top:22px; }
@@ -137,6 +179,29 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 /* Lobby last-match stats */
 #lobby-stats{ margin-top:14px; min-height:18px; font-size:12px; font-weight:700; letter-spacing:0.08em; color:#8fa4c8; }
 #lobby-stats b{ color:#ffd23f; }
+
+/* Lobby menu chips — growth space: configuración activa, armería/tienda futuras */
+#lobby-menu{ display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap:wrap; }
+.menu-chip{ appearance:none; cursor:pointer; pointer-events:auto; font-size:10px; font-weight:800; letter-spacing:0.14em; color:#b8c8e2; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14); padding:9px 14px; border-radius:10px; transition:all 0.15s; }
+.menu-chip:hover{ background:rgba(255,255,255,0.11); color:#fff; }
+.menu-chip.locked{ opacity:0.45; cursor:default; }
+
+/* Config panel */
+#config-panel{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:8;
+  width:min(420px, 92vw); background:rgba(8,12,24,0.96); border:1px solid rgba(255,210,63,0.35);
+  border-radius:16px; padding:18px 22px 14px; box-shadow:0 20px 60px rgba(0,0,0,0.65); }
+#config-panel h3{ font-size:15px; font-weight:900; letter-spacing:0.2em; color:#ffd23f; margin-bottom:8px; }
+.cfg-row{ margin:12px 0; }
+.cfg-row label{ display:flex; justify-content:space-between; font-size:11px; font-weight:800; letter-spacing:0.1em; color:#9fb6e0; margin-bottom:6px; }
+.cfg-row output{ color:#fff; font-variant-numeric: tabular-nums; }
+.cfg-row input[type=range]{ width:100%; appearance:none; height:6px; border-radius:3px; background:rgba(255,255,255,0.15); outline:none; }
+.cfg-row input[type=range]::-webkit-slider-thumb{ appearance:none; width:18px; height:18px; border-radius:50%; background:#ffd23f; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.5); cursor:pointer; }
+.cfg-actions{ display:flex; gap:10px; margin-top:14px; }
+.cfg-actions button{ flex:1; appearance:none; cursor:pointer; pointer-events:auto; border:none; font-size:12px; font-weight:900; letter-spacing:0.12em; padding:11px 0; border-radius:10px; }
+#cfg-reset{ color:#06101e; background:rgba(255,255,255,0.22); }
+#cfg-close{ color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); box-shadow:0 3px 0 #8a5a00; }
+#cfg-reset:active, #cfg-close:active{ transform:translateY(2px); }
+.cfg-note{ margin-top:10px; font-size:9.5px; color:rgba(140,160,200,0.5); letter-spacing:0.05em; }
 #playBtn, #retryBtn{ margin-top:26px; appearance:none; border:none; cursor:pointer; font-size:17px; font-weight:900; letter-spacing:0.18em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:16px 64px; border-radius:14px; box-shadow: 0 6px 0 #8a5a00, 0 14px 30px rgba(0,0,0,0.45); pointer-events:auto; transition: transform 0.06s; }
 #playBtn:active, #retryBtn:active{ transform:translateY(4px); box-shadow: 0 2px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
 #result-block h2{ font-size: clamp(34px, 9vw, 56px); font-weight:900; color:#ffd23f; text-shadow:0 0 22px rgba(255,210,60,0.5); }
@@ -146,3 +211,30 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 #result-stats label{ font-size:9px; letter-spacing:0.14em; color:#9fb0d0; }
 .hidden{ display:none !important; }
 #debug{ position:fixed; top:8px; left:8px; z-index:10; font:11px/1.4 ui-monospace,monospace; background: rgba(0,0,0,0.7); color:#8ff; padding:8px 10px; border-radius:8px; white-space:pre; pointer-events:none; border:1px solid rgba(100,255,255,0.2); }
+
+/* Lobby compacto en pantallas landscape bajas (móvil horizontal): toda la
+   app es landscape; aquí el lobby debe caber SIN recortes ni scroll incluso
+   con ~300px de alto útil (Chrome landscape con barra de direcciones). */
+@media (orientation: landscape) and (max-height: 500px){
+  #overlay{ padding:6px 16px; }
+  #title-block, #result-block{ max-height:100%; overflow:hidden; }
+  #title-block h1{ font-size: clamp(26px, 6.5vh, 42px); line-height:1; }
+  .tagline{ margin-top:2px; font-size:8.5px; letter-spacing:0.2em; }
+  #lobby-weapons{ margin-top:6px; gap:8px; }
+  .lobby-weapon{ padding:5px 8px; }
+  .lobby-weapon svg{ width:36px; height:15px; }
+  .lobby-weapon label{ font-size:8.5px; }
+  #lobby-stats{ margin-top:3px; font-size:9.5px; min-height:12px; }
+  #playBtn, #retryBtn{ margin-top:7px; padding:8px 40px; font-size:13px; box-shadow: 0 3px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
+  #lobby-menu{ margin-top:7px; gap:6px; }
+  .menu-chip{ padding:6px 9px; font-size:8.5px; }
+  /* On short landscape the hint + credits are secondary: hide them instead of
+     clipping the interactive menu chips at the screen edge. */
+  #hint, #title-block .credits{ display:none; }
+  #result-block h2{ font-size: clamp(22px, 7vh, 34px); }
+  #result-stats{ margin-top:6px; }
+  #result-stats div{ padding:6px 4px; }
+  #result-stats span{ font-size:18px; }
+  #retryBtn{ margin-top:8px; }
+}
+

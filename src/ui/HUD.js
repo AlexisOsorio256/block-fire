@@ -13,6 +13,8 @@ export class HUD {
     this.hitbannerEl = document.getElementById('hitbanner');
     this.weaponNameEl = document.getElementById('weapon-name');
     this.leaderEl = document.getElementById('leader');
+    this.dmgDirEl = document.getElementById('damage-direction');
+    this._dmgDirTimer = null;
     this._killTimer = null;
     this._hitTimer = null;
   }
@@ -45,6 +47,11 @@ export class HUD {
       }
     }
     if (this.weaponNameEl) this.weaponNameEl.textContent = (weaponName || 'RIFLE').toUpperCase();
+
+    // Persistent critical state: subtle pulsing red rim while ≤30 HP so
+    // "about to die" is ambient knowledge, not just a per-hit flash.
+    if (this._vignEl === undefined) this._vignEl = document.getElementById('damage-vignette');
+    if (this._vignEl) this._vignEl.classList.toggle('low', health <= 30 && health > 0);
 
     if (this.debugEnabled && this.debugEl) {
       this.debugEl.textContent = `FPS ${fps|0} | POS ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} | BOTS ${botCount} | SCORE ${score}`;
@@ -104,6 +111,18 @@ export class HUD {
     this.hitbannerEl.classList.add('show');
     clearTimeout(this._hitTimer);
     this._hitTimer = setTimeout(()=> this.hitbannerEl.classList.remove('show'), 600);
+  }
+
+  // Directional damage indicator: a red wedge orbiting the crosshair, rotated
+  // toward the attacker (0° = front, clockwise positive). Re-fires per hit.
+  showDamageDirection(angleDeg = 0) {
+    if (!this.dmgDirEl) return;
+    this.dmgDirEl.style.transform = `translate(-50%, -50%) rotate(${angleDeg}deg)`;
+    this.dmgDirEl.classList.remove('show');
+    void this.dmgDirEl.offsetWidth; // restart animation
+    this.dmgDirEl.classList.add('show');
+    clearTimeout(this._dmgDirTimer);
+    this._dmgDirTimer = setTimeout(() => this.dmgDirEl.classList.remove('show'), 650);
   }
 
   toggleDebug() {

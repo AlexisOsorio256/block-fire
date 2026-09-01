@@ -42,11 +42,15 @@ export class AudioManager {
   }
 
   _preload() {
-    // name -> [file, volume] for every real sample we ship
+    // name -> [file, volume] for every real sample we ship.
+    // Gunshots: real CC-BY recordings (Jesús Lastra, see CREDITS.md) — one
+    // DISTINCT sample per weapon (rifle mechanical 380ms / pistol dry 255ms /
+    // shotgun heavy 600ms). The old approach pitch-shifted one sci-fi laser
+    // for all three; real identity needs real sources.
     this._manifest = {
-      'shoot-rifle':   ['rifle.ogg', 0.5],
-      'shoot-shotgun': ['shotgun.ogg', 0.6],
-      'shoot-pistol':  ['pistol.ogg', 0.45],
+      'shoot-rifle':   ['gshot_rifle.ogg', 0.55],
+      'shoot-shotgun': ['gshot_shotgun.ogg', 0.72],
+      'shoot-pistol':  ['gshot_pistol.ogg', 0.55],
       'hit':           ['hit.ogg', 0.55],
       'hitmarker':     ['hitmarker.ogg', 0.5],
       'impact_wall':   ['impact_wall.ogg', 0.5],
@@ -68,7 +72,7 @@ export class AudioManager {
         .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then(ab => this.ctx.decodeAudioData(ab))
         .then(buf => { this._buffers.set(key, buf); })
-        .catch(() => { /* missing sample → procedural fallback covers it */ });
+        .catch(err => { /* missing sample → procedural fallback covers it */ console.warn(`[sfx] ${file} no cargó:`, err && err.message); });
       this._loading.set(key, p);
     }
     Promise.allSettled(this._loading.values());
@@ -159,14 +163,10 @@ export class AudioManager {
     if (sampleMap[name]) {
       const key = sampleMap[name];
       let vol = this._manifest && this._manifest[key] ? this._manifest[key][1] : 0.5;
-      // Per-weapon sonic identity on the same sample: shotgun plays LOWER and
-      // LOUDER (heavy), pistol HIGHER and lighter (snappy), rifle neutral.
-      let rate = 1 + (Math.random() - 0.5) * 0.06; // tiny variation, no machine-gun sameness
-      if (name === 'shoot') {
-        if (variant === 'Shotgun') { rate *= 0.68; vol *= 1.25; }
-        else if (variant === 'Pistol') { rate *= 1.22; vol *= 0.85; }
-      }
-      // Distance/scale factor from the caller (e.g. bot gunfire fades with range)
+      // Tiny rate variation so rapid fire doesn't sound machine-identical.
+      // Per-weapon identity now comes from the distinct recorded samples —
+      // no pitch-shifting disguise on top.
+      let rate = 1 + (Math.random() - 0.5) * 0.05;
       if (opts.volumeScale !== undefined) vol *= opts.volumeScale;
       if (this._playSample(key, vol, rate)) return;
       // fall through to procedural fallback below

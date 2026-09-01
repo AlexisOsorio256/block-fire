@@ -6,6 +6,7 @@ import { Bot } from '../bots/Bot.js';
 import { Map } from '../world/Map.js';
 import { HUD } from '../ui/HUD.js';
 import { AudioManager } from '../audio/AudioManager.js';
+import { settings } from './Settings.js';
 
 export class Game {
   constructor() {
@@ -222,6 +223,67 @@ export class Game {
     };
     showLobbyStats();
 
+    // Fullscreen + landscape lock from the JUGAR gesture itself (the only
+    // moment a browser allows both). Best effort: iOS rejects the lock —
+    // the rotate gate covers that case instead of a mid-game rotation.
+    const tryFullscreenLandscape = async () => {
+      const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900;
+      if (!coarse || window.innerWidth > window.innerHeight) return;
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!req) return;
+      try {
+        const p = req.call(el, { navigationUI: 'hide' });
+        if (p && p.catch) await p;
+        const so = screen.orientation && (screen.orientation.lock || screen.lockOrientation);
+        if (so) { try { await so.call(screen.orientation || screen, 'landscape'); } catch (e) {} }
+      } catch (e) { /* gate (main.js) instructs rotation instead */ }
+    };
+
+    // ---- Config panel: sensitivity (camera/ADS) + touch control size/opacity.
+    // Writes through Settings (persisted); Input and PlayerController read the
+    // live values every frame, so no re-wiring is needed on change.
+    const configPanel = document.getElementById('config-panel');
+    const cfgBindings = [
+      ['cfg-sens',      'out-sens',      'sensMul',     v => `${v.toFixed(1)}×`],
+      ['cfg-ads',       'out-ads',       'adsMul',      v => `${v.toFixed(2)}×`],
+      ['cfg-btnscale',  'out-btnscale',  'btnScale',    v => `${v.toFixed(2)}×`],
+      ['cfg-btnopacity','out-btnopacity','btnOpacity',  v => `${Math.round(v * 100)}%`],
+    ];
+    for (const [inputId, outId, setting, fmt] of cfgBindings) {
+      const input = document.getElementById(inputId);
+      const out = document.getElementById(outId);
+      if (!input || !out) continue;
+      input.value = String(settings.get(setting));
+      out.textContent = fmt(settings.get(setting));
+      input.addEventListener('input', () => {
+        settings.set(setting, parseFloat(input.value));
+        out.textContent = fmt(settings.get(setting));
+      });
+    }
+    const openCfg = document.getElementById('btn-config');
+    const closeCfg = document.getElementById('cfg-close');
+    const resetCfg = document.getElementById('cfg-reset');
+    if (openCfg) openCfg.addEventListener('click', () => {
+      configPanel.classList.remove('hidden');
+      this.audio.play('ui');
+    });
+    if (closeCfg) closeCfg.addEventListener('click', () => {
+      configPanel.classList.add('hidden');
+      this.audio.play('ui');
+    });
+    if (resetCfg) resetCfg.addEventListener('click', () => {
+      settings.reset();
+      for (const [inputId, outId, setting, fmt] of cfgBindings) {
+        const input = document.getElementById(inputId);
+        const out = document.getElementById(outId);
+        if (input) input.value = String(settings.get(setting));
+        if (out) out.textContent = fmt(settings.get(setting));
+      }
+      if (this.input && this.input.applyControlSettings) this.input.applyControlSettings();
+      this.audio.play('ui');
+    });
+
     const startGame = ()=>{
       this.audio.init();
       this.audio.play('ui');
@@ -231,10 +293,25 @@ export class Game {
       overlay.classList.add('hidden');
       titleBlock.classList.add('hidden');
       resultBlock.classList.add('hidden');
+      // First-match onboarding for touch players: one compact card, closes on
+      // tap or after 9s. Stored locally — shown exactly once per device.
+      if ((window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900)
+          && !localStorage.getItem('bf_onboarded')) {
+        try { localStorage.setItem('bf_onboarded', '1'); } catch (e) {}
+        const hint = document.getElementById('touch-hint');
+        if (hint) {
+          hint.classList.remove('hidden');
+          const close = () => hint.classList.add('hidden');
+          const btn = document.getElementById('th-close');
+          if (btn) btn.addEventListener('click', close, { once: true });
+          setTimeout(close, 9000);
+        }
+      }
       // Lock pointer for PC
       if(window.innerWidth > 900){
         this.renderer.domElement.requestPointerLock();
       }
+      tryFullscreenLandscape();
     };
 
     playBtn.addEventListener('click', startGame);
@@ -270,6 +347,7 @@ export class Game {
         if (won) localStorage.setItem('bf_wins', String(parseInt(localStorage.getItem('bf_wins') || '0', 10) + 1));
       } catch(e){ /* storage full/blocked: lobby stats just stay stale */ }
       showLobbyStats();
+      document.body.classList.remove('playing'); // back to lobby: hide gameplay HUD/touch controls
       resultBlock.classList.remove('hidden');
       titleBlock.classList.add('hidden');
       overlay.classList.remove('hidden');
@@ -278,6 +356,9 @@ export class Game {
   }
 
   startMatch() {
+    // The gameplay HUD + touch controls only exist DURING a match: without
+    // this, mobile controls and health/ammo chips bleed through the lobby.
+    document.body.classList.add('playing');
     this.matchState = 'PLAYING';
     this.matchTime = 0;
     this.playerKills = 0;
@@ -339,6 +420,21 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  // Screen-space angle of an attacker relative to where the player faces:
+  // 0 = front, +90° = right, 180° = behind, -90° = left. Pure math so the
+  // test harness can pin the convention. Camera forward for rotation.y = yaw
+  // (YXZ) is (-sin yaw, 0, -cos yaw) → facing angle = yaw + π.
+  _damageAngle(attacker) {
+    const dx = attacker.position.x - this.player.position.x;
+    const dz = attacker.position.z - this.player.position.z;
+    const toAtk = Math.atan2(dx, dz);
+    const facing = this.playerController.yaw + Math.PI;
+    let rel = toAtk - facing;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    while (rel < -Math.PI) rel += Math.PI * 2;
+    return -rel; // CSS clockwise-positive
+  }
+
   // DamageSystem central
   applyDamage(target, amount, hitType, attacker) {
     // Once a match is decided, late damage (stray bullets in the same frame)
@@ -357,6 +453,11 @@ export class Game {
         const v = document.getElementById('damage-vignette');
         if (v) { v.classList.add('show'); clearTimeout(this._vignTimer); this._vignTimer = setTimeout(()=> v.classList.remove('show'), 240); }
         if(this.audio) this.audio.play('hurt');
+        // Where did that come from? Directional wedge so the player can turn
+        // and fight instead of guessing (essential on mobile, useful on PC).
+        if (attacker && attacker.position) {
+          this.hud.showDamageDirection(this._damageAngle(attacker));
+        }
       }
     }
 

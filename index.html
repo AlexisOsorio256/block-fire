@@ -32,6 +32,7 @@
     <div id="crosshair"><i></i><i></i><i></i><i></i></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
     <div id="damage-vignette"></div>
+    <div id="damage-direction"><i></i></div>
     <div id="death-overlay"><span>MUERTE</span><label>REAPARECIENDO...</label></div>
     <div id="killbanner"><span class="kb-title">ELIMINADO</span><span class="kb-sub"></span></div>
     <div id="hitbanner">HEADSHOT</div>
@@ -69,6 +70,18 @@
     </div>
   </div>
 
+  <!-- Landscape gate — BLOCKFIRE se juega EN HORIZONTAL (regla permanente).
+       Bloquea toda la app (lobby incluido) mientras la pantalla táctil esté en vertical. -->
+  <div id="rotate-gate">
+    <svg class="rg-phone" viewBox="0 0 64 96" fill="none">
+      <rect x="8" y="4" width="48" height="88" rx="8" stroke="currentColor" stroke-width="5"/>
+      <line class="rg-line" x1="20" y1="52" x2="46" y2="26" stroke="#ffd23f" stroke-width="5" stroke-linecap="round"/>
+      <line class="rg-line2" x1="20" y1="66" x2="46" y2="40" stroke="#ffd23f" stroke-width="5" stroke-linecap="round"/>
+    </svg>
+    <h2>GIRA TU DISPOSITIVO</h2>
+    <p>BLOCKFIRE se juega en horizontal</p>
+  </div>
+
   <!-- Lobby / Overlay -->
   <div id="overlay">
     <div id="title-block">
@@ -90,8 +103,41 @@
       </div>
       <div id="lobby-stats"></div>
       <button id="playBtn">JUGAR</button>
+      <div id="lobby-menu">
+        <button id="btn-config" class="menu-chip">CONFIGURACIÓN</button>
+        <button class="menu-chip locked" disabled title="Próximamente">ARMERÍA · PRONTO</button>
+        <button class="menu-chip locked" disabled title="Próximamente">TIENDA · PRONTO</button>
+      </div>
       <p class="hint" id="hint">PC: WASD + RATÓN · MÓVIL: JOYSTICK</p>
+      <p class="credits">Audio: Kenney (CC0) · Jesús Lastra (CC-BY 3.0) — <a href="CREDITS.md" target="_blank" rel="noopener">créditos</a></p>
     </div>
+
+    <!-- Panel de configuración — horizontal, hereda la identidad del lobby -->
+    <div id="config-panel" class="hidden">
+      <h3>CONFIGURACIÓN</h3>
+      <div class="cfg-row">
+        <label>Sensibilidad cámara <output id="out-sens">1.0×</output></label>
+        <input type="range" id="cfg-sens" min="0.3" max="2" step="0.1" value="1">
+      </div>
+      <div class="cfg-row">
+        <label>Sensibilidad ADS <output id="out-ads">0.75×</output></label>
+        <input type="range" id="cfg-ads" min="0.3" max="1" step="0.05" value="0.75">
+      </div>
+      <div class="cfg-row">
+        <label>Tamaño de botones <output id="out-btnscale">1.0×</output></label>
+        <input type="range" id="cfg-btnscale" min="0.8" max="1.4" step="0.05" value="1">
+      </div>
+      <div class="cfg-row">
+        <label>Opacidad de controles <output id="out-btnopacity">100%</output></label>
+        <input type="range" id="cfg-btnopacity" min="0.4" max="1" step="0.05" value="1">
+      </div>
+      <div class="cfg-actions">
+        <button id="cfg-reset">RESTAURAR</button>
+        <button id="cfg-close">CERRAR</button>
+      </div>
+      <p class="cfg-note">Se guarda en este dispositivo (localStorage).</p>
+    </div>
+  </div>
     <div id="result-block" class="hidden">
       <h2 id="result-title">VICTORIA</h2>
       <p id="result-sub">20 kills</p>
@@ -101,6 +147,30 @@
         <div><span id="finalScore">0</span><label>K/D</label></div>
       </div>
       <button id="retryBtn">OTRA PARTIDA</button>
+    </div>
+  </div>
+
+  <!-- Onboarding de primera partida en táctil — se muestra sobre el gameplay
+       una sola vez; se cierra tocando ENTENDIDO (o automáticamente). -->
+  <div id="touch-hint" class="hidden">
+    <div class="th-card">
+      <div class="th-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>
+        <div><b>JOYSTICK</b> (izquierda) mueve al personaje · a tope = correr</div>
+      </div>
+      <div class="th-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h13M13 6l6 6-6 6"/></svg>
+        <div><b>ARRASTRA</b> en la mitad derecha para mirar y apuntar</div>
+      </div>
+      <div class="th-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff5a4a" stroke-width="2"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="#ff5a4a" stroke="none"/></svg>
+        <div><b>BOTÓN ROJO</b> dispara · <b>MIRA</b> apunta fino</div>
+      </div>
+      <div class="th-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V6M6 11l6-6 6 6"/></svg>
+        <div><b>SALTAR · RECARGAR · CAMBIAR ARMA</b> — botones a la derecha</div>
+      </div>
+      <button id="th-close">ENTENDIDO</button>
     </div>
   </div>
 
