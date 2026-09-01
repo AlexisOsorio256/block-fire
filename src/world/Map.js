@@ -103,6 +103,27 @@ export class Map {
     this._createBox(-12, 0, 14, 3, 2.0, 1.2, 'cover');
     this._createBox(-14, 0, 10, 1.2, 1.6, 3, 'cover');
 
+    // OUTER RING cover (map audit: cardinal spawns had 11-13/16 open sight
+    // lines >20u — spawn sniping). Mid-ring blocks break the long lanes and
+    // create flanking routes without closing the arena feel.
+    // N lane (behind spawn 0,-18)
+    this._createBox(-7, 0, -26, 5, 2.4, 1.4, 'cover');
+    this._createBox(8, 0, -26, 4, 2.0, 1.4, 'cover');
+    // S lane (behind spawn 0,18)
+    this._createBox(7, 0, 26, 5, 2.4, 1.4, 'cover');
+    this._createBox(-8, 0, 26, 4, 2.0, 1.4, 'cover');
+    // E lane (behind spawn 18,0)
+    this._createBox(26, 0, -6, 1.4, 2.4, 5, 'cover');
+    this._createBox(26, 0, 8, 1.4, 2.0, 4, 'cover');
+    // W lane (behind spawn -18,0)
+    this._createBox(-26, 0, 7, 1.4, 2.4, 5, 'cover');
+    this._createBox(-26, 0, -8, 1.4, 2.0, 4, 'cover');
+    // Diagonal corners: soft cover for the (±12,±12) spawns' long diagonals
+    this._createBox(20, 0, 20, 2.6, 1.8, 2.6, 'cover');
+    this._createBox(-20, 0, -20, 2.6, 1.8, 2.6, 'cover');
+    this._createBox(20, 0, -20, 2.6, 1.8, 2.6, 'cover');
+    this._createBox(-20, 0, 20, 2.6, 1.8, 2.6, 'cover');
+
     // Platforms — distinct elevated tone + accent edges
     this._createBox(0, 2.2, 8, 8, 0.4, 4, 'platform');
     this._createBox(0, 2.2, -8, 6, 0.4, 4, 'platform');

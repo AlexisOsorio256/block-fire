@@ -407,11 +407,12 @@ export class Game {
   }
 
   // VFX helpers — pooling + loop central (sin rAF por partícula)
-  muzzleFlash(pos, dir) {
-    // Two-layer flash: glowing shell + hot core, at the muzzle tip
+  muzzleFlash(pos, dir, size = 1) {
+    // Two-layer flash: glowing shell + hot core, at the muzzle tip.
+    // `size` scales per weapon (shotgun blast vs pistol snap).
     const flash = new THREE.Mesh(this._geoMuzzle, this._matMuzzle.clone());
     flash.position.copy(pos).addScaledVector(dir, 0.10);
-    flash.scale.set(1.6, 1.6, 2.4);
+    flash.scale.set(1.6 * size, 1.6 * size, 2.4 * size);
     this.scene.add(flash);
     this._activeFlashes.push({ mesh: flash, life: 0.055, maxLife: 0.055 });
 
@@ -545,8 +546,13 @@ export class Game {
     this.playerController.update(dt);
 
     // ADS is a camera zoom + weapon centering: one aim input, one feel.
+    // Speed FOV: moving fast widens the view slightly (+5° at full run) —
+    // a classic arcade speed cue that costs nothing and never triggers while
+    // aiming (ADS fov wins).
     this.weaponSystem.setAim(this.input.aim, dt);
-    const targetFov = this.input.aim ? 62 : 78;
+    const horizSpeed = Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z);
+    const speedFov = Math.min(1, horizSpeed / this.playerController.moveSpeed) * 5;
+    const targetFov = this.input.aim ? 62 : 78 + speedFov;
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1, dt * 14));
       this.camera.updateProjectionMatrix();

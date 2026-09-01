@@ -156,9 +156,14 @@ export class AudioManager {
     };
     if (sampleMap[name]) {
       const key = sampleMap[name];
-      const vol = this._manifest && this._manifest[key] ? this._manifest[key][1] : 0.5;
-      // Tiny rate variation keeps repeated shots from sounding mechanical
-      const rate = name === 'shoot' ? 0.96 + Math.random() * 0.08 : 1;
+      let vol = this._manifest && this._manifest[key] ? this._manifest[key][1] : 0.5;
+      // Per-weapon sonic identity on the same sample: shotgun plays LOWER and
+      // LOUDER (heavy), pistol HIGHER and lighter (snappy), rifle neutral.
+      let rate = 1 + (Math.random() - 0.5) * 0.06; // tiny variation, no machine-gun sameness
+      if (name === 'shoot') {
+        if (variant === 'Shotgun') { rate *= 0.68; vol *= 1.25; }
+        else if (variant === 'Pistol') { rate *= 1.22; vol *= 0.85; }
+      }
       if (this._playSample(key, vol, rate)) return;
       // fall through to procedural fallback below
     }
