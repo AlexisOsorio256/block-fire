@@ -77,22 +77,26 @@ export class HUD {
 
   // Big centered kill confirmation — strong but brief. Streak escalation:
   // 1 kill = ELIMINADO; 2 in 3.5s = DOBLE BAJA; 3+ = RACHA xN.
-  // No fake "+100" points: the only score in BLOCKFIRE is kills, so the
-  // banner must not advertise a scoring system that doesn't exist.
+  // Kill reward: +100 per kill, +50 extra for headshots (cosmetic kill score
+  // per product decision — the user explicitly asked for it; NOT an economy).
   showKillBanner(isHeadshot, streak = 1) {
     if (!this.killbannerEl) return;
     const title = this.killbannerEl.querySelector('.kb-title');
     const sub = this.killbannerEl.querySelector('.kb-sub');
-    const hsTag = isHeadshot ? 'HEADSHOT' : '';
+    const hsTag = isHeadshot ? ' · HEADSHOT' : '';
+    let points;
     if (streak >= 3) {
       title.textContent = 'RACHA';
-      sub.textContent = `x${streak}${hsTag ? ' · ' + hsTag : ''}`;
+      points = 100 * streak + (isHeadshot ? 50 : 0);
+      sub.textContent = `x${streak} · +${points}`;
     } else if (streak === 2) {
       title.textContent = 'DOBLE BAJA';
-      sub.textContent = hsTag;
+      points = 200 + (isHeadshot ? 50 : 0);
+      sub.textContent = `+${points}${hsTag}`;
     } else {
       title.textContent = 'ELIMINADO';
-      sub.textContent = hsTag;
+      points = 100 + (isHeadshot ? 50 : 0);
+      sub.textContent = `+${points}${hsTag}`;
     }
     this.killbannerEl.classList.remove('show');
     void this.killbannerEl.offsetWidth; // restart animation

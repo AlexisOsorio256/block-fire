@@ -16,7 +16,7 @@ export class Map {
       if (tex) {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(repeatX, repeatY);
-        tex.anisotropy = 4;
+        tex.anisotropy = 8; // sharper textures at grazing angles (floor!)
       }
       return new THREE.MeshStandardMaterial({
         color: fallbackColor,

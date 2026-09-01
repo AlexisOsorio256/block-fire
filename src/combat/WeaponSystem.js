@@ -288,6 +288,13 @@ export class WeaponSystem {
     const usesPlayerAmmo = !shooter.isBot;
     if (!this.canFire(usesPlayerAmmo)) return null;
 
+    // Tracer bookkeeping: one streak per shot from the muzzle to where the
+    // round actually landed (hit or wall). Player sees their own bullet;
+    // bot tracers make incoming fire visible and readable. For the player,
+    // the origin gets refined to the viewmodel muzzle below.
+    const tracerFrom = this.camera.position.clone();
+    let tracerTo = null;
+
     const weapon = shooter.isBot ? WeaponData.rifle : this.currentWeapon;
     if (usesPlayerAmmo) {
       this.ammoInMag--;
@@ -338,6 +345,7 @@ export class WeaponSystem {
       // rifle standard, pistol compact.
       const flashSize = weapon === WeaponData.shotgun ? 1.7 : weapon === WeaponData.pistol ? 0.75 : 1.0;
       this.vfx.muzzleFlash(muzzleWorld, this.camera.getWorldDirection(new THREE.Vector3()), flashSize);
+      tracerFrom.copy(muzzleWorld); // the player's tracer leaves the viewmodel muzzle
     }
 
     // Raycast for each pellet
@@ -347,11 +355,16 @@ export class WeaponSystem {
     // where you were looking, not where you aimed.
     const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    // Crouch steadies the aim: up to −15% spread at full crouch (classic
+    // crouch-accuracy contract, matches the slower crouch speed).
+    const crouchBonus = this.playerController ? 1 - (this.playerController.crouchBlend || 0) * 0.15 : 1;
     for (let p = 0; p < weapon.pellets; p++) {
       // ADS tightens spread (stable aim) — PLAYER ONLY: _adsBlend is the
       // player's aim state; bots inheriting it made the whole bot squad
       // silently sharpen whenever the player aimed down sights.
-      const spreadScale = usesPlayerAmmo ? 1 - (this._adsBlend || 0) * 0.65 : 1;
+      const spreadScale = usesPlayerAmmo
+        ? (1 - (this._adsBlend || 0) * 0.65) * crouchBonus
+        : 1;
       const spreadX = (Math.random()-0.5) * weapon.spread * spreadScale;
       const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
 
@@ -432,6 +445,7 @@ export class WeaponSystem {
             ? mapHit.point
             : this.camera.position.clone().addScaledVector(direction, 45);
           this.vfx.impact(missPoint, null);
+          if (!tracerTo) tracerTo = missPoint;
         }
         // Wall ricochet sound only when the player's own shot hits geometry
         if (mapHit && usesPlayerAmmo && this.audio) {
@@ -476,17 +490,27 @@ export class WeaponSystem {
           const hitPoint = targetHits[0].point;
           this.vfx.impact(hitPoint, isHeadshot);
           this.vfx.blood(hitPoint);
+          if (!tracerTo) tracerTo = hitPoint;
         }
       }
+    }
+
+    // Tracer streak — from the muzzle to the landing point. The player's
+    // tracer starts at the viewmodel muzzle (already computed for the flash);
+    // bot tracers start just off their eye so incoming fire is visible.
+    if (this.vfx && tracerTo) {
+      this.vfx.tracer(tracerFrom, tracerTo);
     }
 
     // Hitmarker — hierarchy: body hit (small yellow) → headshot (bigger, red
     // tint + sharper sound) → kill (largest, red). The player learns the
     // difference without reading anything.
+    // NOTE: on a KILL this does NOT play a kill sound — Game.applyDamage owns
+    // kill audio. Playing it here too doubled every kill jingle (audio bug).
     if (usesPlayerAmmo && hits.length > 0) {
       const headshot = hits.some(h => h.headshot);
       this.showHitmarker(killed, headshot && !killed);
-      if (this.audio) this.audio.play(killed ? 'kill' : (headshot ? 'headshot' : 'hit'));
+      if (!killed && this.audio) this.audio.play(headshot ? 'headshot' : 'hit');
       if (headshot && !killed && this.vfx && this.vfx.hud) this.vfx.hud.showHitBanner(true);
     }
 

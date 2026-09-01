@@ -45,68 +45,93 @@ export class Bot {
   _createMesh() {
     const group = new THREE.Group();
 
-    // Palette: saturated body readable against light concrete map
-    const bodyColor = this._getTeamColor();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.65 });
-    const gearMat = new THREE.MeshStandardMaterial({ color: 0x2e3950, roughness: 0.6, metalness: 0.15 });
+    // 7 OWN outfit presets — each bot reads as a distinct operator at a
+    // glance (palette + gear + silhouette). All original blocky designs.
+    const OUTFITS = [
+      { name: 'assault',  body: 0xb0453c, pants: 0x2a2f3a, gear: 0x39445c, crest: true  }, // asalto rojo oscuro + cresta
+      { name: 'urban',    body: 0x5a6b80, pants: 0x3a4250, gear: 0x8b97a8, pads:  true },  // urbano gris-azul
+      { name: 'tactical', body: 0x3d4a3a, pants: 0x2b332b, gear: 0x556b52, pack:  true },  // táctico verde
+      { name: 'scout',    body: 0xc2a35a, pants: 0x6e5a34, gear: 0x2e3950, hood:  true },  // explorador arena
+      { name: 'heavy',    body: 0x4a3540, pants: 0x302229, gear: 0x6e2f3c, bulky: true },  // pesado oscuro
+      { name: 'raider',   body: 0xd97b2d, pants: 0x4a3a2a, gear: 0x8a44d9, crest: true },  // blocky colorido
+      { name: 'nightops', body: 0x232a38, pants: 0x181d28, gear: 0x39d7ff, pads:  true },  // ops nocturno
+    ];
+    const outfit = OUTFITS[this.id % OUTFITS.length];
+    const bodyMat = new THREE.MeshStandardMaterial({ color: outfit.body, roughness: 0.7 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: outfit.pants, roughness: 0.65 });
+    const gearMat = new THREE.MeshStandardMaterial({ color: outfit.gear, roughness: 0.6, metalness: 0.15 });
     // Per-skin visor color: each bot reads as a distinct "operator"
     const visorColors = [0x8844ff, 0xff8329, 0x39d7ff, 0xff3d71, 0x9dff3d, 0xffd23f, 0x4dffd2];
     const visorMat = new THREE.MeshStandardMaterial({
       color: 0x10141f, roughness: 0.3, metalness: 0.5,
-      emissive: visorColors[this.id % visorColors.length], emissiveIntensity: 0.7
+      emissive: visorColors[this.id % visorColors.length], emissiveIntensity: 1.15
     });
 
-    // Torso
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.9, 0.36), bodyMat);
+    // Torso — slightly broader than the old 0.62: presence without touching
+    // the 0.55 hitbox sphere (visual stays inside it).
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.9, 0.4), bodyMat);
     body.position.y = 0.9;
     body.castShadow = true;
     group.add(body);
-    // Chest plate
-    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.06), gearMat);
-    chest.position.set(0, 1.02, 0.19);
+    // Chest plate + GLOW STRIPE: the emissive stripe gives every skin a
+    // readable signature at distance (vision audit: dark earth tones blended
+    // with the map — the glow stripe fixes target acquisition, not just style).
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.36, 0.22), gearMat);
+    chest.position.set(0, 1.02, 0.22);
     group.add(chest);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.07, 0.03), visorMat);
+    stripe.position.set(0, 1.14, 0.245);
+    group.add(stripe);
     // Belt
-    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.1, 0.38), darkMat);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.1, 0.42), darkMat);
     belt.position.y = 0.52;
     group.add(belt);
 
     // Head + glowing visor (enemy readability)
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), darkMat);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), darkMat);
     head.position.y = 1.55;
     head.name = 'head';
     head.castShadow = true;
     group.add(head);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.05), visorMat);
-    visor.position.set(0, 1.57, 0.22);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.12, 0.05), visorMat);
+    visor.position.set(0, 1.57, 0.24);
     group.add(visor);
     this._visorMat = visorMat;
 
-    // SKIN DETAIL by id: helmet crest / antenna / shoulder pads — visual
-    // differentiation between bots without any inventory/skin SYSTEM.
-    if (this.id % 3 === 0) {
-      // Helmet crest
+    // GEAR per outfit — silhouette variation you can read mid-fight
+    if (outfit.crest) {
       const crest = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.3), visorMat);
-      crest.position.set(0, 1.82, 0);
+      crest.position.set(0, 1.84, 0);
       group.add(crest);
-    } else if (this.id % 3 === 1) {
-      // Shoulder pads
-      const padGeo = new THREE.BoxGeometry(0.24, 0.14, 0.3);
-      const padL = new THREE.Mesh(padGeo, gearMat); padL.position.set(-0.45, 1.28, 0); group.add(padL);
-      const padR = new THREE.Mesh(padGeo, gearMat); padR.position.set(0.45, 1.28, 0); group.add(padR);
-    } else {
-      // Antenna backpack
-      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.16), gearMat);
-      pack.position.set(0, 1.05, -0.24); group.add(pack);
+    }
+    if (outfit.hood) {
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.5), gearMat);
+      hood.position.set(0, 1.78, 0);
+      group.add(hood);
+    }
+    if (outfit.pads) {
+      const padGeo = new THREE.BoxGeometry(0.26, 0.15, 0.32);
+      const padL = new THREE.Mesh(padGeo, gearMat); padL.position.set(-0.48, 1.28, 0); group.add(padL);
+      const padR = new THREE.Mesh(padGeo, gearMat); padR.position.set(0.48, 1.28, 0); group.add(padR);
+    }
+    if (outfit.pack) {
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.42, 0.18), gearMat);
+      pack.position.set(0, 1.05, -0.26); group.add(pack);
       const ant = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.4, 0.03), visorMat);
-      ant.position.set(0.12, 1.42, -0.3); group.add(ant);
+      ant.position.set(0.12, 1.44, -0.32); group.add(ant);
+    }
+    if (outfit.bulky) {
+      // Heavy: extra armor slabs on chest and hips
+      const slabL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 0.3), gearMat);
+      slabL.position.set(-0.42, 0.95, 0); group.add(slabL);
+      const slabR = slabL.clone(); slabR.position.x = 0.42; group.add(slabR);
     }
 
     // ARMS with SHOULDER PIVOTS — real walk-cycle swing, not position bob.
     // The pivot sits at the shoulder; the arm hangs below and rotates in Z.
     const makeArm = (side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.42, 1.12, 0);          // shoulder height
+      pivot.position.set(side * 0.47, 1.12, 0);          // shoulder height (clear of the 0.72 torso)
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.18), bodyMat);
       arm.position.y = -0.28;                            // hangs from pivot
       arm.castShadow = true;
@@ -120,7 +145,7 @@ export class Bot {
     // LEGS with HIP PIVOTS — knees lift forward/back like a stride.
     const makeLeg = (side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.16, 0.62, 0);          // hip height
+      pivot.position.set(side * 0.17, 0.62, 0);          // hip height (inside the 0.74 belt)
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.62, 0.24), darkMat);
       leg.position.y = -0.31;                            // hangs from pivot
       leg.castShadow = true;
@@ -141,13 +166,13 @@ export class Bot {
     group.position.copy(this.position);
     group.position.y -= this.height;
 
-    return group;
-  }
+    // Silhouette variation per outfit (scaled from the FEET — group origin —
+    // so taller/wider bots keep their feet on the ground). Hitboxes unchanged.
+    const SIL = { assault: [1.0, 1.0], urban: [1.02, 0.99], tactical: [1.04, 1.02], scout: [0.92, 0.96], heavy: [1.14, 1.07], raider: [0.98, 1.01], nightops: [0.98, 1.0] };
+    const s = SIL[outfit.name] || [1, 1];
+    group.scale.set(s[0], s[1], s[0]);
 
-  _getTeamColor() {
-    // FFA: saturated enemy tones that pop against light concrete
-    const colors = [0xd94f4f, 0xd97b2d, 0x2d9dd9, 0x8a44d9, 0xd92d86, 0x2dd98a];
-    return colors[this.id % colors.length];
+    return group;
   }
 
   takeDamage(amount, hitType, attacker) {

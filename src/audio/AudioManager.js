@@ -44,20 +44,25 @@ export class AudioManager {
   _preload() {
     // name -> [file, volume] for every real sample we ship.
     // Gunshots: real CC-BY recordings (Jesús Lastra, see CREDITS.md) — one
-    // DISTINCT sample per weapon (rifle mechanical 380ms / pistol dry 255ms /
-    // shotgun heavy 600ms). The old approach pitch-shifted one sci-fi laser
-    // for all three; real identity needs real sources.
+    // DISTINCT sample per weapon. Combat confirmations (hit/headshot/kill/
+    // banner/hurt/impact/death) are crafted in-house for the FPS genre:
+    // instant attack, body, short tail — the old Kenney sci-fi jingles
+    // clashed with real gunshots (the "generic sound" complaint).
+    // _v = asset version for cache-busting: bump it when swapping files so
+    // browsers never play stale audio from an old cached manifest.
+    const V = '2';
     this._manifest = {
       'shoot-rifle':   ['gshot_rifle.ogg', 0.55],
       'shoot-shotgun': ['gshot_shotgun.ogg', 0.72],
       'shoot-pistol':  ['gshot_pistol.ogg', 0.55],
-      'hit':           ['hit.ogg', 0.55],
-      'hitmarker':     ['hitmarker.ogg', 0.5],
-      'impact_wall':   ['impact_wall.ogg', 0.5],
-      'kill':          ['kill.ogg', 0.6],
-      'hurt':          ['hurt.ogg', 0.5],
+      'hit':           ['sfx_hit.ogg', 0.5],
+      'headshot':      ['sfx_headshot.ogg', 0.55],
+      'impact_wall':   ['sfx_impact_wall.ogg', 0.5],
+      'kill':          ['sfx_kill.ogg', 0.62],
+      'hurt':          ['sfx_hurt.ogg', 0.5],
+      'death':         ['sfx_death.ogg', 0.55],
       'ui':            ['ui.ogg', 0.6],
-      'kill_banner':   ['kill_banner.ogg', 0.6],
+      'kill_banner':   ['sfx_kill_banner.ogg', 0.6],
       'respawn':       ['respawn.ogg', 0.55],
       'reloadStart':   ['reload_start.ogg', 0.55],
       'reloadEnd':     ['reload_end.ogg', 0.55],
@@ -68,7 +73,7 @@ export class AudioManager {
       'step2':          ['step2.ogg', 0.28],
     };
     for (const [key, [file]] of Object.entries(this._manifest)) {
-      const p = fetch(this._base + file)
+      const p = fetch(this._base + file + '?v=' + V)
         .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then(ab => this.ctx.decodeAudioData(ab))
         .then(buf => { this._buffers.set(key, buf); })
@@ -148,9 +153,10 @@ export class AudioManager {
     const sampleMap = {
       'shoot': variant === 'Shotgun' ? 'shoot-shotgun' : variant === 'Pistol' ? 'shoot-pistol' : 'shoot-rifle',
       'hit': 'hit',
-      'headshot': 'hitmarker',
+      'headshot': 'headshot',
       'kill': 'kill',
       'hurt': 'hurt',
+      'death': 'death',
       'respawn': 'respawn',
       'reloadStart': 'reloadStart',
       'reloadEnd': 'reloadEnd',
