@@ -7,21 +7,9 @@
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 20 kills y ganas. Así de simple.
 
-[▶ **JUGAR AHORA**](#-jugar) · 1 minuto en montarlo
-
 </div>
 
 ---
-
-## ▶ Jugar
-
-```bash
-python3 -m http.server 8002
-# abre http://localhost:8002
-```
-
-En el móvil (misma red WiFi): `http://TU_IP:8002` — y toca el botón de
-pantalla completa ⛶ para jugar sin la barra del navegador.
 
 ## 🎮 Cómo se juega
 
