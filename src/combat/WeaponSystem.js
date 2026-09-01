@@ -281,7 +281,10 @@ export class WeaponSystem {
       const mz = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) - 0.48; // muzzle tip
       const muzzleLocal = new THREE.Vector3(mx, my + 0.01, mz);
       const muzzleWorld = muzzleLocal.applyQuaternion(this.camera.quaternion).add(this.camera.position);
-      this.vfx.muzzleFlash(muzzleWorld, this.camera.getWorldDirection(new THREE.Vector3()));
+      // Muzzle flash size carries weapon identity: shotgun cannon-blast,
+      // rifle standard, pistol compact.
+      const flashSize = weapon === WeaponData.shotgun ? 1.7 : weapon === WeaponData.pistol ? 0.75 : 1.0;
+      this.vfx.muzzleFlash(muzzleWorld, this.camera.getWorldDirection(new THREE.Vector3()), flashSize);
     }
 
     // Raycast for each pellet
@@ -418,10 +421,12 @@ export class WeaponSystem {
       }
     }
 
-    // Hitmarker
+    // Hitmarker — hierarchy: body hit (small yellow) → headshot (bigger, red
+    // tint + sharper sound) → kill (largest, red). The player learns the
+    // difference without reading anything.
     if (usesPlayerAmmo && hits.length > 0) {
-      this.showHitmarker(killed);
       const headshot = hits.some(h => h.headshot);
+      this.showHitmarker(killed, headshot && !killed);
       if (this.audio) this.audio.play(killed ? 'kill' : (headshot ? 'headshot' : 'hit'));
       if (headshot && !killed && this.vfx && this.vfx.hud) this.vfx.hud.showHitBanner(true);
     }
@@ -435,16 +440,19 @@ export class WeaponSystem {
     return { hits, totalDamage, killed };
   }
 
-  showHitmarker(killed) {
+  showHitmarker(killed, headshot = false) {
     if (!this.hitmarker) return;
     this.hitmarker.classList.add('show');
+    // Headshot-no-kill: white-hot core (bigger pop), kill: red (biggest)
+    this.hitmarker.classList.toggle('hs', headshot && !killed);
     const ticks = this.hitmarker.querySelectorAll('i');
-    const color = killed ? '#ff4444' : '#ffd23f';
+    const color = killed ? '#ff4444' : (headshot ? '#ffffff' : '#ffd23f');
     ticks.forEach(t => t.style.background = color);
     clearTimeout(this._hmTimer);
     this._hmTimer = setTimeout(()=> {
       this.hitmarker.classList.remove('show');
-    }, killed ? 220 : 130);
+      this.hitmarker.classList.remove('hs');
+    }, killed ? 240 : (headshot ? 170 : 120));
     if (this.crosshair) {
       this.crosshair.classList.add('hit');
       setTimeout(()=> this.crosshair.classList.remove('hit'), 120);

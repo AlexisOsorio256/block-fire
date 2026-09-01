@@ -51,6 +51,7 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 /* Hitmarker — 4 diagonal ticks via clip-path (single element) */
 #hitmarker{ position:fixed; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; opacity:0; pointer-events:none; z-index:4; transition: opacity 0.1s, transform 0.1s; transform:scale(0.8); }
 #hitmarker.show{ opacity:1; transform:scale(1.15); }
+#hitmarker.hs.show{ transform:scale(1.45); filter:drop-shadow(0 0 6px rgba(255,255,255,0.9)); }
 #hitmarker i{ position:absolute; width:3px; height:8px; background:#ffd23f; border-radius:1px; }
 #hitmarker i:nth-child(1){ left:2px; top:2px; transform:rotate(-45deg); }
 #hitmarker i:nth-child(2){ right:2px; top:2px; transform:rotate(45deg); }

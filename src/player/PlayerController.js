@@ -71,7 +71,16 @@ export class PlayerController {
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
-    // Apply rotation to camera — yaw/pitch + subtle strafe roll
+    // Apply rotation to camera — yaw/pitch + subtle strafe roll.
+    // Recoil spring: returns the aim toward where the player was pointing.
+    // _recoilReturn is the exact pitch still owed; recovery consumes from it
+    // and can never overshoot below the original aim.
+    if ((this._recoilReturn || 0) > 0.0004) {
+      const use = Math.min(this._recoilReturn, this._recoilReturn * dt * 9);
+      this.pitch -= use;
+      this._recoilReturn -= use;
+      if (this._recoilReturn < 0.0004) this._recoilReturn = 0;
+    }
     this.roll = THREE.MathUtils.lerp(this.roll, -this.input.move.x * 0.018, Math.min(1, dt * 10));
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
@@ -94,7 +103,11 @@ export class PlayerController {
     wishDir.addScaledVector(forward, move.y);
     wishDir.addScaledVector(right, move.x);
     if (wishDir.lengthSq() > 0) wishDir.normalize();
-    const wishVel = wishDir.multiplyScalar(speed);
+    // In the air the wish speed caps at ~85% of ground speed: jumps keep
+    // momentum but a mid-air direction change can't reach full strafe —
+    // the movement reads as committed, not ice-skating.
+    const speedCap = this.onGround ? speed : speed * 0.85;
+    const wishVel = wishDir.multiplyScalar(speedCap);
 
     // Acceleration toward wish velocity. Separate accel/friction gives
     // instant response + precise stops without feeling glued mid-air.
@@ -187,9 +200,13 @@ export class PlayerController {
   }
 
   // Small camera recoil kick (pitch up + random yaw), applied by WeaponSystem
+  // Camera recoil kick: pitch up + random yaw. _recoilReturn accumulates the
+  // exact pitch owed; the spring in update() pays it back over time (punch +
+  // settle, no permanent rise, no overshoot).
   addRecoil(pitchKick, yawKick) {
     this.pitch = Math.min(Math.PI/2 - 0.1, this.pitch + pitchKick);
     this.yaw += yawKick;
+    this._recoilReturn = Math.min(0.35, (this._recoilReturn || 0) + pitchKick);
   }
 
   takeDamage(amount) {
