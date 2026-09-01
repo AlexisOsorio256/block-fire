@@ -1,4 +1,5 @@
 import * as THREE from '../lib/three.module.js';
+import { settings } from '../core/Settings.js';
 
 export class PlayerController {
   constructor(player, input, camera, scene, map) {
@@ -17,15 +18,19 @@ export class PlayerController {
     this.pitch = 0;
     this.sensitivity = 0.0022;
 
-    // Fast arcade FPS feel: base run is already fast, sprint is a boost.
-    this.moveSpeed = 6.0;
-    this.sprintSpeed = 7.8;
+    // Fast arcade FPS feel. Measured baseline was 6.0 m/s (crossing the 96m
+    // map took 16s — the #1 "feels heavy" complaint). 7.2 base / 8.6 sprint
+    // keeps ~2x the bots' speed for dodge-ability without outrunning the map.
+    this.moveSpeed = 7.2;
+    this.sprintSpeed = 8.6;
     this.jumpForce = 8.2;
     this.gravity = 26;
 
-    // Accel: snap toward wish velocity; friction stops without gluing mid-air
+    // Accel: snap toward wish velocity; friction stops without gluing mid-air.
+    // t90 measured at 33ms — instant response. Friction up a touch so stops
+    // read as committed at the higher top speed.
     this.groundAccel = 52;
-    this.groundFriction = 36;
+    this.groundFriction = 42;
     this.airAccel = 24;
 
     // Feel details (subtle, cheap)
@@ -50,8 +55,12 @@ export class PlayerController {
     });
     document.addEventListener('mousemove', e => {
       if (document.pointerLockElement && document.pointerLockElement.tagName === 'CANVAS') {
-        this.yaw -= e.movementX * this.sensitivity;
-        this.pitch -= e.movementY * this.sensitivity;
+        // sensMul is the player's global slider; aiming (ADS) multiplies it
+        // down for fine tracking (default 0.75). Live-updatable from settings.
+        const ads = this.input.aim ? settings.get('adsMul') : 1;
+        const s = this.sensitivity * settings.get('sensMul') * ads;
+        this.yaw -= e.movementX * s;
+        this.pitch -= e.movementY * s;
         this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
       }
     });
@@ -61,13 +70,16 @@ export class PlayerController {
     if (!this.player.isAlive) return;
 
     // Mobile look from touch — raw pixel delta, fixed scale.
-    // ~0.0038 rad/px: a full swipe across a 400px-tall screen ≈ 87°, matching
-    // standard mobile FPS feel. Dead zone ignores sub-pixel finger jitter.
+    // 0.0052 rad/px (raised from 0.0038 after the "camera too sluggish"
+    // complaint): a full swipe across a 400px-tall screen ≈ 119°. Both the
+    // global multiplier and the ADS multiplier apply, configurable in settings.
     const touchLook = this.input.getLookDelta();
     const DEAD = 0.6; // px
     if (Math.abs(touchLook.x) > DEAD || Math.abs(touchLook.y) > DEAD) {
-      this.yaw -= touchLook.x * 0.0038;
-      this.pitch -= touchLook.y * 0.0038;
+      const ads = this.input.aim ? settings.get('adsMul') : 1;
+      const s = 0.0052 * settings.get('sensMul') * ads;
+      this.yaw -= touchLook.x * s;
+      this.pitch -= touchLook.y * s;
       this.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.pitch));
     }
 
@@ -87,9 +99,11 @@ export class PlayerController {
     this.camera.rotation.x = this.pitch;
     this.camera.rotation.z = this.roll;
 
-    // Movement
+    // Movement. Sprint: PC holds Shift; mobile gets it by pushing the joystick
+    // to the edge (Input.sprint). Aiming always cancels sprint — you can't
+    // sprint while ADS in any shooter, and it keeps aim accurate.
     const move = this.input.move;
-    const isSprinting = this.input._keys && this.input._keys.has('ShiftLeft');
+    const isSprinting = this.input.sprint === true && !this.input.aim;
     const speed = isSprinting ? this.sprintSpeed : this.moveSpeed;
 
     const forward = new THREE.Vector3();

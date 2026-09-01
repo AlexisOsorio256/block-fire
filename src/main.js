@@ -18,6 +18,22 @@ console.log('%c BLOCKFIRE — FFA 8 players — 20 kills to win ', 'background:#
 console.log('PC: WASD + Mouse (click to lock) + Click to shoot | Mobile: joystick + drag + buttons');
 console.log('Tests: ?runTests=1 | Capture: ?capture=ready|playing');
 
+// ---- Landscape gate (regla permanente: BLOCKFIRE es horizontal) ----
+// En pantallas táctiles, TODA la app (lobby incluido) se bloquea en portrait:
+// el jugador recibe la instrucción ANTES de tocar el flujo jugable, no después.
+const rotateGate = document.getElementById('rotate-gate');
+const isCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900;
+function updateRotateGate() {
+  if (!rotateGate) return;
+  const portrait = window.innerHeight > window.innerWidth;
+  // Hide while tests run so ?runTests=1 works on any window shape.
+  const testing = new URLSearchParams(location.search).has('runTests');
+  rotateGate.classList.toggle('show', isCoarsePointer() && portrait && !testing);
+}
+window.addEventListener('resize', updateRotateGate);
+window.addEventListener('orientationchange', updateRotateGate);
+updateRotateGate();
+
 // Simple test harness for Stage 1-5 validation
 const params = new URLSearchParams(location.search);
 if (params.has('runTests')) {
@@ -188,6 +204,20 @@ if (params.has('runTests')) {
       const volOk = capturedScale !== null && Math.abs(capturedScale - expectedScale) < 0.01;
       log('12 BOT SHOT DISTANCE VOLUME', volOk, `scale ${capturedScale?.toFixed(3)} ≈ ${expectedScale.toFixed(3)}`);
       bot12.respawn(bot12Start);
+
+      // Test 14: damage-direction convention — yaw 0 faces -Z, so an attacker
+      // to the player's RIGHT (east/+X) must read +90°, front reads 0°.
+      game.playerController.yaw = 0;
+      game.player.position.set(0, 1.65, 0);
+      const botDir = game.bots[5];
+      const botDirStart = botDir.position.clone();
+      botDir.position.set(10, 1.65, 0); // east = player's right
+      const angleRight = game._damageAngle(botDir);
+      botDir.position.set(0, 1.65, -10); // north = in front
+      const angleFront = game._damageAngle(botDir);
+      const dirOk = Math.abs(angleRight - Math.PI / 2) < 0.001 && Math.abs(angleFront) < 0.001;
+      log('14 DAMAGE DIRECTION ANGLES', dirOk, `right ${(angleRight * 180 / Math.PI).toFixed(0)}° front ${(angleFront * 180 / Math.PI).toFixed(0)}°`);
+      botDir.respawn(botDirStart);
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);

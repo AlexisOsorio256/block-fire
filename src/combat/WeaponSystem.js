@@ -74,21 +74,29 @@ export class WeaponSystem {
     this.crosshair = document.getElementById('crosshair');
     this.hitmarker = document.getElementById('hitmarker');
 
-    // Weapon mesh (simple blocky)
-    this.weaponMesh = this._createWeaponMesh();
-    this.scene.add(this.weaponMesh);
+    // Weapon meshes (simple blocky) — THREE distinct models so the player
+    // always recognizes what is in their hands (silhouette, not just stats).
+    this._weaponModels = this._createWeaponMeshes();
+    for (const key of Object.keys(this._weaponModels)) {
+      this.scene.add(this._weaponModels[key]);
+      this._weaponModels[key].visible = key === this.weapons[this.currentIndex];
+    }
+    this.weaponMesh = this._weaponModels.rifle; // alias for the current model
   }
 
-  _createWeaponMesh() {
-    const group = new THREE.Group();
-    // Three-material scheme with real contrast: gunmetal body, deep-black
-    // furniture, warm amber accents. Not flat black — reads as a designed prop.
-    const bodyM = new THREE.MeshStandardMaterial({ color: 0x3d4557, roughness: 0.55, metalness: 0.45 });
+  _createWeaponMeshes() {
+    const bodyM  = new THREE.MeshStandardMaterial({ color: 0x3d4557, roughness: 0.55, metalness: 0.45 });
     const blackM = new THREE.MeshStandardMaterial({ color: 0x191d2c, roughness: 0.45, metalness: 0.55 });
-    const accentM = new THREE.MeshStandardMaterial({ color: 0xffb400, roughness: 0.35, metalness: 0.3, emissive: 0x402800, emissiveIntensity: 0.35 });
-    const gripM = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0.1 });
+    const gripM  = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0.1 });
+    const woodM  = new THREE.MeshStandardMaterial({ color: 0x6e4a2f, roughness: 0.75, metalness: 0.05 });
+    // Per-weapon accent materials (swapped by _updateWeaponMesh on switch)
+    const accents = { rifle: 0xffb400, pistol: 0x4ade80, shotgun: 0xff5a3c };
+    const accentM = {};
+    for (const k of Object.keys(accents)) {
+      accentM[k] = new THREE.MeshStandardMaterial({ color: accents[k], roughness: 0.35, metalness: 0.3, emissive: 0x402800, emissiveIntensity: 0.35 });
+    }
 
-    const add = (geo, mat, x, y, z, rotX = 0) => {
+    const add = (group, geo, mat, x, y, z, rotX = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       if (rotX) m.rotation.x = rotX;
@@ -96,44 +104,64 @@ export class WeaponSystem {
       return m;
     };
 
-    // Receiver — main body with top rail in accent
-    add(new THREE.BoxGeometry(0.09, 0.11, 0.34), bodyM, 0, 0, 0);
-    add(new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
-    // Rail accent stripe (the weapon's "identity line")
-    add(new THREE.BoxGeometry(0.058, 0.012, 0.28), accentM, 0, 0.062, -0.02);
-    // Barrel + handguard with vents
-    add(new THREE.BoxGeometry(0.045, 0.045, 0.30), blackM, 0, 0.01, -0.30);
-    add(new THREE.BoxGeometry(0.07, 0.07, 0.16), bodyM, 0, 0.005, -0.24);
-    add(new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM, 0, 0.045, -0.20); // vent accent
-    add(new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM, 0, 0.045, -0.27);
-    // Muzzle brake (chunkier, with amber tip ring)
-    add(new THREE.BoxGeometry(0.075, 0.075, 0.06), blackM, 0, 0.01, -0.46);
-    add(new THREE.BoxGeometry(0.082, 0.082, 0.012), accentM, 0, 0.01, -0.435);
-    // Magazine (angled, with baseplate accent)
-    add(new THREE.BoxGeometry(0.06, 0.16, 0.09), blackM, 0, -0.125, 0.04, 0.12);
-    add(new THREE.BoxGeometry(0.064, 0.02, 0.094), accentM, 0, -0.20, 0.052, 0.12);
-    // Grip + trigger guard
-    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gripM, 0, -0.11, 0.16, -0.25);
-    add(new THREE.BoxGeometry(0.03, 0.02, 0.09), blackM, 0, -0.055, 0.10);
-    // Stock (two-tone)
-    add(new THREE.BoxGeometry(0.07, 0.10, 0.16), bodyM, 0, -0.01, 0.24);
-    add(new THREE.BoxGeometry(0.072, 0.04, 0.05), gripM, 0, -0.045, 0.30);
-    // Front sight
-    add(new THREE.BoxGeometry(0.025, 0.05, 0.04), accentM, 0, 0.115, -0.16);
-    // Rear sight
-    add(new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.105, 0.10);
+    // ---- RIFLE: full-length, rail + vents + angled mag (the "standard") ----
+    const rifle = new THREE.Group();
+    add(rifle, new THREE.BoxGeometry(0.09, 0.11, 0.34), bodyM, 0, 0, 0);
+    add(rifle, new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
+    add(rifle, new THREE.BoxGeometry(0.058, 0.012, 0.28), accentM.rifle, 0, 0.062, -0.02); // identity line
+    add(rifle, new THREE.BoxGeometry(0.045, 0.045, 0.30), blackM, 0, 0.01, -0.30);
+    add(rifle, new THREE.BoxGeometry(0.07, 0.07, 0.16), bodyM, 0, 0.005, -0.24);
+    add(rifle, new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM.rifle, 0, 0.045, -0.20);
+    add(rifle, new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM.rifle, 0, 0.045, -0.27);
+    add(rifle, new THREE.BoxGeometry(0.075, 0.075, 0.06), blackM, 0, 0.01, -0.46);
+    add(rifle, new THREE.BoxGeometry(0.082, 0.082, 0.012), accentM.rifle, 0, 0.01, -0.435);
+    add(rifle, new THREE.BoxGeometry(0.06, 0.16, 0.09), blackM, 0, -0.125, 0.04, 0.12); // angled mag
+    add(rifle, new THREE.BoxGeometry(0.064, 0.02, 0.094), accentM.rifle, 0, -0.20, 0.052, 0.12);
+    add(rifle, new THREE.BoxGeometry(0.06, 0.13, 0.07), gripM, 0, -0.11, 0.16, -0.25);
+    add(rifle, new THREE.BoxGeometry(0.03, 0.02, 0.09), blackM, 0, -0.055, 0.10);
+    add(rifle, new THREE.BoxGeometry(0.07, 0.10, 0.16), bodyM, 0, -0.01, 0.24);
+    add(rifle, new THREE.BoxGeometry(0.072, 0.04, 0.05), gripM, 0, -0.045, 0.30);
+    add(rifle, new THREE.BoxGeometry(0.025, 0.05, 0.04), accentM.rifle, 0, 0.115, -0.16); // front sight
+    add(rifle, new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.105, 0.10);
+    rifle.userData.parts = { dark: bodyM, black: blackM, accent: accentM.rifle };
 
-    group.userData.parts = { dark: bodyM, black: blackM, accent: accentM };
-    return group;
+    // ---- PISTOL: compact slide + stubby barrel + big grip (the "sidearm") ----
+    const pistol = new THREE.Group();
+    add(pistol, new THREE.BoxGeometry(0.075, 0.09, 0.22), blackM, 0, 0, -0.02);        // slide
+    add(pistol, new THREE.BoxGeometry(0.078, 0.02, 0.20), accentM.pistol, 0, 0.055, -0.02); // slide top stripe
+    add(pistol, new THREE.BoxGeometry(0.05, 0.05, 0.05), blackM, 0, 0.005, -0.16);     // short barrel tip
+    add(pistol, new THREE.BoxGeometry(0.06, 0.05, 0.18), bodyM, 0, -0.06, 0.02);       // frame
+    add(pistol, new THREE.BoxGeometry(0.06, 0.15, 0.07), gripM, 0, -0.13, 0.10, -0.32); // grip
+    add(pistol, new THREE.BoxGeometry(0.064, 0.02, 0.074), accentM.pistol, 0, -0.135, 0.115, -0.32); // mag base
+    add(pistol, new THREE.BoxGeometry(0.026, 0.045, 0.03), accentM.pistol, 0, 0.07, -0.12); // front sight
+    add(pistol, new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.06, 0.08);       // rear sight
+    add(pistol, new THREE.BoxGeometry(0.02, 0.03, 0.06), blackM, 0, -0.035, -0.045);   // trigger guard
+    pistol.userData.parts = { dark: bodyM, black: blackM, accent: accentM.pistol };
+
+    // ---- SHOTGUN: long barrel + pump + wide stock (the "heavy") ----
+    const shotgun = new THREE.Group();
+    add(shotgun, new THREE.BoxGeometry(0.11, 0.12, 0.30), bodyM, 0, 0, 0.02);          // chunky receiver
+    add(shotgun, new THREE.BoxGeometry(0.115, 0.02, 0.26), accentM.shotgun, 0, 0.072, 0.02); // receiver top band
+    add(shotgun, new THREE.BoxGeometry(0.055, 0.055, 0.46), blackM, 0, 0.015, -0.34);  // LONG barrel
+    add(shotgun, new THREE.BoxGeometry(0.085, 0.085, 0.035), blackM, 0, 0.015, -0.56); // thick muzzle
+    add(shotgun, new THREE.BoxGeometry(0.09, 0.022, 0.05), accentM.shotgun, 0, 0.015, -0.52); // muzzle ring
+    add(shotgun, new THREE.BoxGeometry(0.062, 0.062, 0.14), woodM, 0, -0.055, -0.22);  // pump handle
+    add(shotgun, new THREE.BoxGeometry(0.066, 0.02, 0.15), accentM.shotgun, 0, -0.055, -0.22); // pump rails
+    add(shotgun, new THREE.BoxGeometry(0.07, 0.13, 0.07), woodM, 0, -0.10, 0.18, -0.28); // wood grip
+    add(shotgun, new THREE.BoxGeometry(0.08, 0.11, 0.20), woodM, 0, -0.015, 0.30);     // wood stock
+    add(shotgun, new THREE.BoxGeometry(0.03, 0.05, 0.04), accentM.shotgun, 0, 0.09, -0.16); // bead sight
+    shotgun.userData.parts = { dark: bodyM, black: blackM, accent: accentM.shotgun };
+
+    return { rifle, pistol, shotgun };
   }
 
-  // Per-weapon viewmodel presets (position offset + scale). Built ONCE:
-  // update() ran this every frame (3 Vector3 + object per frame → GC churn).
+  // Per-weapon viewmodel presets (position offset + scale + muzzle tip z).
+  // Built ONCE: update() ran this every frame (3 Vector3 + object per frame → GC churn).
   _viewPresets() {
     if (!this._presetsCache) this._presetsCache = {
-      rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0 },
-      pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9 },
-      shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15 },
+      rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0,  muzzle: -0.48 },
+      pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9,  muzzle: -0.30 },
+      shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15, muzzle: -0.60 },
     };
     return this._presetsCache;
   }
@@ -303,7 +331,7 @@ export class WeaponSystem {
       const ads = this._adsBlend || 0;
       const mx = THREE.MathUtils.lerp(preset.pos.x, 0, ads);
       const my = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads);
-      const mz = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) - 0.48; // muzzle tip
+      const mz = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + preset.muzzle; // per-weapon muzzle tip
       const muzzleLocal = new THREE.Vector3(mx, my + 0.01, mz);
       const muzzleWorld = muzzleLocal.applyQuaternion(this.camera.quaternion).add(this.camera.position);
       // Muzzle flash size carries weapon identity: shotgun cannon-blast,
@@ -522,11 +550,14 @@ export class WeaponSystem {
   }
 
   _updateWeaponMesh() {
-    if (!this.weaponMesh) return;
-    // Accent block color hints at weapon type
-    const accents = { rifle: 0xffb400, pistol: 0x4ade80, shotgun: 0xff5a3c };
-    const parts = this.weaponMesh.userData.parts;
-    if (parts) parts.accent.color.setHex(accents[this.weapons[this.currentIndex]] || 0xffb400);
+    if (!this._weaponModels) return;
+    // Model swap: hide every model, show the current one. Silhouettes differ
+    // (rifle long + angled mag, pistol compact slide, shotgun long barrel +
+    // pump + wood) — recognition without reading the HUD label.
+    for (const key of Object.keys(this._weaponModels)) {
+      this._weaponModels[key].visible = key === this.weapons[this.currentIndex];
+    }
+    this.weaponMesh = this._weaponModels[this.weapons[this.currentIndex]];
   }
 
   getAmmoText() {
