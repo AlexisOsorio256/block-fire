@@ -39,7 +39,12 @@ export class Input {
     this.aim = false;
     this.reload = false;
     this.jump = false;
+    this.sprintLock = false;
+    this.crouch = false;
     if (this._jumpTimer) { clearTimeout(this._jumpTimer); this._jumpTimer = null; }
+    this._firePointers = new Set();
+    this._fireLook.x = 0;
+    this._fireLook.y = 0;
     this._joystick.active = false;
     this._joystick.x = 0;
     this._joystick.y = 0;
@@ -48,6 +53,15 @@ export class Input {
     this._touchLook.y = 0;
     this._joystickPointer = null;
     this._lookPointer = null;
+    // Reset latched button visuals too (returning from background = clean slate)
+    const aim = document.getElementById('btn-aim');
+    const sprint = document.getElementById('btn-sprint');
+    const crouch = document.getElementById('btn-crouch');
+    if (aim) { aim.classList.remove('active'); }
+    if (sprint) sprint.classList.remove('active');
+    if (crouch) crouch.classList.remove('active');
+    const mc = document.getElementById('mobile-controls');
+    if (mc) mc.classList.remove('aiming');
     const stick = document.getElementById('joystick-stick');
     if (stick) stick.style.transform = 'translate(-50%, -50%)';
   }
@@ -57,6 +71,7 @@ export class Input {
       this._keys.add(e.code);
       if (e.code === 'Space') this.jump = true;
       if (e.code === 'KeyR') this.reload = true;
+      if (e.code === 'KeyC' && !e.repeat) this.crouch = !this.crouch; // crouch toggle
       if (e.code === 'Digit1') this.switchWeapon = 1;
       if (e.code === 'Digit2') this.switchWeapon = 2;
       if (e.code === 'Digit3') this.switchWeapon = 3;
@@ -92,6 +107,8 @@ export class Input {
     const btnJump = document.getElementById('btn-jump');
     const btnReload = document.getElementById('btn-reload');
     const btnSwitch = document.getElementById('btn-switch');
+    const btnSprint = document.getElementById('btn-sprint');
+    const btnCrouch = document.getElementById('btn-crouch');
     const btnFullscreen = document.getElementById('btn-fullscreen');
 
     if (!joystickZone || !window.PointerEvent) return;
@@ -210,6 +227,76 @@ export class Input {
     lookZone.addEventListener('pointercancel', lookRelease);
 
     // ---- Action buttons: each is its own pointer; cancel releases ----
+    // Fire (both buttons): hold to fire, DRAG to aim — the Free Fire gesture.
+    // The drag deltas feed their OWN accumulator (not the look zone's) so
+    // releasing the look-zone finger can never wipe pending fire-drag deltas.
+    // PlayerController's getLookDelta sums both and applies sensitivity once.
+    this._firePointers = new Set();
+    this._fireLook = { x: 0, y: 0 };
+    const bindFire = (el) => {
+      if (!el) return;
+      let lastX = 0, lastY = 0;
+      el.addEventListener('pointerdown', e => {
+        if (this.editMode) return; // layout editor owns the pointer while editing
+        e.preventDefault();
+        this._firePointers.add(e.pointerId);
+        this.fire = true;
+        lastX = e.clientX; lastY = e.clientY;
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      });
+      el.addEventListener('pointermove', e => {
+        if (!this._firePointers.has(e.pointerId)) return;
+        e.preventDefault();
+        this._fireLook.x += (e.clientX - lastX);
+        this._fireLook.y += (e.clientY - lastY);
+        lastX = e.clientX; lastY = e.clientY;
+      });
+      const release = e => {
+        if (!this._firePointers.has(e.pointerId)) return;
+        this._firePointers.delete(e.pointerId);
+        this.fire = this._firePointers.size > 0;
+      };
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointercancel', release);
+    };
+    bindFire(btnFire);
+    bindFire(document.getElementById('btn-fire-left'));
+
+    // ---- ADS: TAP TO LATCH (not hold). Holding the aim button used to eat
+    // the whole right thumb on real devices (implicit pointer capture): with
+    // two thumbs there was no finger left to move the camera. Tap = ADS on,
+    // tap again = off. The thumb is free to fire/look meanwhile.
+    this._setAim = (on) => {
+      this.aim = on;
+      if (btnAim) btnAim.classList.toggle('active', on);
+      const mc = document.getElementById('mobile-controls');
+      if (mc) mc.classList.toggle('aiming', on);
+    };
+    if (btnAim) btnAim.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      this._setAim(!this.aim);
+    });
+
+    // ---- Sprint lock: tap to latch (joystick-edge sprint still works) ----
+    this.sprintLock = false;
+    if (btnSprint) {
+      btnSprint.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        this.sprintLock = !this.sprintLock;
+        btnSprint.classList.toggle('active', this.sprintLock);
+      });
+    }
+
+    // ---- Crouch latch: tap to crouch, tap to stand (PC: KeyC toggle) ----
+    this.crouch = false;
+    if (btnCrouch) {
+      btnCrouch.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        this.crouch = !this.crouch;
+        btnCrouch.classList.toggle('active', this.crouch);
+      });
+    }
+
     const bindButton = (el, onDown, onUp) => {
       if (!el) return;
       el.addEventListener('pointerdown', e => { e.preventDefault(); onDown(); });
@@ -218,8 +305,6 @@ export class Input {
       el.addEventListener('pointercancel', up);
       el.addEventListener('lostpointercapture', () => onUp());
     };
-    bindButton(btnFire, () => this.fire = true, () => this.fire = false);
-    bindButton(btnAim, () => this.aim = true, () => this.aim = false);
     bindButton(btnJump, () => {
       this.jump = true;
       if (this._jumpTimer) clearTimeout(this._jumpTimer);
@@ -230,6 +315,53 @@ export class Input {
     // button a dead end for mobile players on the other two weapons.
     bindButton(btnSwitch, () => this.switchWeapon = 'next', () => {});
 
+    // ---- Control layout editor: drag buttons, drop, saved (localStorage) ----
+    // Not a professional editor: drag → drop → persist, with RESTABLECER.
+    this.editMode = false;
+    const btnIds = ['btn-sprint', 'btn-crouch', 'btn-jump', 'btn-reload', 'btn-switch', 'btn-aim', 'btn-fire', 'btn-fire-left'];
+    this.applyLayout = () => {
+      for (const id of btnIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const [dx, dy] = settings.getBtnPos(id);
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+    };
+    this.setEditMode = (on) => {
+      this.editMode = on;
+      const mc = document.getElementById('mobile-controls');
+      if (mc) mc.classList.toggle('editing', on);
+    };
+    for (const id of btnIds) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      let dragId = null, baseDx = 0, baseDy = 0, startX = 0, startY = 0;
+      el.addEventListener('pointerdown', e => {
+        if (!this.editMode) return;
+        e.preventDefault(); e.stopPropagation();
+        dragId = e.pointerId;
+        const [dx, dy] = settings.getBtnPos(id);
+        baseDx = dx; baseDy = dy;
+        startX = e.clientX; startY = e.clientY;
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      });
+      el.addEventListener('pointermove', e => {
+        if (dragId !== e.pointerId) return;
+        e.preventDefault();
+        const [dx, dy] = settings.clampBtnPos(baseDx + (e.clientX - startX), baseDy + (e.clientY - startY));
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+      const drop = e => {
+        if (dragId !== e.pointerId) return;
+        dragId = null;
+        const r = el.getBoundingClientRect();
+        const cur = el.style.transform.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/);
+        if (cur) settings.setBtnPos(id, parseFloat(cur[1]), parseFloat(cur[2]));
+      };
+      el.addEventListener('pointerup', drop);
+      el.addEventListener('pointercancel', drop);
+    }
+
     // Player-configurable control scale/opacity (lobby settings panel).
     this.applyControlSettings = () => {
       const mc = document.getElementById('mobile-controls');
@@ -238,6 +370,7 @@ export class Input {
       const opacity = settings.get('btnOpacity');
       mc.style.setProperty('--btn-scale', String(scale));
       mc.style.setProperty('--btn-opacity', String(opacity));
+      this.applyLayout();
     };
     this.applyControlSettings();
   }
@@ -253,8 +386,11 @@ export class Input {
 
     // Joystick overrides/ blends if active
     if (this._joystick.active) {
-      mx = this._joystick.x;
-      my = -this._joystick.y; // invert Y: up is forward
+      // Mild expo curve: fine control near center (aim while walking), full
+      // speed at the edge. Keyboard stays digital.
+      const ex = (v) => Math.sign(v) * Math.pow(Math.abs(v), 1.45);
+      mx = ex(this._joystick.x);
+      my = ex(this._joystick.y) * -1; // invert Y: up is forward
     } else if (mx !== 0 || my !== 0) {
       const len = Math.hypot(mx, my);
       mx /= len; my /= len;
@@ -263,9 +399,10 @@ export class Input {
     this.move.x = mx;
     this.move.y = my;
 
-    // Sprint: Shift on PC; on mobile the joystick pinned at full push (≥0.95)
-    // counts as sprint — zero extra buttons, standard mobile-FPS gesture.
-    this.sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight')
+    // Sprint: Shift on PC, the CORRER lock button on touch, or the joystick
+    // pinned at full push (≥0.95) — all three coexist.
+    this.sprint = this.sprintLock === true
+      || this._keys.has('ShiftLeft') || this._keys.has('ShiftRight')
       || (this._joystick.active && Math.hypot(this._joystick.x, this._joystick.y) >= 0.95);
   }
 
@@ -277,14 +414,17 @@ export class Input {
     return { reload, switchW };
   }
 
-  // Raw pixels accumulated since last frame; consume-and-clear. No decay, no
-  // frame-rate dependence — the consumer applies the configured scale.
+  // Raw pixels accumulated since last frame from BOTH sources (look-zone
+  // drag + fire-button drag); consume-and-clear. No decay, no frame-rate
+  // dependence — the consumer applies the configured scale exactly once.
   getLookDelta() {
-    if (this._touchLook.active || this._touchLook.x !== 0 || this._touchLook.y !== 0) {
-      const x = this._touchLook.x;
-      const y = this._touchLook.y;
-      this._touchLook.x = 0;
-      this._touchLook.y = 0;
+    const look = this._touchLook;
+    const fire = this._fireLook;
+    if (look.active || look.x !== 0 || look.y !== 0 || fire.x !== 0 || fire.y !== 0) {
+      const x = look.x + fire.x;
+      const y = look.y + fire.y;
+      look.x = 0; look.y = 0;
+      fire.x = 0; fire.y = 0;
       return { x, y };
     }
     return { x: 0, y: 0 };

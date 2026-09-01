@@ -46,11 +46,12 @@ export class Game {
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
     this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
 
-    // Renderer — mobile renders at a sharper DPR cap, with a dynamic downscaler
-    // (_adaptResolution) if sustained frame time suffers. See PROJECT_RULES §6.
+    // Renderer — mobile renders sharper than before (DPR cap 1.75, was 1.5:
+    // the "Android looks degraded" note) with the dynamic downscaler
+    // (_adaptResolution) protecting FPS if the device can't hold the budget.
     const isMobile = window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     this.renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
-    this._dpr = { min: 0.9, max: isMobile ? 1.5 : 2.0, value: Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2.0) };
+    this._dpr = { min: 0.9, max: isMobile ? 1.75 : 2.0, value: Math.min(window.devicePixelRatio, isMobile ? 1.75 : 2.0) };
     this.renderer.setPixelRatio(this._dpr.value);
     this._frameTimes = [];
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -139,6 +140,20 @@ export class Game {
 
     this._setupEvents();
     this._setupOverlay();
+
+    // Visibility resume: when the browser freezes the tab (screen off, app
+    // switch — rAF stops, which is correct and battery-friendly), returning
+    // must be clean: flush the clamped delta and wake the audio context so
+    // the first frame back doesn't drop sound or lurch. The simulation itself
+    // never advances while hidden (dt clamp = soft pause), so no death while
+    // away. Chrome may also fully discard the page after long hides: that
+    // reloads the lobby by browser design — nothing we can (or should) do.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.matchState === 'PLAYING') {
+        this.clock.getDelta(); // flush the accumulated (clamped) delta
+        if (this.audio) this.audio._ensure();
+      }
+    });
 
     window.addEventListener('resize', ()=> this.onResize());
     this.onResize();
@@ -261,15 +276,29 @@ export class Game {
         out.textContent = fmt(settings.get(setting));
       });
     }
+    // Open/close logic shared by the lobby chip AND the in-match ⚙ button.
+    // Opening during a match FREEZES the simulation (paused) so bots can't
+    // shoot a player who is reading a slider; closing resumes.
+    const openConfig = () => {
+      configPanel.classList.remove('hidden');
+      this._configOpen = true;
+      if (this.input && this.input.setEditMode) this.input.setEditMode(false);
+      const note = document.getElementById('cfg-note');
+      if (note) note.textContent = 'EDITAR CONTROLES: arrastra cada botón y suéltalo. Se guarda solo.';
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.audio.play('ui');
+    };
     const openCfg = document.getElementById('btn-config');
+    const openCfgInMatch = document.getElementById('btn-settings');
     const closeCfg = document.getElementById('cfg-close');
     const resetCfg = document.getElementById('cfg-reset');
-    if (openCfg) openCfg.addEventListener('click', () => {
-      configPanel.classList.remove('hidden');
-      this.audio.play('ui');
-    });
+    const editCfg = document.getElementById('cfg-editcontrols');
+    if (openCfg) openCfg.addEventListener('click', openConfig);
+    if (openCfgInMatch) openCfgInMatch.addEventListener('click', openConfig);
     if (closeCfg) closeCfg.addEventListener('click', () => {
       configPanel.classList.add('hidden');
+      this._configOpen = false;
+      if (this.input && this.input.setEditMode) this.input.setEditMode(false);
       this.audio.play('ui');
     });
     if (resetCfg) resetCfg.addEventListener('click', () => {
@@ -281,6 +310,19 @@ export class Game {
         if (out) out.textContent = fmt(settings.get(setting));
       }
       if (this.input && this.input.applyControlSettings) this.input.applyControlSettings();
+      const note = document.getElementById('cfg-note');
+      if (note) note.textContent = 'Controles restablecidos. Se guarda en este dispositivo.';
+      this.audio.play('ui');
+    });
+    if (editCfg) editCfg.addEventListener('click', () => {
+      if (this.input && this.input.setEditMode) {
+        const on = !this.input.editMode;
+        this.input.setEditMode(on);
+        const note = document.getElementById('cfg-note');
+        if (note) note.textContent = on
+          ? 'MODO EDICIÓN: arrastra cada botón. CERRAR guarda y vuelve al juego.'
+          : 'Disposición guardada.';
+      }
       this.audio.play('ui');
     });
 
@@ -600,10 +642,12 @@ export class Game {
   }
 
   impact(point, isHeadshot) {
-    // Impact cube + expanding ring decal (always faces camera)
+    // Impact cube + expanding ring decal (always faces camera).
+    // kind by surface: wall = pale concrete chip, body = warm red, head = hot red.
     const mat = (isHeadshot ? this._matImpactHead : this._matImpact).clone();
     const cube = new THREE.Mesh(this._geoImpact, mat);
     cube.position.copy(point);
+    if (isHeadshot === null) { isHeadshot = false; mat.color.setHex(0xb8c4d4); } // wall chip
     this.scene.add(cube);
     this._activeImpacts.push({ mesh: cube, life: 0.36, maxLife: 0.36 });
 
@@ -612,6 +656,23 @@ export class Game {
     ring.quaternion.copy(this.camera.quaternion);
     this.scene.add(ring);
     this._activeRings.push({ mesh: ring, life: 0.22, maxLife: 0.22 });
+  }
+
+  // Tracer: a bright thin streak from the muzzle to the hit point. One mesh
+  // per shot (additive, 60ms) — makes every shot READ as a bullet, not a
+  // generic flash. Bots' tracers too: incoming fire is now visible.
+  tracer(from, to) {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    if (len < 0.5) return;
+    const geo = this._geoTracer || (this._geoTracer = new THREE.BoxGeometry(0.012, 0.012, 1));
+    const mat = (this._matTracer || (this._matTracer = new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.85 }))).clone();
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(from).addScaledVector(dir, 0.5);
+    m.lookAt(to);
+    m.scale.z = len;
+    this.scene.add(m);
+    this._activeFlashes.push({ mesh: m, life: 0.06, maxLife: 0.06, flat: true });
   }
 
   blood(point) {
@@ -677,6 +738,14 @@ export class Game {
     this.fps = 1/dt;
     this._adaptResolution(dt);
 
+    // In-match settings panel open → PAUSE the simulation (bots, timers, HUD)
+    // but keep rendering the last frame. Closing the panel resumes play.
+    if (this._configOpen && this.matchState === 'PLAYING'){
+      this._updateVFX(Math.min(dt, 0.033));
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
     if(this.matchState !== 'PLAYING'){
       // Lobby camera: slow orbit over the arena — the game itself is the menu backdrop
       const t = this.clock.elapsedTime;
@@ -724,12 +793,12 @@ export class Game {
     this.playerController.update(dt);
 
     // ADS is a camera zoom + weapon centering: one aim input, one feel.
-    // Speed FOV: moving fast widens the view slightly (+5° at full run) —
+    // Speed FOV: moving fast widens the view slightly (+7° at full run) —
     // a classic arcade speed cue that costs nothing and never triggers while
     // aiming (ADS fov wins).
     this.weaponSystem.setAim(this.input.aim, dt);
     const horizSpeed = Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z);
-    const speedFov = Math.min(1, horizSpeed / this.playerController.moveSpeed) * 5;
+    const speedFov = Math.min(1, horizSpeed / this.playerController.moveSpeed) * 7;
     const targetFov = this.input.aim ? 62 : 78 + speedFov;
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1, dt * 14));

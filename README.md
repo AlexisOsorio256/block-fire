@@ -25,27 +25,29 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
 
 | Acción | PC | Móvil |
 |---|---|---|
-| Mover | WASD | Joystick izquierdo (a tope = **correr**) |
-| Mirar | Ratón | Deslizar en la mitad derecha |
-| Disparar | Click izq | Botón rojo |
-| Apuntar (ADS) | Click der | Botón mira (sensibilidad reducida) |
+| Mover | WASD | Joystick izquierdo (curva precisa) |
+| Correr | Shift | Botón **CORRER** (fija) o joystick a tope |
+| Mirar | Ratón | Deslizar en la mitad derecha — o arrastrar **FUEGO** |
+| Disparar | Click izq | **FUEGO** (mantener) · arrástralo para apuntar mientras disparas |
+| Apuntar (ADS) | Click der | **MIRA** un toque = fija; aparece **2º FUEGO** a la izquierda |
+| Agacharse | C | Botón **COGER** (más preciso, más lento) |
 | Saltar / Recargar | Espacio / R | Botones |
-| Cambiar arma | 1-2-3 · Q/E cicla | Botón ⟳ cicla |
+| Cambiar arma | 1-2-3 · Q/E cicla | Botón **ARMA** cicla |
+| Ajustes en partida | — | Botón ⚙ (arriba-izquierda) |
 
-- **Elige tu arma en el lobby** (rifle, pistola o escopeta) antes de entrar.
-- **Sprint**: Shift (PC) o joystick a tope (móvil). Apuntar cancela el sprint.
+- **Multitouch real**: mueve y mira a la vez; dispara con un dedo y mira con
+  otro; nada se pisa ni queda pegado.
+- **Elige tu arma en el lobby** (rifle, pistola o escopeta).
 - **Asistencia de apuntado** activa en móvil: si apuntas cerca del pecho, la
   bala ayuda — pero todavía tienes que rastrear al enemigo.
 - **125 de vida**: los duelos duran lo justo. La cobertura es real.
-- **Multitouch real**: mueve con un dedo y mira con otro a la vez; disparar no
-  bloquea la cámara. La cámara tiene indicador de dirección de daño.
 
-## ⚙️ Configuración (lobby → CONFIGURACIÓN)
+## ⚙️ Configuración (⚙ en partida, o CONFIGURACIÓN en el lobby)
 
-- Sensibilidad de cámara (0.3×–2×)
-- Sensibilidad ADS (0.3×–1×)
-- Tamaño y opacidad de los controles táctiles
-- Se guarda en el dispositivo (localStorage). Sin cuentas, sin servidor.
+- Sensibilidad de cámara (0.3×–2×) y sensibilidad ADS (0.3×–1×)
+- **EDITAR CONTROLES**: arrastra cada botón y suéltalo donde quieras
+- Tamaño y opacidad de los controles
+- RESTAURAR vuelve todo por defecto. Se guarda en el dispositivo (localStorage).
 
 ## 🖼️ Así se ve
 
@@ -59,13 +61,15 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
 
 ## ✨ Qué tiene
 
-- 8 jugadores FFA (tú + 7 bots con estilos visuales distintos y caminata propia)
+- 8 jugadores FFA (tú + 7 bots con **7 skins propias** y siluetas distintas)
 - 3 armas con **modelos, siluetas y sonidos propios** (rifle mecánico, pistola
   seca, escopeta pesada), retroceso, recarga y cambio animados
-- **Asistencia de apuntado** (más generosa en móvil) + 125 HP: duelos con duelo
-- Disparos reales grabados (Jesús Lastra CC-BY 3.0) + impactos CC0 de Kenney
-- **Multitouch**: mueve y mira a la vez; joystick a tope = sprint; sin estados
-  táctiles pegados (pointer capture + liberación en cancel/blur)
+- **Trazadoras** en cada disparo (los tuyos y los de los bots) + impactos
+  diferenciados pared/enemigo + sangre
+- Disparos reales grabados (Jesús Lastra CC-BY 3.0) + confirmaciones de combate
+  diseñadas para el género (hit/headshot/kill/hurt/impacto/muerte)
+- **Multitouch estilo FPS móvil**: fuego arrastrable, ADS por toque con segundo
+  fuego, agacharse, sprint fijo; sin estados táctiles pegados
 - Landscape obligatorio en móvil con instrucción ANTES del gameplay
 - Screen shake, vignette de daño, **indicador direccional de daño**, respawn en 2s
 - Mapa 96×96 con texturas CC0, cobertura y plataformas; spawns validados

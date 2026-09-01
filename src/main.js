@@ -218,6 +218,66 @@ if (params.has('runTests')) {
       const dirOk = Math.abs(angleRight - Math.PI / 2) < 0.001 && Math.abs(angleFront) < 0.001;
       log('14 DAMAGE DIRECTION ANGLES', dirOk, `right ${(angleRight * 180 / Math.PI).toFixed(0)}° front ${(angleFront * 180 / Math.PI).toFixed(0)}°`);
       botDir.respawn(botDirStart);
+
+      // Test 15: ADS is a TAP-TO-LATCH on touch (the old hold-to-aim captured
+      // the finger: with two thumbs there was none left for the camera).
+      const btnAim = document.getElementById('btn-aim');
+      const aimDown = () => btnAim.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 901, bubbles: true, cancelable: true }));
+      aimDown();
+      const aimOn = game.input.aim === true && btnAim.classList.contains('active')
+        && document.getElementById('mobile-controls').classList.contains('aiming');
+      aimDown();
+      const aimOff = game.input.aim === false && !btnAim.classList.contains('active');
+      log('15 ADS TOGGLE LATCH', aimOn && aimOff, `on:${aimOn} off:${aimOff}`);
+
+      // Test 16: crouch — blend rises, eye lowers, feet stay planted.
+      game.input.crouch = true;
+      const pc16 = game.playerController;
+      pc16.respawn(new THREE.Vector3(0, 1.65, 18)); // validated spawn — always clear
+      game.input._keys.clear(); // test 2 left a stale move vector — idle player
+      game.input.update();
+      for (let i = 0; i < 5; i++) { pc16.update(1 / 60); if (i < 2) console.log('[DBG16]', i, pc16.player.position.y.toFixed(3), pc16.height.toFixed(3), pc16.onGround); }
+      const feetBefore = pc16.player.position.y - pc16.height;
+      console.log('[DBG16] pre-crouch feet', feetBefore.toFixed(3), 'y', pc16.player.position.y.toFixed(3));
+      for (let i = 0; i < 40; i++) pc16.update(1 / 60);
+      const feetAfter = pc16.player.position.y - pc16.height;
+      const crouchOk = pc16.crouchBlend > 0.9 && pc16.height < 1.3 && Math.abs(feetBefore - feetAfter) < 0.02;
+      log('16 CROUCH ANIMATED', crouchOk, `blend ${pc16.crouchBlend.toFixed(2)} h ${pc16.height.toFixed(2)} feetB ${feetBefore.toFixed(3)} feetA ${feetAfter.toFixed(3)} pos ${pc16.player.position.x.toFixed(1)},${pc16.player.position.y.toFixed(2)},${pc16.player.position.z.toFixed(1)} ground${pc16.onGround}`);
+      game.input.crouch = false;
+      for (let i = 0; i < 40; i++) pc16.update(1 / 60);
+
+      // Test 17: fire-drag feeds its OWN accumulator — releasing the look-zone
+      // finger must never wipe pending fire-drag deltas (and vice versa).
+      const input17 = game.input;
+      const btnFire = document.getElementById('btn-fire');
+      btnFire.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 910, clientX: 100, clientY: 100, bubbles: true, cancelable: true }));
+      btnFire.dispatchEvent(new PointerEvent('pointermove', { pointerId: 910, clientX: 400, clientY: 150, bubbles: true, cancelable: true }));
+      input17._touchLook.x = 5; input17._touchLook.y = 3;
+      input17._touchLook.active = false;
+      const fireHeld = input17.fire === true;
+      const delta17 = input17.getLookDelta();
+      // fire-drag delta (400-100, 150-100) + stale look (5, 3) = (305, 53)
+      const fireDeltaOk = delta17.x === 305 && delta17.y === 53;
+      log('17 FIRE-DRAG LOOK', fireHeld && fireDeltaOk, `fire ${fireHeld} dx ${delta17.x} dy ${delta17.y}`);
+      input17._firePointers.delete(910);
+      input17.fire = input17._firePointers.size > 0;
+
+      // Test 18: the result screen lives INSIDE #overlay (a refactor once left
+      // it outside — fixed elements covered it, so VICTORIA/DERROTA was blank).
+      const rb18 = document.getElementById('result-block');
+      const inOverlay = document.getElementById('overlay').contains(rb18);
+      game.matchState = 'PLAYING';
+      game._resultShown = false;
+      game.playerKills = game.killTarget;
+      game.applyDamage(game.bots[6], 999, 'body', game.player);
+      const title18 = document.getElementById('result-title').textContent;
+      const r18 = rb18.getBoundingClientRect();
+      const visible18 = r18.width > 100 && r18.top < innerHeight && r18.bottom > 0;
+      log('18 RESULT SCREEN VISIBLE', document.getElementById('overlay').contains(rb18) && title18 === 'VICTORIA' && visible18,
+        `inOverlay:${document.getElementById('overlay').contains(rb18)} "${title18}" rect ${r18.width.toFixed(0)}x${r18.height.toFixed(0)}@${r18.top.toFixed(0)}`);
+      game.playerKills = 0;
+      game._resultShown = false;
+      game.matchState = 'LOADING';
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);

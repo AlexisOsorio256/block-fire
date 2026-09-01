@@ -27,18 +27,24 @@ export class PlayerController {
     this.gravity = 26;
 
     // Accel: snap toward wish velocity; friction stops without gluing mid-air.
-    // t90 measured at 33ms — instant response. Friction up a touch so stops
-    // read as committed at the higher top speed.
-    this.groundAccel = 52;
-    this.groundFriction = 42;
-    this.airAccel = 24;
+    // t90 measured at 33ms — instant response. 58/46/26 (was 52/42/24): the
+    // "still not fast enough" note — snappier direction changes without
+    // touching top speed (7.2/8.6 unchanged, collisions verified at sprint).
+    this.groundAccel = 58;
+    this.groundFriction = 46;
+    this.airAccel = 26;
 
     // Feel details (subtle, cheap)
     this.roll = 0;          // strafe camera roll (radians)
     this.bobTime = 0;       // head bob phase
     this._landPunch = 0;    // camera dip on landing (never undefined → no NaN)
 
-    this.height = 1.65;
+    // Crouch: animated height 1.65 → 1.15 (eye), speed ×0.55, tighter spread.
+    // crouchBlend (0..1) drives everything; standing up re-checks clearance.
+    this.crouchBlend = 0;
+    this.standHeight = 1.65;
+    this.crouchHeight = 1.15;
+    this.height = this.standHeight;
     this.radius = 0.35;
 
     this._setupPointerLock();
@@ -99,12 +105,40 @@ export class PlayerController {
     this.camera.rotation.x = this.pitch;
     this.camera.rotation.z = this.roll;
 
+    // Crouch: animated blend. Standing up only if there's clearance above the
+    // current feet (a crouch under a platform must NOT clip through it).
+    const wantCrouch = this.input.crouch === true;
+    const feetNow = this.player.position.y - this.height;
+    if (wantCrouch) {
+      this.crouchBlend = Math.min(1, this.crouchBlend + dt * 9);
+    } else {
+      // Only rise when the full standing capsule fits
+      if (this.crouchBlend > 0) {
+        const probe = this.player.position.clone();
+        probe.y = (this.player.position.y - this.height) + this.standHeight;
+        const clear = !this.map || !this.map.checkCollision(probe, this.radius, this.standHeight);
+        if (clear) {
+          this.crouchBlend = Math.max(0, this.crouchBlend - dt * 8);
+        }
+      }
+    }
+    const newHeight = this.standHeight + (this.crouchHeight - this.standHeight) * this.crouchBlend;
+    if (Math.abs(newHeight - this.height) > 0.0005) {
+      // Feet stay planted relative to the CURRENT position — this must apply
+      // airborne too: crouching mid-jump lowers the eye (legs tuck); leaving
+      // the eye at the old height made the player visibly float until landing.
+      const feet = this.player.position.y - this.height;
+      this.height = newHeight;
+      this.player.position.y = feet + this.height;
+    }
+
     // Movement. Sprint: PC holds Shift; mobile gets it by pushing the joystick
     // to the edge (Input.sprint). Aiming always cancels sprint — you can't
-    // sprint while ADS in any shooter, and it keeps aim accurate.
+    // sprint while ADS in any shooter, and it keeps aim accurate. Crouching
+    // walks at ~55% speed (the classic crouch cost for the accuracy gain).
     const move = this.input.move;
-    const isSprinting = this.input.sprint === true && !this.input.aim;
-    const speed = isSprinting ? this.sprintSpeed : this.moveSpeed;
+    const isSprinting = this.input.sprint === true && !this.input.aim && this.crouchBlend < 0.4;
+    const speed = (isSprinting ? this.sprintSpeed : this.moveSpeed) * (1 - this.crouchBlend * 0.45);
 
     const forward = new THREE.Vector3();
     const right = new THREE.Vector3();

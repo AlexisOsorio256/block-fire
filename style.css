@@ -98,15 +98,15 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 
 /* Kill banner — big, brief, celebratory */
 #killbanner{ position:fixed; left:50%; top:34%; transform:translate(-50%,-50%) scale(0.8); z-index:5; display:flex; flex-direction:column; align-items:center; gap:2px; opacity:0; pointer-events:none; }
-#killbanner .kb-title{ font-size:34px; font-weight:900; letter-spacing:0.08em; color:#ffd23f; text-shadow:0 0 18px rgba(255,180,0,0.55), 0 2px 0 rgba(0,0,0,0.7); }
-#killbanner .kb-sub{ font-size:15px; font-weight:800; letter-spacing:0.14em; color:#fff; text-shadow:0 1px 0 rgba(0,0,0,0.8); }
+#killbanner .kb-title{ font-size:36px; font-weight:900; letter-spacing:0.08em; color:#ffd23f; text-shadow:0 0 22px rgba(255,180,0,0.7), 0 3px 0 rgba(0,0,0,0.85); }
+#killbanner .kb-sub{ font-size:16px; font-weight:900; letter-spacing:0.14em; color:#fff; text-shadow:0 1px 0 rgba(0,0,0,0.9); }
 #killbanner.show{ animation: kbPop 0.9s cubic-bezier(0.2,1.6,0.4,1) forwards; }
 @keyframes kbPop{
-  0%{ opacity:0; transform:translate(-50%,-50%) scale(0.55); }
-  12%{ opacity:1; transform:translate(-50%,-50%) scale(1.12); }
-  22%{ transform:translate(-50%,-50%) scale(1); }
-  70%{ opacity:1; }
-  100%{ opacity:0; transform:translate(-50%,-56%) scale(1); }
+  0%{ opacity:0; transform:translate(-50%,-50%) scale(0.4); }
+  10%{ opacity:1; transform:translate(-50%,-50%) scale(1.28); }
+  20%{ transform:translate(-50%,-50%) scale(1.02); }
+  75%{ opacity:1; }
+  100%{ opacity:0; transform:translate(-50%,-57%) scale(1); }
 }
 
 /* Headshot mini-banner */
@@ -130,9 +130,33 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #btn-fullscreen:active{ background: rgba(255,210,60,0.25); }
 :fullscreen #btn-fullscreen{ display:none; }
 
-.action-btn{ width: calc(54px * var(--btn-scale)); height: calc(54px * var(--btn-scale)); border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
+/* In-match settings gear — always reachable during gameplay */
+#btn-settings{ position:absolute; top:10px; left:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; z-index:4; }
+#btn-settings svg{ width:20px; height:20px; }
+#btn-settings:active{ background: rgba(255,210,60,0.25); transform:rotate(30deg); }
+
+.action-btn{ position:relative; width: calc(54px * var(--btn-scale)); height: calc(54px * var(--btn-scale)); border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
 .action-btn svg{ width:56%; height:56%; pointer-events:none; }
-#btn-fire svg{ color:#ff5a4a; }
+/* Self-explaining buttons: tiny label under each icon */
+.action-btn .lbl{ position:absolute; left:50%; bottom:-13px; transform:translateX(-50%); font-size:8px; font-weight:800; letter-spacing:0.08em; color:rgba(255,255,255,0.75); text-shadow:0 1px 2px rgba(0,0,0,0.9); pointer-events:none; white-space:nowrap; }
+/* Toggle states: sprint lock / ADS latch / crouch latch read at a glance */
+#btn-sprint.active, #btn-crouch.active{ border-color:#ffd23f; background:rgba(255,210,60,0.22); box-shadow:0 0 14px rgba(255,210,63,0.35); }
+#btn-sprint.active svg, #btn-crouch.active svg{ color:#ffd23f; }
+#btn-aim.active{ border-color:#4ade80; background:rgba(74,222,128,0.16); box-shadow:0 0 14px rgba(74,222,128,0.3); }
+#btn-aim.active svg{ color:#4ade80; }
+/* Second fire button (left side) — only exists while ADS is latched.
+   Placed ABOVE the joystick zone (not inside it): a button under the movement
+   thumb steals drags — the index finger reaches it comfortably. */
+#action-buttons-left{ position:absolute; left:20px; bottom:190px; pointer-events:none; opacity:0; transform:translateY(8px); transition: opacity 0.18s ease, transform 0.18s ease; }
+#mobile-controls.aiming #action-buttons-left{ opacity:1; transform:translateY(0); pointer-events:auto; }
+#btn-fire-left{ border-color:rgba(255,90,74,0.55); }
+/* Edit mode: dashed outlines + drag affordance */
+#mobile-controls.editing .action-btn{ outline:2px dashed rgba(255,210,63,0.8); outline-offset:3px; cursor:move; }
+#mobile-controls.editing .zone-label{ color:#ffd23f; }
+/* Zone labels — the two halves explain themselves */
+.zone-label{ position:absolute; left:24px; bottom:150px; font-size:9px; font-weight:800; letter-spacing:0.22em; color:rgba(255,255,255,0.4); pointer-events:none; }
+.zone-label-right{ left:auto; right:22px; bottom:auto; top:18px; }
+#btn-fire svg, #btn-fire-left svg{ color:#ff5a4a; }
 #btn-aim:active svg{ color:#ffd23f; }
 .action-btn:active{ transform:scale(0.92); background: rgba(255,210,60,0.22); border-color: rgba(255,210,60,0.4); }
 

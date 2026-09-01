@@ -47,27 +47,55 @@
     <button id="btn-fullscreen" aria-label="Pantalla completa">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
+    <button id="btn-settings" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H4a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 11 4.09V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03H20a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.35z"/></svg>
+    </button>
     <div id="joystick-zone">
       <div id="joystick-base"><div id="joystick-stick"></div></div>
+      <span class="zone-label">MOVER</span>
     </div>
-    <div id="look-zone"></div>
+    <div id="look-zone"><span class="zone-label zone-label-right">MIRAR</span></div>
     <div id="action-buttons">
-      <button id="btn-fire" class="action-btn" aria-label="Disparar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+      <button id="btn-sprint" class="action-btn" aria-label="Correr">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="4.5" r="2"/><path d="M13.5 8.5l-3 3 2.5 3-3 6"/><path d="M10.5 11.5L7 12l-1.5 3"/></svg>
+        <span class="lbl">CORRER</span>
       </button>
-      <button id="btn-aim" class="action-btn" aria-label="Apuntar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M2 12h4M18 12h4M12 2v4M12 18v4"/></svg>
+      <button id="btn-crouch" class="action-btn" aria-label="Agacharse">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5.5" r="2"/><path d="M12 8.5v4"/><path d="M7 12.5h10"/><path d="M12 12.5l-3.5 4M12 12.5l3.5 4"/></svg>
+        <span class="lbl">COGER</span>
       </button>
       <button id="btn-jump" class="action-btn" aria-label="Saltar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6"/><path d="M6 11l6-6 6 6"/></svg>
+        <span class="lbl">SALTO</span>
       </button>
       <button id="btn-reload" class="action-btn" aria-label="Recargar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 5v6h-6"/></svg>
+        <span class="lbl">RECARGA</span>
       </button>
       <button id="btn-switch" class="action-btn" aria-label="Cambiar arma">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>
+        <span class="lbl">ARMA</span>
+      </button>
+      <button id="btn-aim" class="action-btn" aria-label="Apuntar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.5"/><path d="M2 12h4M18 12h4M12 2v4M12 18v4"/></svg>
+        <span class="lbl">MIRA</span>
+      </button>
+      <button id="btn-fire" class="action-btn fire-drag" aria-label="Disparar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+        <span class="lbl">FUEGO</span>
       </button>
     </div>
+    <!-- Segundo botón de fuego (lado izquierdo): solo visible con la mira
+         activa — disparo de precisión con la otra mano (esquema FPS móvil). -->
+    <div id="action-buttons-left">
+      <button id="btn-fire-left" class="action-btn fire-drag" aria-label="Disparar (mira)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+        <span class="lbl">FUEGO</span>
+      </button>
+    </div>
+    <button id="btn-settings" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.37 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H4a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 9 4.09V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03H20a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.35z"/></svg>
+    </button>
   </div>
 
   <!-- Landscape gate — BLOCKFIRE se juega EN HORIZONTAL (regla permanente).
@@ -105,39 +133,11 @@
       <button id="playBtn">JUGAR</button>
       <div id="lobby-menu">
         <button id="btn-config" class="menu-chip">CONFIGURACIÓN</button>
-        <button class="menu-chip locked" disabled title="Próximamente">ARMERÍA · PRONTO</button>
-        <button class="menu-chip locked" disabled title="Próximamente">TIENDA · PRONTO</button>
       </div>
       <p class="hint" id="hint">PC: WASD + RATÓN · MÓVIL: JOYSTICK</p>
       <p class="credits">Audio: Kenney (CC0) · Jesús Lastra (CC-BY 3.0) — <a href="CREDITS.md" target="_blank" rel="noopener">créditos</a></p>
     </div>
 
-    <!-- Panel de configuración — horizontal, hereda la identidad del lobby -->
-    <div id="config-panel" class="hidden">
-      <h3>CONFIGURACIÓN</h3>
-      <div class="cfg-row">
-        <label>Sensibilidad cámara <output id="out-sens">1.0×</output></label>
-        <input type="range" id="cfg-sens" min="0.3" max="2" step="0.1" value="1">
-      </div>
-      <div class="cfg-row">
-        <label>Sensibilidad ADS <output id="out-ads">0.75×</output></label>
-        <input type="range" id="cfg-ads" min="0.3" max="1" step="0.05" value="0.75">
-      </div>
-      <div class="cfg-row">
-        <label>Tamaño de botones <output id="out-btnscale">1.0×</output></label>
-        <input type="range" id="cfg-btnscale" min="0.8" max="1.4" step="0.05" value="1">
-      </div>
-      <div class="cfg-row">
-        <label>Opacidad de controles <output id="out-btnopacity">100%</output></label>
-        <input type="range" id="cfg-btnopacity" min="0.4" max="1" step="0.05" value="1">
-      </div>
-      <div class="cfg-actions">
-        <button id="cfg-reset">RESTAURAR</button>
-        <button id="cfg-close">CERRAR</button>
-      </div>
-      <p class="cfg-note">Se guarda en este dispositivo (localStorage).</p>
-    </div>
-  </div>
     <div id="result-block" class="hidden">
       <h2 id="result-title">VICTORIA</h2>
       <p id="result-sub">20 kills</p>
@@ -156,22 +156,52 @@
     <div class="th-card">
       <div class="th-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>
-        <div><b>JOYSTICK</b> (izquierda) mueve al personaje · a tope = correr</div>
+        <div><b>JOYSTICK</b> (izquierda) mueve · <b>CORRER</b> activa el sprint</div>
       </div>
       <div class="th-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h13M13 6l6 6-6 6"/></svg>
-        <div><b>ARRASTRA</b> en la mitad derecha para mirar y apuntar</div>
+        <div><b>ARRASTRA</b> en la mitad derecha para mirar — o arrastra <b>FUEGO</b></div>
       </div>
       <div class="th-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="#ff5a4a" stroke-width="2"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="#ff5a4a" stroke="none"/></svg>
-        <div><b>BOTÓN ROJO</b> dispara · <b>MIRA</b> apunta fino</div>
+        <div><b>FUEGO</b> dispara · <b>MIRA</b> activa apuntado (tap) + segundo fuego</div>
       </div>
       <div class="th-row">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V6M6 11l6-6 6 6"/></svg>
-        <div><b>SALTAR · RECARGAR · CAMBIAR ARMA</b> — botones a la derecha</div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8.5v4M7 12.5h10M12 12.5l-3.5 4M12 12.5l3.5 4"/></svg>
+        <div><b>COGER</b> agacha · <b>SALTO / RECARGA / ARMA</b> a la derecha</div>
       </div>
       <button id="th-close">ENTENDIDO</button>
     </div>
+  </div>
+
+  <!-- Panel de configuración — a nivel body: se abre desde el lobby (chip)
+       y desde ⚙ DURANTE la partida. Congela el juego mientras está abierto. -->
+  <div id="config-panel" class="hidden">
+    <h3>CONFIGURACIÓN</h3>
+    <div class="cfg-row">
+      <label>Sensibilidad cámara <output id="out-sens">1.0×</output></label>
+      <input type="range" id="cfg-sens" min="0.3" max="2" step="0.1" value="1">
+    </div>
+    <div class="cfg-row">
+      <label>Sensibilidad ADS <output id="out-ads">0.75×</output></label>
+      <input type="range" id="cfg-ads" min="0.3" max="1" step="0.05" value="0.75">
+    </div>
+    <div class="cfg-row">
+      <label>Tamaño de botones <output id="out-btnscale">1.0×</output></label>
+      <input type="range" id="cfg-btnscale" min="0.8" max="1.4" step="0.05" value="1">
+    </div>
+    <div class="cfg-row">
+      <label>Opacidad de controles <output id="out-btnopacity">100%</output></label>
+      <input type="range" id="cfg-btnopacity" min="0.4" max="1" step="0.05" value="1">
+    </div>
+    <div class="cfg-actions">
+      <button id="cfg-editcontrols">EDITAR CONTROLES</button>
+    </div>
+    <div class="cfg-actions">
+      <button id="cfg-reset">RESTAURAR</button>
+      <button id="cfg-close">CERRAR</button>
+    </div>
+    <p class="cfg-note" id="cfg-note">Se guarda en este dispositivo (localStorage).</p>
   </div>
 
   <div id="debug" class="hidden"></div>
