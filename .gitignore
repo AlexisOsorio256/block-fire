@@ -32,3 +32,8 @@ __pycache__/
 
 # Logs de chromium
 *.png.bak
+
+# Godot
+godot/.godot/
+builds/
+*.tmp

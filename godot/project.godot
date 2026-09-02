@@ -1,0 +1,61 @@
+; Engine configuration file — BLOCKFIRE (Godot 4.7)
+; Reglas de producto: PROJECT_RULES.md · Contrato de comportamiento: docs/migration/BEHAVIOR-MAP.md
+
+config_version=5
+
+[application]
+
+config/name="BLOCKFIRE"
+config/description="FPS blocky arcade — corre rápido, dispara, mata, repite."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Settings="*res://scripts/core/settings.gd"
+Audio="*res://scripts/core/audio.gd"
+Game="*res://scripts/core/game.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[input]
+
+move_forward={ "deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":87), Object(InputEventKey,"physical_keycode":4194320)] }
+move_back={ "deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":83), Object(InputEventKey,"physical_keycode":4194322)] }
+move_left={ "deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":65), Object(InputEventKey,"physical_keycode":4194319)] }
+move_right={ "deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":68), Object(InputEventKey,"physical_keycode":4194321)] }
+jump={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":32)] }
+sprint={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194325)] }
+crouch={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":67)] }
+reload={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":82)] }
+fire={ "deadzone": 0.5, "events": [Object(InputEventMouseButton,"button_index":1)] }
+aim={ "deadzone": 0.5, "events": [Object(InputEventMouseButton,"button_index":2)] }
+weapon_1={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":49)] }
+weapon_2={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":50)] }
+weapon_3={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":51)] }
+weapon_next={ "deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":69)] }
+
+[layer_names]
+
+3d_physics/layer_1="level"
+3d_physics/layer_2="entities"
+
+[physics]
+
+3d/default_gravity=22.0
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/vram_compression/import_etc2_astc=true
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
+anti_aliasing/quality/msaa_3d=1
