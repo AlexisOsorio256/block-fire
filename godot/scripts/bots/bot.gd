@@ -190,6 +190,8 @@ func _physics_process(delta: float) -> void:
 	if state == State.ATTACK and _fire_timer <= 0.0:
 		_fire_timer = FIRE_INTERVAL
 		_fire()
+		if char_model != null:
+			char_model.shoot_pose()
 
 func _random_wander_point() -> Vector3:
 	var a := randf() * TAU

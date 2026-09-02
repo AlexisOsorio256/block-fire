@@ -67,12 +67,12 @@ func _build_ui() -> void:
 
 	# resto de acciones (tap)
 	var defs := [
-		["MIRA", Vector2(-390, -140), 90, Color(0.35, 0.8, 0.5, 0.55), func(): _aim_toggled = not _aim_toggled],
-		["SALTO", Vector2(-140, -360), 90, Color(1, 1, 1, 0.45), func(): _jump_edge = true],
-		["RECARGA", Vector2(-360, -290), 84, Color(1, 1, 1, 0.45), func(): _reload_edge = true],
-		["CORRER", Vector2(-150, -500), 84, Color(1, 1, 1, 0.45), func(): _sprint = not _sprint],
-		["AGACHARSE", Vector2(-300, -450), 84, Color(1, 1, 1, 0.45), func(): _crouch = not _crouch],
-		["ARMA", Vector2(-450, -360), 84, Color(1, 1, 1, 0.45), func(): _weapon_edge = true],
+		["MIRA", Vector2(-440, -170), 92, Color(0.35, 0.8, 0.5, 0.55), func(): _aim_toggled = not _aim_toggled],
+		["SALTO", Vector2(-130, -400), 88, Color(1, 1, 1, 0.45), func(): _jump_edge = true],
+		["RECARGA", Vector2(-300, -330), 80, Color(1, 1, 1, 0.45), func(): _reload_edge = true],
+		["CORRER", Vector2(-160, -560), 82, Color(1, 1, 1, 0.45), func(): _sprint = not _sprint],
+		["AGACHARSE", Vector2(-470, -300), 82, Color(1, 1, 1, 0.45), func(): _crouch = not _crouch],
+		["ARMA", Vector2(-560, -420), 82, Color(1, 1, 1, 0.45), func(): _weapon_edge = true],
 	]
 	for d in defs:
 		var b := _button(d[0], d[2], d[3])
