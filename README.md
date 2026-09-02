@@ -2,10 +2,40 @@
 
 # 🔥 BLOCKFIRE
 
-**FPS arcade 3D blocky — corre en tu navegador, gratis.**
+**FPS blocky arcade — la base web es la referencia funcional; la migración nativa vive en `godot/`.**
 
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 20 kills y ganas. Así de simple.
+
+## 🎮 Dos versiones, un mismo juego
+
+| | Web (Three.js) | Godot 4.7 |
+|---|---|---|
+| Estado | **Producto vivo** — la referencia | **Migración del núcleo** en curso |
+| Jugable | ✔ completo (multitouch pulido) | ✔ núcleo jugable (third-person) |
+| Cómo | `python3 -m http.server 8931` | `godot godot/` o APK (ver abajo) |
+| Pruebas | `?runTests=1` (18) | selftest headless (16) |
+
+### Godot (nativo — rama `godot-migration`)
+
+```bash
+# editor
+godot ~/Documentos/BlockFire/godot        # requiere Godot 4.7.x
+# probar desde terminal
+godot --path godot
+# tests headless
+godot --headless --path godot -- --selftest
+# APK Android (debug, firmada con keystore de debug local)
+godot --headless --path godot --export-debug "Android" builds/blockfire-debug.apk
+```
+
+Núcleo ya migrado: third-person player con paridad numérica del web (walk 7.2 /
+sprint 8.6 / accel 58 / gravedad -22), 3 armas data-driven con hitscan+recoil+
+tracer+muzzle flash, ruta única de daño/respawn con banners (+100/+150/+200/xN),
+7 bots con NavigationAgent3D y oclusión real, arena con navmesh horneado en
+runtime, HUD completo, controles táctiles con ownership por dedo (drag-fire,
+ADS toggle), audio real con atenuación por distancia. **59.5 FPS (vsync) a
+1080p en una iGPU HD 520.**
 
 </div>
 
