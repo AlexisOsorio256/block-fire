@@ -24,7 +24,7 @@ godot ~/Documentos/BlockFire/godot        # requiere Godot 4.7.x
 # probar desde terminal
 godot --path godot
 # tests headless
-godot --headless --path godot -- --selftest
+godot --headless --path godot scenes/main.tscn -- --selftest
 # APK Android (debug, firmada con keystore de debug local)
 godot --headless --path godot --export-debug "Android" builds/blockfire-debug.apk
 ```
