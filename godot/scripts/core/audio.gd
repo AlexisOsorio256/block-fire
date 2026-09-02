@@ -21,6 +21,9 @@ func _ready() -> void:
 	_load("switch", "res://assets/audio/switch.ogg")
 	_load("jump", "res://assets/audio/jump.ogg")
 	_load("respawn", "res://assets/audio/respawn.ogg")
+	_load("step", "res://assets/audio/step.ogg")
+	_load("step2", "res://assets/audio/step2.ogg")
+	_load("ui", "res://assets/audio/ui.ogg")
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"

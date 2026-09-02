@@ -235,19 +235,34 @@ func _tracer(from: Vector3, to: Vector3) -> void:
 	tw.tween_callback(mi.queue_free)
 
 func _impact(pos: Vector3, color: Color) -> void:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3.ONE * 0.09
-	mi.mesh = bm
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = color
-	mi.material_override = m
-	get_tree().current_scene.add_child(mi)
-	mi.global_position = pos
-	var tw := mi.create_tween()
-	tw.tween_property(mi, "scale", Vector3.ONE * 0.2, 0.12)
-	tw.tween_callback(mi.queue_free)
+	# chispas con partículas GPU (8-12 fragmentos, vida corta, presupuesto fijo)
+	var p := GPUParticles3D.new()
+	p.one_shot = true
+	p.emitting = false
+	p.amount = 10
+	p.lifetime = 0.35
+	p.explosiveness = 1.0
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3.UP
+	pm.spread = 70.0
+	pm.initial_velocity_min = 2.0
+	pm.initial_velocity_max = 5.0
+	pm.gravity = Vector3(0, -12, 0)
+	pm.scale_min = 0.4
+	pm.scale_max = 1.0
+	p.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.05, 0.05)
+	var pm2 := StandardMaterial3D.new()
+	pm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pm2.albedo_color = color
+	pm2.vertex_color_use_as_albedo = true
+	quad.material = pm2
+	p.draw_pass_1 = quad
+	get_tree().current_scene.add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	get_tree().create_timer(0.8).timeout.connect(p.queue_free)
 
 func _muzzle_pos(cam_origin: Vector3, dir: Vector3) -> Vector3:
 	if _muzzle != null and _muzzle.is_inside_tree():

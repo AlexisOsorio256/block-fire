@@ -114,10 +114,15 @@ func die(headshot: bool) -> void:
 	# caída animada visible brevemente antes del respawn (muerte satisfactoria)
 	var tw := create_tween()
 	tw.tween_property(self, "position:y", -0.6, 0.5).set_ease(Tween.EASE_IN)
-	Game.register_kill(self, _killer, headshot)
+	Game.register_kill(self, _killer, _last_headshot or headshot)
 	Game.queue_respawn(self, _spawn_point)
 
 var _killer: Node = null
+var _last_headshot := false
+
+func notify_attacker(attacker: Node, headshot: bool) -> void:
+	_killer = attacker
+	_last_headshot = headshot
 
 func _physics_process(delta: float) -> void:
 	if not active or target == null:

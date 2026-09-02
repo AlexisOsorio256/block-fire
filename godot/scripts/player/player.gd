@@ -11,6 +11,13 @@ var max_hp := 125.0
 var _last_attacker: Node = null
 var _last_headshot := false
 var _crouch_blend := 0.0
+var _base_cam_y := 0.35
+var _trauma := 0.0
+var _step_timer := 0.2
+
+# sacudida de cámara al recibir daño / disparar (trauma con decaimiento)
+func add_trauma(amount: float) -> void:
+	_trauma = minf(_trauma + amount, 1.0)
 
 const WALK := 7.2
 const SPRINT := 8.6
@@ -85,6 +92,7 @@ func build_camera() -> void:
 	spring.add_child(cam)
 	cam.position = Vector3(0.55, 0.35, 0)  # hombro derecho
 	cam.current = true
+	_base_cam_y = cam.position.y
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -120,6 +128,22 @@ func _read_look(delta: float) -> void:
 	if _aiming():
 		target_fov = 55.0
 	cam.fov = lerpf(cam.fov, target_fov, delta * 10.0)
+
+	# hombro: derecha normal, centro-izquierda al apuntar (ADS se siente distinto)
+	var shoulder := 0.55 if not _aiming() else -0.25
+	cam.position.x = lerpf(cam.position.x, shoulder, delta * 9.0)
+	# acercar el arma al apuntar
+	spring.spring_length = lerpf(spring.spring_length, 1.6 if _aiming() else 3.2, delta * 8.0)
+
+	# shake por trauma (recibe golpes y disparos): decae, ruido pequeño
+	if _trauma > 0.0:
+		_trauma = maxf(_trauma - delta * 1.6, 0.0)
+		var shake := _trauma * _trauma
+		cam.position.y = _base_cam_y + randf_range(-1, 1) * 0.05 * shake
+		cam.rotation.z = randf_range(-1, 1) * 0.03 * shake
+	else:
+		cam.position.y = lerpf(cam.position.y, _base_cam_y, delta * 8.0)
+		cam.rotation.z = lerpf(cam.rotation.z, 0.0, delta * 8.0)
 
 func _aiming() -> bool:
 	return weapon != null and weapon.aiming
@@ -169,6 +193,15 @@ func _move(delta: float) -> void:
 
 	move_and_slide()
 
+	# pasos: ritmo ligado a velocidad real (solo en suelo y moviéndose)
+	if is_on_floor() and Vector3(velocity.x, 0, velocity.z).length() > 2.0:
+		_step_timer -= delta * (Vector3(velocity.x, 0, velocity.z).length() / WALK)
+		if _step_timer <= 0.0:
+			_step_timer = 0.38
+			Audio.play("step" if randi() % 2 == 0 else "step2", -14.0, randf_range(0.9, 1.1))
+	else:
+		_step_timer = 0.2
+
 	# crouch: colisión + ojo animados (parity: crouchBlend)
 	_crouch_blend = move_toward(_crouch_blend, 1.0 if crouching else 0.0, delta * 6.0)
 	collision.shape.height = lerpf(BODY_H, CROUCH_H, _crouch_blend)
@@ -185,6 +218,7 @@ func _animate(delta: float) -> void:
 
 func take_damage(amount: float, headshot: bool, from: Vector3) -> void:
 	hp -= amount
+	add_trauma(0.35)
 	if char_model != null:
 		char_model.hit_flash()
 	var to_att := from - global_position
@@ -200,6 +234,7 @@ func respawn(pos: Vector3) -> void:
 	hp = max_hp
 	active = true
 	visible = true
+	spring.spring_length = 3.2
 	Audio.play("respawn", -6.0)
 
 func notify_attacker(attacker: Node, headshot: bool) -> void:
@@ -213,6 +248,8 @@ func die() -> void:
 	visible = true
 	if char_model != null:
 		char_model.die_pose()
+	add_trauma(0.8)
+	spring.spring_length = 4.4  # death cam: cámara se aleja
 	Audio.play("death", -2.0)
 	Game.register_kill(self, _last_attacker, _last_headshot)
 	Game.queue_respawn(self, global_position)
