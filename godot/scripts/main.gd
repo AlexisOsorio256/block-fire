@@ -14,7 +14,7 @@ var rotate_overlay: Control
 func _ready() -> void:
 	is_touch = DisplayServer.is_touchscreen_available()
 
-	if OS.get_cmdline_user_args().has("--selftest"):
+	if OS.get_cmdline_user_args().has("--selftest") and not Engine.has_meta("blockfire_selftest_nested"):
 		var tester: Node = load("res://tests/selftest.gd").new()
 		add_child(tester)
 		return

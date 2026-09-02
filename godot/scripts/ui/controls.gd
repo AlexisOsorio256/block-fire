@@ -151,10 +151,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_move = Vector2.ZERO
 			_sprint = mag > 0.95
 
-func _physics_process(_delta: float) -> void:
-	if _stick_idx != -1 and not Input.is_key_pressed(KEY_SHIFT):
-		pass  # el vector se actualiza en drag
-
 func take_look_delta() -> Vector2:
 	var d := look_delta
 	look_delta = Vector2.ZERO

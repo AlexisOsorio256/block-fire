@@ -8,7 +8,7 @@ var passes := 0
 
 func _ready() -> void:
 	await get_tree().process_frame
-	_run_all()
+	await _run_all()
 	if failures == 0:
 		print("[SELFTEST] ALL %d PASSED" % passes)
 	else:
@@ -47,6 +47,7 @@ func _run_all() -> void:
 	check(Arena.SPAWNS.size() >= 9, "spawns validados >= 9")
 
 	# ---- flujo de partida real en escena ----
+	Engine.set_meta("blockfire_selftest_nested", true)
 	var main_scene: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main_scene)
 	await get_tree().physics_frame
@@ -68,6 +69,7 @@ func _run_all() -> void:
 		var banner_texts: Array[String] = []
 		Game.kill_banner.connect(func(t: String): banner_texts.append(t))
 		var kills_before := Game.player_kills
+		first_bot.notify_attacker(pl, true)  # simula lo que hace WeaponSystem._shot
 		Game.apply_damage(first_bot, 999.0, true, pl.global_position)
 		await get_tree().process_frame
 		check(Game.player_kills == kills_before + 1, "score por kill via ruta única")
@@ -77,3 +79,11 @@ func _run_all() -> void:
 		# muerte del jugador → respawn pendiente
 		Game.apply_damage(pl, 130.0, false, pl.global_position + Vector3(0, 0, 3))
 		check(not pl.active, "muerte del jugador por daño letal")
+		# arma montada en la mano derecha del rig
+		var hand: Node3D = pl.char_model.arm_right
+		var mounted := false
+		if hand != null:
+			for c in hand.get_children():
+				if String(c.name).begins_with("Weapon_"):
+					mounted = true
+		check(mounted, "arma física montada en la mano")

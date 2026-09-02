@@ -5,7 +5,6 @@ class_name WeaponSystem
 extends Node
 
 signal ammo_changed(mag: int, reserve: int)
-signal reloading_changed(state: bool)
 signal hitmarker(headshot: bool)
 
 const WEAPONS := [
@@ -35,8 +34,76 @@ const LAYER_LEVEL := 1
 const LAYER_ENTITIES := 2
 
 func setup(body: Player) -> void:
+	owner_body = body
 	mag = WEAPONS[current]["mag"]
 	reserve = WEAPONS[current]["reserve"]
+	_mount_weapon()
+
+# ---- arma física en la mano (silueta por arma, parity visual con el web) ----
+var _weapon_node: Node3D
+var _muzzle: Marker3D
+
+func _mount_weapon() -> void:
+	if _weapon_node != null:
+		_weapon_node.queue_free()
+	_weapon_node = Node3D.new()
+	_weapon_node.name = "Weapon_" + WEAPONS[current]["name"]
+	_muzzle = Marker3D.new()
+	_muzzle.name = "Muzzle"
+	_muzzle.position = Vector3(0, 0, _barrel_len())
+	_weapon_node.add_child(_muzzle)
+	_build_silhouette(_weapon_node)
+	var hand := owner_body.char_model.arm_right
+	if hand != null:
+		hand.add_child(_weapon_node)
+		_weapon_node.position = Vector3(0, -0.34, 0.02)
+		_weapon_node.rotation_degrees = Vector3(-90, 0, 0)
+
+func _barrel_len() -> float:
+	return [0.62, 0.34, 0.72][current]
+
+func _build_silhouette(parent: Node3D) -> void:
+	# una sola función, 3 siluetas por datos — crecer el arsenal no duplica código
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = Color(0.18, 0.19, 0.22)
+	body_mat.roughness = 0.55
+	body_mat.metallic = 0.35
+	var accent_mat := StandardMaterial3D.new()
+	accent_mat.albedo_color = [Color(0.85, 0.55, 0.12), Color(0.35, 0.5, 0.7), Color(0.55, 0.3, 0.2)][current]
+	accent_mat.roughness = 0.6
+
+	var w := 0.07
+	var l := _barrel_len()
+	# cañón/cuerpo
+	_box(parent, Vector3(w, w, l), Vector3(0, 0, l * 0.5), body_mat)
+	# empuñadura
+	_box(parent, Vector3(w * 0.9, 0.14, w * 1.2), Vector3(0, -0.1, 0.04), accent_mat)
+	if current == 0:  # rifle: culata + cargador curvo
+		_box(parent, Vector3(w * 0.8, 0.1, 0.22), Vector3(0, -0.02, -0.09), body_mat)
+		_box(parent, Vector3(w * 0.8, 0.16, 0.09), Vector3(0, -0.14, 0.24), accent_mat)
+		_box(parent, Vector3(w * 0.6, 0.05, 0.16), Vector3(0, 0.06, 0.30), accent_mat)
+	elif current == 1:  # pistola: corredera compacta
+		_box(parent, Vector3(w * 1.1, 0.055, l * 0.55), Vector3(0, 0.045, 0.12), accent_mat)
+	else:  # escopeta: bomba + doble cañón visual
+		_box(parent, Vector3(w * 1.4, w * 1.2, l * 0.4), Vector3(0, -0.02, 0.16), accent_mat)
+		_box(parent, Vector3(w * 0.6, w * 0.6, l * 0.9), Vector3(0, 0.055, l * 0.5), body_mat)
+
+func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	parent.add_child(mi)
+	mi.position = pos
+
+# kick visual del arma al disparar (recoil físico visible en tercera persona)
+func _weapon_kick() -> void:
+	if _weapon_node == null:
+		return
+	var tw := _weapon_node.create_tween()
+	tw.tween_property(_weapon_node, "position:z", 0.02 - 0.06, 0.04)
+	tw.tween_property(_weapon_node, "position:z", 0.02, 0.09)
 
 func _physics_process(delta: float) -> void:
 	if owner_body == null or not owner_body.active:
@@ -92,6 +159,7 @@ func switch_to(index: int) -> void:
 	reserve = WEAPONS[current]["reserve"]
 	_cooldown = WEAPONS[current]["interval"]
 	Audio.play("switch", -6.0)
+	_mount_weapon()
 	ammo_changed.emit(mag, reserve)
 
 func fire() -> void:
@@ -111,7 +179,10 @@ func fire() -> void:
 	Audio.play(WEAPONS[current]["sound"])
 	owner_body.pitch = clampf(owner_body.pitch + WEAPONS[current]["recoil"], -1.55, 1.55)
 	_recovery += WEAPONS[current]["recoil"]
-	_muzzle_flash(origin, forward)
+	_muzzle_flash(_muzzle_pos(origin, forward), forward)
+	_weapon_kick()
+	if owner_body.char_model != null:
+		owner_body.char_model.shoot_pose()
 	ammo_changed.emit(mag, reserve)
 
 func _shot(origin: Vector3, dir: Vector3) -> void:
@@ -177,6 +248,11 @@ func _impact(pos: Vector3, color: Color) -> void:
 	var tw := mi.create_tween()
 	tw.tween_property(mi, "scale", Vector3.ONE * 0.2, 0.12)
 	tw.tween_callback(mi.queue_free)
+
+func _muzzle_pos(cam_origin: Vector3, dir: Vector3) -> Vector3:
+	if _muzzle != null and _muzzle.is_inside_tree():
+		return _muzzle.global_position
+	return cam_origin + dir * 0.6
 
 func _muzzle_flash(origin: Vector3, dir: Vector3) -> void:
 	var light := OmniLight3D.new()

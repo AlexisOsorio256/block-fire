@@ -4,8 +4,6 @@
 class_name Player
 extends CharacterBody3D
 
-signal look_changed(yaw: float, pitch: float)
-signal fired_muzzle(pos: Vector3, dir: Vector3)
 signal died
 
 var hp := 125.0
@@ -34,7 +32,6 @@ var active: bool = true
 # look
 var yaw: float = 0.0
 var pitch: float = 0.0
-var sprint_lock: bool = false
 var crouching: bool = false
 
 # nodos
@@ -43,6 +40,7 @@ var head: Node3D
 var cam: Camera3D
 var spring: SpringArm3D
 var collision: CollisionShape3D
+var char_model: CharacterModel
 
 func _ready() -> void:
 	add_to_group("player")
@@ -64,35 +62,11 @@ func build_body() -> void:
 	collision.shape = shape
 	add_child(collision)
 
-	model = Node3D.new()
-	model.name = "Model"
-	add_child(model)
-	# cuerpo blocky visible (tercera persona) — la base para skins
-	var torso := MeshInstance3D.new()
-	var tm := BoxMesh.new(); tm.size = Vector3(0.62, 0.72, 0.34)
-	torso.mesh = tm
-	torso.position.y = 1.06
-	torso.material_override = _mat(Color(0.32, 0.52, 0.72))
-	model.add_child(torso)
-	var headm := MeshInstance3D.new()
-	var hm := BoxMesh.new(); hm.size = Vector3(0.42, 0.42, 0.42)
-	headm.mesh = hm
-	headm.position.y = 1.68
-	headm.material_override = _mat(Color(0.86, 0.70, 0.55))
-	model.add_child(headm)
-	for side in [-1.0, 1.0]:
-		var leg := MeshInstance3D.new()
-		var lm := BoxMesh.new(); lm.size = Vector3(0.24, 0.72, 0.26)
-		leg.mesh = lm
-		leg.position = Vector3(0.16 * side, 0.36, 0.0)
-		leg.material_override = _mat(Color(0.24, 0.27, 0.34))
-		model.add_child(leg)
-		var arm := MeshInstance3D.new()
-		var am := BoxMesh.new(); am.size = Vector3(0.18, 0.62, 0.20)
-		arm.mesh = am
-		arm.position = Vector3(0.42 * side, 1.10, 0.0)
-		arm.material_override = _mat(Color(0.32, 0.52, 0.72))
-		model.add_child(arm)
+	# modelo real (Kenney CC0, animaciones) — la base para skins
+	char_model = CharacterModel.new()
+	char_model.name = "Model"
+	add_child(char_model)
+	char_model.setup(0)  # skin del jugador
 
 func build_camera() -> void:
 	head = Node3D.new()
@@ -129,6 +103,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_read_look(delta)
 	_move(delta)
+	_animate(delta)
 
 func _read_look(delta: float) -> void:
 	# look desde la capa táctil (delta acumulado por frame)
@@ -166,7 +141,7 @@ func _move(delta: float) -> void:
 		want_crouch = Input.is_action_just_pressed("crouch")
 
 	crouching = want_crouch
-	var sprinting := (want_sprint or sprint_lock) and not _aiming() and not crouching and mv.length() > 0.5
+	var sprinting := want_sprint and not _aiming() and not crouching and mv.length() > 0.5
 
 	var wish := (transform.basis * Vector3(mv.x, 0, mv.y))
 	var max_speed := WALK
@@ -200,8 +175,18 @@ func _move(delta: float) -> void:
 	collision.position.y = 0.0
 	head.position.y = lerpf(EYE_H, CROUCH_EYE, _crouch_blend)
 
+func _animate(delta: float) -> void:
+	if char_model == null:
+		return
+	if weapon != null and weapon.aiming:
+		char_model.play("holding-right-shoot", 1.0)  # pose de apuntado
+	else:
+		char_model.locomotion(Vector3(velocity.x, 0, velocity.z).length(), WALK, SPRINT)
+
 func take_damage(amount: float, headshot: bool, from: Vector3) -> void:
 	hp -= amount
+	if char_model != null:
+		char_model.hit_flash()
 	var to_att := from - global_position
 	var angle := atan2(-to_att.x, -to_att.z)
 	Game.player_hurt.emit(angle_difference(yaw, angle), amount)
@@ -225,7 +210,9 @@ func die() -> void:
 	if not active:
 		return
 	active = false
-	visible = false
+	visible = true
+	if char_model != null:
+		char_model.die_pose()
 	Audio.play("death", -2.0)
 	Game.register_kill(self, _last_attacker, _last_headshot)
 	Game.queue_respawn(self, global_position)

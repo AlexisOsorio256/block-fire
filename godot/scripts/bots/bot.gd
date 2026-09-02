@@ -28,6 +28,7 @@ var _fire_timer := 0.0
 var _vy := 0.0
 var _head: StaticBody3D
 var _spawn_point := Vector3.ZERO
+var char_model: CharacterModel
 
 func _ready() -> void:
 	add_to_group("entities")
@@ -46,42 +47,12 @@ func build_body() -> void:
 	add_child(col)
 
 func build_model() -> void:
-	# blocky militar con variación por skin (identidad visual por bot)
-	var palette: Array = [
-		[Color(0.36, 0.42, 0.34), Color(0.55, 0.42, 0.30)],  # assault
-		[Color(0.45, 0.47, 0.50), Color(0.30, 0.32, 0.36)],  # urban
-		[Color(0.30, 0.36, 0.48), Color(0.20, 0.24, 0.30)],  # tactical
-		[Color(0.52, 0.50, 0.38), Color(0.40, 0.36, 0.26)],  # scout
-		[Color(0.34, 0.30, 0.30), Color(0.44, 0.28, 0.22)],  # heavy
-		[Color(0.48, 0.36, 0.20), Color(0.30, 0.22, 0.14)],  # raider
-		[Color(0.22, 0.24, 0.30), Color(0.12, 0.14, 0.18)],  # nightops
-	]
-	var pal: Array = palette[name.hash() % palette.size()]
-	var torso := MeshInstance3D.new()
-	var tm := BoxMesh.new(); tm.size = Vector3(0.62, 0.72, 0.34)
-	torso.mesh = tm
-	torso.position.y = 1.06
-	torso.material_override = _mat(pal[0])
-	add_child(torso)
-	var headm := MeshInstance3D.new()
-	var hm := BoxMesh.new()
-	hm.size = Vector3(0.42, 0.42, 0.42)
-	headm.mesh = hm
-	headm.position.y = 1.68
-	headm.material_override = _mat(pal[1])
-	add_child(headm)
-	# franja de ID luminosa (identidad BLOCKFIRE)
-	var stripe := MeshInstance3D.new()
-	var sm := BoxMesh.new(); sm.size = Vector3(0.64, 0.08, 0.36)
-	stripe.mesh = sm
-	stripe.position.y = 1.24
-	var smat := StandardMaterial3D.new()
-	smat.albedo_color = Color.from_hsv(float(name.hash() % 100) / 100.0, 0.8, 1.0)
-	smat.emission_enabled = true
-	smat.emission = smat.albedo_color
-	smat.emission_energy_multiplier = 1.2
-	stripe.material_override = smat
-	add_child(stripe)
+	# mismo sistema de personaje que el jugador, skin propia por bot (un sistema + datos)
+	char_model = CharacterModel.new()
+	char_model.name = "Model"
+	add_child(char_model)
+	var idx := name.replace("Bot_", "").to_int()
+	char_model.setup((idx + 1) % CharacterModel.OUTFITS.size())
 
 	# hitbox de cabeza (hitscan distingue head/body — parity)
 	_head = StaticBody3D.new()
@@ -119,13 +90,17 @@ func respawn(pos: Vector3) -> void:
 	hp = max_hp
 	active = true
 	visible = true
-	global_position = pos
+	position = pos
+	if char_model != null:
+		char_model.play("idle")
 	state = State.WANDER
 	Audio.play_at("respawn", pos, -8.0)
 
 func take_damage(amount: float, headshot: bool, from: Vector3) -> void:
 	hp -= amount
 	Audio.play_at("hit", global_position, -6.0)
+	if char_model != null:
+		char_model.hit_flash()
 	if hp <= 0.0:
 		die(headshot)
 
@@ -134,7 +109,11 @@ func die(headshot: bool) -> void:
 		return
 	state = State.DEAD
 	active = false
-	visible = false
+	if char_model != null:
+		char_model.die_pose()
+	# caída animada visible brevemente antes del respawn (muerte satisfactoria)
+	var tw := create_tween()
+	tw.tween_property(self, "position:y", -0.6, 0.5).set_ease(Tween.EASE_IN)
 	Game.register_kill(self, _killer, headshot)
 	Game.queue_respawn(self, _spawn_point)
 
@@ -189,6 +168,11 @@ func _physics_process(delta: float) -> void:
 		_vy = -1.0
 	velocity = Vector3(move.x, _vy, move.z)
 	move_and_slide()
+	if char_model != null:
+		char_model.locomotion(Vector3(move.x, 0, move.z).length(), WALK, CHASE)
+		# postura de combate: arma en mano mientras persigue/ataca
+		if state != State.WANDER and char_model.current_action != "holding-right":
+			char_model.play("holding-right")
 
 	# orientar hacia el objetivo cuando está comprometido
 	if state != State.WANDER:
