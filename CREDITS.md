@@ -5,6 +5,9 @@
 ### CC0 (dominio público — sin atribución obligatoria, cortesía a sus creadores)
 - **Kenney "Sci-fi Sounds"** (→ respawn.ogg)
   — https://kenney.nl/assets/sci-fi-sounds — © Kenney, CC0
+- **Kenney "Blocky Characters 2.0"** (godot/assets/characters/ — 20 personajes GLB
+  riggeados con 27 animaciones: idle/walk/sprint/die/poses de arma)
+  — https://kenney.nl/assets/blocky-characters — © Kenney, CC0
 - **Kenney "Impact Sounds"** (→ impact_wall→sfx_impact_wall fue sustituido; hoy: step, step2,
   jump, empty, switch, reload_start, reload_end)
   — https://kenney.nl/assets/impact-sounds — © Kenney, CC0
