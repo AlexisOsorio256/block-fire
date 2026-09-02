@@ -83,16 +83,82 @@ func _setup_match() -> void:
 	# botones de la partida también disparan el hitmarker del HUD vía arma
 	player.weapon.hitmarker.connect(hud.flash_hitmarker)
 
+	# fin de partida: resultado 3s → volver al lobby limpio
+	Game.match_over.connect(func(_won):
+		await get_tree().create_timer(3.0).timeout
+		Game.reset_match()
+		get_tree().change_scene_to_file("res://scenes/lobby.tscn"))
+
+	# menú de pausa (ESC en desktop, botón ⚙ futuro en móvil)
+	pause_menu = _build_pause_menu()
+	add_child(pause_menu)
+
+
+var pause_menu: CanvasLayer
 
 func _process(_delta: float) -> void:
 	if not is_touch and Input.is_action_just_pressed("ui_cancel"):
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_toggle_pause()
 	Game.tick(_delta)
 	_score_label_update()
 	_fps_probe_tick()
+
+func _toggle_pause() -> void:
+	var paused := not get_tree().paused
+	get_tree().paused = paused
+	pause_menu.get_child(0).visible = paused
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
+	Audio.play("ui", -6.0)
+
+func _build_pause_menu() -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 20
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(root)
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.05, 0.06, 0.09, 0.85)
+	root.add_child(dim)
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_CENTER)
+	v.custom_minimum_size = Vector2(300, 240)
+	v.add_theme_constant_override("separation", 16)
+	root.add_child(v)
+	var t := Label.new()
+	t.text = "PAUSA"
+	t.add_theme_font_size_override("font_size", 40)
+	v.add_child(t)
+	var cont := Button.new()
+	cont.text = "CONTINUAR"
+	cont.add_theme_font_size_override("font_size", 24)
+	cont.pressed.connect(_toggle_pause)
+	v.add_child(cont)
+	var sens_row := HBoxContainer.new()
+	v.add_child(sens_row)
+	var sl := Label.new()
+	sl.text = "Sensibilidad"
+	sens_row.add_child(sl)
+	var slider := HSlider.new()
+	slider.min_value = 0.3; slider.max_value = 2.0; slider.step = 0.1
+	slider.value = Settings.sens
+	slider.custom_minimum_size = Vector2(150, 0)
+	slider.value_changed.connect(_on_sens_changed)
+	sens_row.add_child(slider)
+	var exit := Button.new()
+	exit.text = "SALIR AL LOBBY"
+	exit.add_theme_font_size_override("font_size", 20)
+	exit.pressed.connect(func():
+		get_tree().paused = false
+		Game.reset_match()
+		get_tree().change_scene_to_file("res://scenes/lobby.tscn"))
+	v.add_child(exit)
+	return layer
+
+func _on_sens_changed(v: float) -> void:
+	Settings.sens = v
+	Settings.save_settings()
 
 func _score_label_update() -> void:
 	if hud != null:
