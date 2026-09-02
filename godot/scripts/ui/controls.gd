@@ -78,6 +78,9 @@ func _build_ui() -> void:
 		var b := _button(d[0], d[2], d[3])
 		_anchor_br(b, d[1], d[2])
 		b.pressed.connect(d[4])
+		b.gui_input.connect(func(ev):
+			if ev is InputEventScreenTouch or ev is InputEventMouseButton:
+				get_viewport().set_input_as_handled())  # tap en botón ≠ mirar
 		root.add_child(b)
 
 func _anchor_br(b: Control, offset: Vector2, diameter: float) -> void:
@@ -106,6 +109,8 @@ func _button(text: String, diameter: float, color: Color) -> Button:
 	return b
 
 func _fire_input(ev: InputEvent) -> void:
+	if ev is InputEventScreenTouch or ev is InputEventScreenDrag or ev is InputEventMouseButton or ev is InputEventMouseMotion:
+		get_viewport().set_input_as_handled()  # FUEGO posee su dedo: nunca activa la zona de mirar
 	if ev is InputEventScreenTouch:
 		_fire_held = ev.pressed
 		_fire_drag = ev.pressed
@@ -128,7 +133,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if n.x < 0.42 and n.y > 0.4 and _stick_idx == -1:
 				_stick_idx = event.index
 				_stick_origin = event.position
-			elif n.x >= 0.42 and _look_idx == -1:
+			elif n.x >= 0.42 and _look_idx == -1 and _fire_held == false:
 				_look_idx = event.index
 		else:
 			if event.index == _stick_idx:

@@ -73,39 +73,11 @@ func _mount_display_weapon() -> void:
 		return
 	for c in char_model.arm_right.get_children():
 		c.queue_free()
-	var w := Node3D.new()
-	var body := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.07, 0.07, 0.62)
-	body.mesh = bm
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.18, 0.19, 0.22)
-	mat.metallic = 0.4
-	mat.roughness = 0.45
-	body.material_override = mat
-	w.add_child(body)
-	var grip := MeshInstance3D.new()
-	var gm := BoxMesh.new()
-	gm.size = Vector3(0.06, 0.15, 0.08)
-	grip.mesh = gm
-	grip.material_override = mat
-	grip.position = Vector3(0, -0.1, 0.05)
-	w.add_child(grip)
-	var tip := MeshInstance3D.new()
-	var tm := BoxMesh.new()
-	tm.size = Vector3(0.05, 0.05, 0.14)
-	tip.mesh = tm
-	var am := StandardMaterial3D.new()
-	am.albedo_color = Color(0.95, 0.62, 0.15)
-	am.emission_enabled = true
-	am.emission = am.albedo_color
-	am.emission_energy_multiplier = 0.6
-	tip.material_override = am
-	tip.position = Vector3(0, 0, 0.34)
-	w.add_child(tip)
-	char_model.arm_right.add_child(w)
-	w.position = Vector3(0, -0.34, 0.02)
-	w.rotation_degrees = Vector3(-90, 0, 0)
+	var w := WeaponSystem.build_weapon_mesh(0)
+	char_model.add_child(w)
+	w.scale = Vector3.ONE * 1.6
+	w.position = Vector3(0.22, 1.22, 0.5)
+	w.rotation_degrees = Vector3(0, -20, 0)
 
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
@@ -234,5 +206,26 @@ func _build_settings() -> Control:
 	v.add_child(close)
 	return p
 
+var _turn_t := 0.0
+
 func _process(delta: float) -> void:
-	turntable.rotation.y += delta * 0.5  # presentación giratoria lenta
+	# vaivén ¾ frontal (siempre se ve el arma en la mano derecha)
+	_turn_t += delta
+	turntable.rotation.y = sin(_turn_t * 0.45) * 0.55 + 0.15
+	_internal_shot(delta)
+
+var _shot_t := 0.0
+var _shot_done := false
+
+# captura interna del viewport (no depende de la pantalla del usuario)
+func _internal_shot(delta: float) -> void:
+	var args := OS.get_cmdline_user_args()
+	for a in args:
+		if a.begins_with("--shot="):
+			_shot_t += delta
+			if _shot_t >= float(a.get_slice("=", 1)) and not _shot_done:
+				_shot_done = true
+				var img := get_viewport().get_texture().get_image()
+				img.save_png("user://shot-lobby.png")
+				print("[SHOT] guardado user://shot-lobby.png")
+				get_tree().quit()

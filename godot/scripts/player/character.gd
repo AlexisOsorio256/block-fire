@@ -4,16 +4,17 @@
 class_name CharacterModel
 extends Node3D
 
-# skin: índice → outfit con personaje + tinte de uniforme + acento (identidad BLOCKFIRE)
+# SKINS = outfits con identidad (personaje base + accesorios que cambian la silueta).
+# El rig Kenney conserva sus texturas originales; los accesorios son geometría real.
 const OUTFITS := [
-	{ "char": "a", "uniform": Color(0.30, 0.48, 0.68), "accent": Color(0.95, 0.62, 0.15) },  # asalto azul
-	{ "char": "b", "uniform": Color(0.42, 0.46, 0.34), "accent": Color(0.85, 0.85, 0.80) },  # bosque
-	{ "char": "c", "uniform": Color(0.52, 0.34, 0.20), "accent": Color(0.90, 0.75, 0.45) },  # desierto
-	{ "char": "d", "uniform": Color(0.22, 0.26, 0.34), "accent": Color(0.55, 0.80, 0.95) },  # nocturno
-	{ "char": "e", "uniform": Color(0.55, 0.28, 0.24), "accent": Color(0.95, 0.85, 0.30) },  # raid rojo
-	{ "char": "f", "uniform": Color(0.36, 0.52, 0.42), "accent": Color(0.90, 0.90, 0.90) },  # táctico verde
-	{ "char": "g", "uniform": Color(0.48, 0.42, 0.52), "accent": Color(0.85, 0.45, 0.85) },  # violeta
-	{ "char": "h", "uniform": Color(0.62, 0.55, 0.38), "accent": Color(1.00, 0.55, 0.20) },  # arena naranja
+	{ "char": "a", "name": "ASALTO", "gear": ["vest", "helmet"] },
+	{ "char": "b", "name": "BOSQUE", "gear": ["backpack", "cap"] },
+	{ "char": "c", "name": "DESIERTO", "gear": ["vest", "cap"] },
+	{ "char": "d", "name": "NOCTURNO", "gear": ["hood", "pads"] },
+	{ "char": "e", "name": "RAID", "gear": ["armor", "helmet"] },
+	{ "char": "f", "name": "TACTICO", "gear": ["vest", "pads"] },
+	{ "char": "g", "name": "VANGUARDIA", "gear": ["armor", "visor"] },
+	{ "char": "h", "name": "ARENA", "gear": ["backpack", "cap"] },
 ]
 
 var anim: AnimationPlayer
@@ -40,53 +41,91 @@ func setup(skin: int) -> void:
 		var s := 1.8 / aabb.size.y
 		rig.scale = Vector3.ONE * s
 		rig.position.y = -aabb.position.y * s
-	_tint_parts(rig, outfit)
+	_build_gear(rig, outfit)
 	arm_right = rig.find_child("arm-right", true, false)
 	play("idle")
 
+# AABB combinado en espacio LOCAL (funciona fuera del árbol — el bug del personaje flotando)
 func _whole_aabb(root: Node) -> AABB:
-	var total := AABB()
-	var first := true
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		for c in n.get_children():
-			stack.append(c)
-		if n is MeshInstance3D:
-			var ab: AABB = n.get_aabb()
-			var xform: Transform3D = n.global_transform
-			if n.is_inside_tree():
-				xform = n.global_transform
-				var rel := global_transform.affine_inverse() * xform
-				ab = rel * ab
-			if first:
-				total = ab
-				first = false
-			else:
-				total = total.merge(ab)
-	return total
+	return _merge_aabb(root, Transform3D.IDENTITY)
 
-func _tint_parts(root: Node, outfit: Dictionary) -> void:
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		for c in n.get_children():
-			stack.append(c)
-		if n is MeshInstance3D:
-			var nm := String(n.name).to_lower()
-			var mat := StandardMaterial3D.new()
-			if "torso" in nm or "arm" in nm:
-				mat.albedo_color = outfit["uniform"]
-			elif "leg" in nm:
-				mat.albedo_color = outfit["uniform"].darkened(0.35)
-			elif "head" in nm:
-				mat.albedo_color = Color(0.85, 0.68, 0.55)
-			elif "hat" in nm or "cap" in nm:
-				mat.albedo_color = outfit["accent"]
-			else:
-				continue
-			mat.roughness = 0.85
-			n.material_override = mat
+func _merge_aabb(n: Node, xf: Transform3D) -> AABB:
+	var out := AABB()
+	var first := true
+	if n is Node3D:
+		xf = xf * (n as Node3D).transform
+	if n is MeshInstance3D:
+		out = xf * (n as MeshInstance3D).get_aabb()
+		first = false
+	for c in n.get_children():
+		var sub := _merge_aabb(c, xf)
+		if first:
+			out = sub
+			first = false
+		else:
+			out = out.merge(sub)
+	return out
+
+func _build_gear(root: Node, outfit: Dictionary) -> void:
+	# accesorios anclados a los nodos del rig: cambian la SILUETA (prueba de skin real)
+	var torso := root.find_child("torso", true, false)
+	var head := root.find_child("head", true, false)
+	var arm_l := root.find_child("arm-left", true, false)
+	var arm_r := root.find_child("arm-right", true, false)
+	var dark := Color(0.16, 0.17, 0.20)
+	for gear_id: String in outfit["gear"]:
+		match gear_id:
+			"vest":
+				if torso: _gear_box(torso, Vector3(0.5, 0.42, 0.42), Vector3(0, 0.08, 0), dark, 0.7)
+			"armor":
+				if torso:
+					_gear_box(torso, Vector3(0.54, 0.34, 0.46), Vector3(0, 0.14, 0), Color(0.25, 0.28, 0.33), 0.55)
+					_gear_box(torso, Vector3(0.5, 0.18, 0.4), Vector3(0, -0.1, 0), dark, 0.7)
+			"helmet":
+				if head:
+					var c := CylinderMesh.new()
+					c.top_radius = 0.21; c.bottom_radius = 0.24; c.height = 0.18
+					_gear_mesh(head, c, Vector3(0, 0.18, 0), Color(0.20, 0.23, 0.28), 0.5)
+			"visor":
+				if head: _gear_box(head, Vector3(0.36, 0.08, 0.06), Vector3(0, 0.02, -0.2), Color(0.10, 0.9, 0.8), 0.3, true)
+			"cap":
+				if head: _gear_box(head, Vector3(0.4, 0.1, 0.4), Vector3(0, 0.2, 0.0), outfit_color(outfit), 0.8)
+			"hood":
+				if head: _gear_box(head, Vector3(0.44, 0.3, 0.42), Vector3(0, 0.06, 0.04), dark, 0.85)
+			"backpack":
+				if torso: _gear_box(torso, Vector3(0.38, 0.44, 0.2), Vector3(0, 0.05, 0.26), Color(0.4, 0.33, 0.22), 0.8)
+			"pads":
+				if arm_l: _gear_box(arm_l, Vector3(0.16, 0.14, 0.18), Vector3(0, -0.12, 0), dark, 0.6)
+				if arm_r: _gear_box(arm_r, Vector3(0.16, 0.14, 0.18), Vector3(0, -0.12, 0), dark, 0.6)
+
+func outfit_color(_o: Dictionary) -> Color:
+	return Color(0.85, 0.45, 0.15)
+
+func _gear_box(parent: Node3D, size: Vector3, pos: Vector3, color: Color, rough: float, glow := false) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.roughness = rough
+	if glow:
+		m.emission_enabled = true
+		m.emission = color
+		m.emission_energy_multiplier = 1.2
+	mi.material_override = m
+	parent.add_child(mi)
+	mi.position = pos
+
+func _gear_mesh(parent: Node3D, mesh: Mesh, pos: Vector3, color: Color, rough: float) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.roughness = rough
+	mi.material_override = m
+	parent.add_child(mi)
+	mi.position = pos
 
 # ---- API de animación (crossfade suave entre acciones) ----
 func play(action: String, speed := 1.0, blend := 0.18) -> void:

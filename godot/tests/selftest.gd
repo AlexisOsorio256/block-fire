@@ -79,11 +79,9 @@ func _run_all() -> void:
 		# muerte del jugador → respawn pendiente
 		Game.apply_damage(pl, 130.0, false, pl.global_position + Vector3(0, 0, 3))
 		check(not pl.active, "muerte del jugador por daño letal")
-		# arma montada en la mano derecha del rig
-		var hand: Node3D = pl.char_model.arm_right
+		# arma en porte al pecho (hija del modelo)
 		var mounted := false
-		if hand != null:
-			for c in hand.get_children():
-				if String(c.name).begins_with("Weapon_"):
-					mounted = true
-		check(mounted, "arma física montada en la mano")
+		for c in pl.char_model.get_children():
+			if String(c.name).begins_with("Weapon_"):
+				mounted = true
+		check(mounted, "arma física montada en el personaje")

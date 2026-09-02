@@ -29,6 +29,20 @@ var _fps_probe := false
 var _probe_start := 0
 var _probe_frames := 0
 
+var _shot_t := 0.0
+var _shot_done := false
+
+func _internal_shot(delta: float) -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot="):
+			_shot_t += delta
+			if _shot_t >= float(a.get_slice("=", 1)) and not _shot_done:
+				_shot_done = true
+				var img := get_viewport().get_texture().get_image()
+				img.save_png("user://shot-match.png")
+				print("[SHOT] guardado user://shot-match.png")
+				get_tree().quit()
+
 func _fps_probe_tick() -> void:
 	if not _fps_probe:
 		return
@@ -80,9 +94,6 @@ func _setup_match() -> void:
 		player.input_layer = touch
 		_check_orientation()
 
-	# botones de la partida también disparan el hitmarker del HUD vía arma
-	player.weapon.hitmarker.connect(hud.flash_hitmarker)
-
 	# fin de partida: resultado 3s → volver al lobby limpio
 	Game.match_over.connect(func(_won):
 		await get_tree().create_timer(3.0).timeout
@@ -102,6 +113,7 @@ func _process(_delta: float) -> void:
 	Game.tick(_delta)
 	_score_label_update()
 	_fps_probe_tick()
+	_internal_shot(_delta)
 
 func _toggle_pause() -> void:
 	var paused := not get_tree().paused

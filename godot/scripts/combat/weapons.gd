@@ -46,24 +46,30 @@ var _muzzle: Marker3D
 func _mount_weapon() -> void:
 	if _weapon_node != null:
 		_weapon_node.queue_free()
-	_weapon_node = Node3D.new()
+	_weapon_node = build_weapon_mesh(current)
 	_weapon_node.name = "Weapon_" + WEAPONS[current]["name"]
-	_muzzle = Marker3D.new()
-	_muzzle.name = "Muzzle"
-	_muzzle.position = Vector3(0, 0, _barrel_len())
-	_weapon_node.add_child(_muzzle)
-	_build_silhouette(_weapon_node)
-	var hand := owner_body.char_model.arm_right
-	if hand != null:
-		hand.add_child(_weapon_node)
-		_weapon_node.position = Vector3(0, -0.34, 0.02)
-		_weapon_node.rotation_degrees = Vector3(-90, 0, 0)
+	_muzzle = _weapon_node.find_child("Muzzle", false, false)
+	# porte fijo al pecho (lectura correcta desde cualquier ángulo, técnica low-poly)
+	var model := owner_body.char_model
+	if model != null:
+		model.add_child(_weapon_node)
+		_weapon_node.scale = Vector3.ONE * 1.6  # proporción cartoon
+		_weapon_node.position = Vector3(0.22, 1.22, 0.5)
+		_weapon_node.rotation_degrees = Vector3(0, -20, 0)
 
-func _barrel_len() -> float:
-	return [0.62, 0.34, 0.72][current]
+static func build_weapon_mesh(index: int) -> Node3D:
+	var node := Node3D.new()
+	var muzzle := Marker3D.new()
+	muzzle.name = "Muzzle"
+	muzzle.position = Vector3(0, 0, _barrel_len_s(index))
+	node.add_child(muzzle)
+	_build_silhouette_s(node, index)
+	return node
 
-func _build_silhouette(parent: Node3D) -> void:
-	# una sola función, 3 siluetas por datos — crecer el arsenal no duplica código
+static func _barrel_len_s(index: int) -> float:
+	return [0.62, 0.34, 0.72][index]
+
+static func _build_silhouette_s(parent: Node3D, current: int) -> void:
 	var body_mat := StandardMaterial3D.new()
 	body_mat.albedo_color = Color(0.18, 0.19, 0.22)
 	body_mat.roughness = 0.55
@@ -71,24 +77,21 @@ func _build_silhouette(parent: Node3D) -> void:
 	var accent_mat := StandardMaterial3D.new()
 	accent_mat.albedo_color = [Color(0.85, 0.55, 0.12), Color(0.35, 0.5, 0.7), Color(0.55, 0.3, 0.2)][current]
 	accent_mat.roughness = 0.6
-
 	var w := 0.07
-	var l := _barrel_len()
-	# cañón/cuerpo
-	_box(parent, Vector3(w, w, l), Vector3(0, 0, l * 0.5), body_mat)
-	# empuñadura
-	_box(parent, Vector3(w * 0.9, 0.14, w * 1.2), Vector3(0, -0.1, 0.04), accent_mat)
-	if current == 0:  # rifle: culata + cargador curvo
-		_box(parent, Vector3(w * 0.8, 0.1, 0.22), Vector3(0, -0.02, -0.09), body_mat)
-		_box(parent, Vector3(w * 0.8, 0.16, 0.09), Vector3(0, -0.14, 0.24), accent_mat)
-		_box(parent, Vector3(w * 0.6, 0.05, 0.16), Vector3(0, 0.06, 0.30), accent_mat)
-	elif current == 1:  # pistola: corredera compacta
-		_box(parent, Vector3(w * 1.1, 0.055, l * 0.55), Vector3(0, 0.045, 0.12), accent_mat)
-	else:  # escopeta: bomba + doble cañón visual
-		_box(parent, Vector3(w * 1.4, w * 1.2, l * 0.4), Vector3(0, -0.02, 0.16), accent_mat)
-		_box(parent, Vector3(w * 0.6, w * 0.6, l * 0.9), Vector3(0, 0.055, l * 0.5), body_mat)
+	var l := _barrel_len_s(current)
+	_box_s(parent, Vector3(w, w, l), Vector3(0, 0, l * 0.5), body_mat)
+	_box_s(parent, Vector3(w * 0.9, 0.14, w * 1.2), Vector3(0, -0.1, 0.04), accent_mat)
+	if current == 0:
+		_box_s(parent, Vector3(w * 0.8, 0.1, 0.22), Vector3(0, -0.02, -0.09), body_mat)
+		_box_s(parent, Vector3(w * 0.8, 0.16, 0.09), Vector3(0, -0.14, 0.24), accent_mat)
+		_box_s(parent, Vector3(w * 0.6, 0.05, 0.16), Vector3(0, 0.06, 0.30), accent_mat)
+	elif current == 1:
+		_box_s(parent, Vector3(w * 1.1, 0.055, l * 0.55), Vector3(0, 0.045, 0.12), accent_mat)
+	else:
+		_box_s(parent, Vector3(w * 1.4, w * 1.2, l * 0.4), Vector3(0, -0.02, 0.16), accent_mat)
+		_box_s(parent, Vector3(w * 0.6, w * 0.6, l * 0.9), Vector3(0, 0.055, l * 0.5), body_mat)
 
-func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
+static func _box_s(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
@@ -96,94 +99,6 @@ func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
 	mi.material_override = mat
 	parent.add_child(mi)
 	mi.position = pos
-
-# kick visual del arma al disparar (recoil físico visible en tercera persona)
-func _weapon_kick() -> void:
-	if _weapon_node == null:
-		return
-	var tw := _weapon_node.create_tween()
-	tw.tween_property(_weapon_node, "position:z", 0.02 - 0.06, 0.04)
-	tw.tween_property(_weapon_node, "position:z", 0.02, 0.09)
-
-func _physics_process(delta: float) -> void:
-	if owner_body == null or not owner_body.active:
-		return
-	aiming = Input.is_action_pressed("aim") or (owner_body.input_layer != null and owner_body.input_layer.aim_toggled())
-	_cooldown -= delta
-
-	if reloading and Time.get_ticks_msec() / 1000.0 >= _reload_end:
-		var need: int = WEAPONS[current]["mag"] - mag
-		mag += mini(need, reserve)
-		reserve -= mini(need, reserve)
-		reloading = false
-
-	if Input.is_action_just_pressed("reload") or (owner_body.input_layer != null and owner_body.input_layer.reload_pressed()):
-		start_reload()
-	for i in 3:
-		if Input.is_action_just_pressed("weapon_%d" % (i + 1)):
-			switch_to(i)
-	if Input.is_action_just_pressed("weapon_next"):
-		switch_to((current + 1) % WEAPONS.size())
-	if owner_body.input_layer != null:
-		var wi: int = owner_body.input_layer.weapon_request()
-		if wi >= 0:
-			switch_to(wi)
-
-	# recuperación de recoil (pitch vuelve)
-	if _recovery > 0.0:
-		var r: float = minf(_recovery, WEAPONS[current]["recoil"] * delta * 8.0)
-		owner_body.pitch = clampf(owner_body.pitch - r, -1.55, 1.55)
-		_recovery -= r
-
-	var want_fire: bool = owner_body.input_layer.fire_held() if owner_body.input_layer != null else Input.is_action_pressed("fire")
-	if want_fire and not reloading and mag > 0 and _cooldown <= 0.0:
-		if WEAPONS[current]["auto"] or not _semi_latch:
-			fire()
-			_semi_latch = true
-	if not want_fire:
-		_semi_latch = false
-
-func start_reload() -> void:
-	if reloading or mag == WEAPONS[current]["mag"] or reserve == 0:
-		return
-	reloading = true
-	_reload_end = Time.get_ticks_msec() / 1000.0 + WEAPONS[current]["reload"]
-	Audio.play("reload", -4.0)
-
-func switch_to(index: int) -> void:
-	if index == current or index < 0 or index >= WEAPONS.size():
-		return
-	current = index
-	reloading = false
-	mag = WEAPONS[current]["mag"]
-	reserve = WEAPONS[current]["reserve"]
-	_cooldown = WEAPONS[current]["interval"]
-	Audio.play("switch", -6.0)
-	_mount_weapon()
-	ammo_changed.emit(mag, reserve)
-
-func fire() -> void:
-	mag -= 1
-	_cooldown = WEAPONS[current]["interval"]
-	var cam: Camera3D = owner_body.cam
-	var origin := cam.global_position
-	var forward := -cam.global_transform.basis.z
-
-	var spread: float = WEAPONS[current]["spread"] \
-		* (0.5 if aiming else 1.0) * (0.85 if owner_body.crouching else 1.0)
-	for i in WEAPONS[current]["pellets"]:
-		var dir := forward.rotated(cam.global_transform.basis.y, deg_to_rad(randf_range(-spread, spread)))
-		dir = dir.rotated(cam.global_transform.basis.x, deg_to_rad(randf_range(-spread, spread)))
-		_shot(origin, dir)
-
-	Audio.play(WEAPONS[current]["sound"])
-	owner_body.pitch = clampf(owner_body.pitch + WEAPONS[current]["recoil"], -1.55, 1.55)
-	_recovery += WEAPONS[current]["recoil"]
-	_muzzle_flash(_muzzle_pos(origin, forward), forward)
-	_weapon_kick()
-	if owner_body.char_model != null:
-		owner_body.char_model.shoot_pose()
-	ammo_changed.emit(mag, reserve)
 
 func _shot(origin: Vector3, dir: Vector3) -> void:
 	var space := owner_body.get_world_3d().direct_space_state
