@@ -116,6 +116,7 @@ func _build_pause_menu() -> CanvasLayer:
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.visible = false  # solo visible en pausa
 	layer.add_child(root)
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
