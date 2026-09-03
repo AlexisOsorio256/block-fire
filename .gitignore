@@ -37,3 +37,11 @@ __pycache__/
 godot/.godot/
 builds/
 *.tmp
+
+# Capacitor / Android build
+node_modules/
+www/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties

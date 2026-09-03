@@ -1,0 +1,31 @@
+{
+  "name": "blockfire",
+  "version": "0.1.0",
+  "description": "BLOCKFIRE \u2014 FPS arcade three.js + WebView nativa",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "bash tools/build-web.sh",
+    "android": "cd android && ./gradlew assembleDebug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexisOsorio256/block-fire.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "SEE LICENSE IN LICENSE",
+  "bugs": {
+    "url": "https://github.com/AlexisOsorio256/block-fire/issues"
+  },
+  "homepage": "https://github.com/AlexisOsorio256/block-fire#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.1"
+  }
+}
