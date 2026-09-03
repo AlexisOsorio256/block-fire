@@ -17,6 +17,10 @@ const WEAPONS := [
 	{ "name": "Escopeta", "auto": false, "interval": 0.9, "body": 8.0, "head": 16.0,
 		"mag": 6, "reserve": 24, "reload": 2.8, "spread": 4.5, "recoil": 0.03,
 		"range": 45.0, "sound": "shot_shotgun", "pellets": 8 },
+	{ "name": "SMG", "auto": true, "interval": 0.08, "body": 16.0, "head": 32.0,
+		"mag": 36, "reserve": 144, "reload": 1.9, "spread": 1.4, "recoil": 0.01,
+		"range": 90.0, "sound": "shot_rifle", "pellets": 1,
+		"barrel": 0.5, "accent": Color(0.2, 0.75, 0.45) },
 ]
 
 var owner_body: Player
@@ -88,8 +92,12 @@ static func _build_silhouette_s(parent: Node3D, current: int) -> void:
 	elif current == 1:
 		_box_s(parent, Vector3(w * 1.1, 0.055, l * 0.55), Vector3(0, 0.045, 0.12), accent_mat)
 	else:
+		# silueta por defecto: culata + bomba (escopeta) — parametrizable por datos si crece
 		_box_s(parent, Vector3(w * 1.4, w * 1.2, l * 0.4), Vector3(0, -0.02, 0.16), accent_mat)
 		_box_s(parent, Vector3(w * 0.6, w * 0.6, l * 0.9), Vector3(0, 0.055, l * 0.5), body_mat)
+	if current == 3:  # SMG compacta
+		_box_s(parent, Vector3(w * 1.1, w * 1.1, l * 0.35), Vector3(0, -0.01, 0.18), accent_mat)
+		_box_s(parent, Vector3(w * 0.7, w * 0.7, l * 0.5), Vector3(0, 0.0, l * 0.5), body_mat)
 
 static func _box_s(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
 	var mi := MeshInstance3D.new()

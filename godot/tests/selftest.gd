@@ -36,11 +36,15 @@ func _run_all() -> void:
 	check(is_equal_approx(Player.CROUCH_EYE, 1.15), "crouch ojo 1.15")
 
 	var weapons: Array = load("res://scripts/combat/weapons.gd").WEAPONS
-	check(weapons.size() == 3, "3 armas")
+	check(weapons.size() == 4, "4 armas")
 	check(weapons[0]["mag"] == 30 and weapons[0]["reserve"] == 90, "rifle 30+90")
 	check(is_equal_approx(weapons[0]["interval"], 0.1), "rifle 600 rpm")
 	check(weapons[2]["pellets"] == 8, "escopeta 8 perdigones")
 	check(weapons[1]["reload"] == 1.6, "pistola recarga 1.6")
+	check(weapons[3]["name"] == "SMG", "smg nombre")
+	check(weapons[3]["auto"] == true, "smg automatica")
+	check(weapons[3]["mag"] == 36 and weapons[3]["reserve"] == 144, "smg 36+144")
+	check(weapons[3]["barrel"] == 0.5, "smg silueta en datos")
 
 	check(Game.TARGET_KILLS == 20, "20 kills ganan")
 	check(Game.RESPAWN_DELAY == 2.0, "respawn 2s")
