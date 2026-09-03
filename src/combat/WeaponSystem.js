@@ -71,6 +71,16 @@ export const WeaponData = {
   }
 };
 
+// Skins de armas (cosmético, compra con oro en la fase de compra).
+// accent/dark: colores que sustituyen los materiales de identidad del arma.
+export const WeaponSkins = {
+  none:    { name: 'Estándar', price: 0,    accent: null,      dark: null },
+  oro:     { name: 'Oro',      price: 2500, accent: 0xffc93f,  dark: 0x8a6a1f },
+  bosque:  { name: 'Bosque',   price: 1500, accent: 0x5d9c48,  dark: 0x2f4a2c },
+  hielo:   { name: 'Hielo',    price: 2000, accent: 0x7fd8ff,  dark: 0x2f5a78 },
+  carbon:  { name: 'Carbón',   price: 1800, accent: 0x39d7ff,  dark: 0x10131c },
+};
+
 export class WeaponSystem {
   constructor(scene, camera, audio, vfx, applyDamage) {
     this.scene = scene;
@@ -174,7 +184,35 @@ export class WeaponSystem {
     add(shotgun, new THREE.BoxGeometry(0.03, 0.05, 0.04), accentM.shotgun, 0, 0.09, -0.16); // bead sight
     shotgun.userData.parts = { dark: bodyM, black: blackM, accent: accentM.shotgun };
 
-    return { rifle, pistol, shotgun };
+    // ---- SMG: compacta, cargador largo, culata plegable (la "rápida") ----
+    accents.smg = 0x39d7ff;
+    accentM.smg = new THREE.MeshStandardMaterial({ color: accents.smg, roughness: 0.35, metalness: 0.3, emissive: 0x0a2a33, emissiveIntensity: 0.35 });
+    const smg = new THREE.Group();
+    add(smg, new THREE.BoxGeometry(0.075, 0.10, 0.26), bodyM, 0, 0, -0.02);
+    add(smg, new THREE.BoxGeometry(0.05, 0.028, 0.22), blackM, 0, 0.068, -0.04);
+    add(smg, new THREE.BoxGeometry(0.052, 0.012, 0.20), accentM.smg, 0, 0.05, -0.04);
+    add(smg, new THREE.BoxGeometry(0.042, 0.042, 0.14), blackM, 0, 0.005, -0.24);
+    add(smg, new THREE.BoxGeometry(0.062, 0.062, 0.045), blackM, 0, 0.005, -0.325);
+    add(smg, new THREE.BoxGeometry(0.078, 0.02, 0.035), accentM.smg, 0, 0.05, -0.30); // muzzle ring
+    add(smg, new THREE.BoxGeometry(0.055, 0.17, 0.075), blackM, 0, -0.115, 0.02);     // long mag
+    add(smg, new THREE.BoxGeometry(0.06, 0.02, 0.08), accentM.smg, 0, -0.205, 0.03);
+    add(smg, new THREE.BoxGeometry(0.05, 0.12, 0.06), gripM, 0, -0.095, 0.12, -0.28);
+    add(smg, new THREE.BoxGeometry(0.065, 0.075, 0.13), bodyM, 0, -0.005, 0.20);
+    add(smg, new THREE.BoxGeometry(0.06, 0.05, 0.10), blackM, 0, 0.02, 0.30);         // folded stock
+    add(smg, new THREE.BoxGeometry(0.024, 0.04, 0.03), accentM.smg, 0, 0.095, -0.16);
+    smg.userData.parts = { dark: bodyM, black: blackM, accent: accentM.smg };
+
+    return { rifle, pistol, shotgun, smg };
+  }
+
+  // ── SKINS: aplica los colores de la skin al modelo del arma ──
+  applySkin(weaponKey, skinKey) {
+    const skin = WeaponSkins[skinKey] || WeaponSkins.none;
+    const model = this._weaponModels[weaponKey];
+    if (!model || !skin) return;
+    const parts = model.userData.parts || {};
+    if (parts.accent && skin.accent !== null) parts.accent.color.setHex(skin.accent);
+    if (parts.dark && skin.dark !== null) parts.dark.color.setHex(skin.dark);
   }
 
   // Per-weapon viewmodel presets (position offset + scale + muzzle tip z).
@@ -184,6 +222,7 @@ export class WeaponSystem {
       rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0,  muzzle: -0.48 },
       pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9,  muzzle: -0.30 },
       shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15, muzzle: -0.60 },
+      smg:     { pos: new THREE.Vector3(0.24, -0.21, -0.40), scale: 1.0,  muzzle: -0.34 },
     };
     return this._presetsCache;
   }
@@ -309,6 +348,9 @@ export class WeaponSystem {
     // and every bot gunshot plays at full volume.
     const usesPlayerAmmo = !shooter.isBot;
     if (!this.canFire(usesPlayerAmmo)) return null;
+    // Regla Free Fire: DISPARAR rompe la protección de spawn. Sin esto, el
+    // jugador podría disparar inmune (la inmunidad nunca se quitaría en uso real).
+    if (usesPlayerAmmo && this.vfx && this.vfx.onPlayerFired) this.vfx.onPlayerFired();
 
     // Tracer bookkeeping: one streak per shot from the muzzle to where the
     // round actually landed (hit or wall). Player sees their own bullet;
@@ -317,7 +359,9 @@ export class WeaponSystem {
     const tracerFrom = this.camera.position.clone();
     let tracerTo = null;
 
-    const weapon = shooter.isBot ? WeaponData.rifle : this.currentWeapon;
+    // Los bots disparan SU arma comprada en la fase de compra; el jugador
+    // dispara la que tiene equipada. Nadie comparte arma con nadie.
+    const weapon = shooter.isBot ? (WeaponData[shooter.weaponKey] || WeaponData.rifle) : this.currentWeapon;
     if (usesPlayerAmmo) {
       this.ammoInMag--;
       this.fireCooldown = weapon.fireRate;

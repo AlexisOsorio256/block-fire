@@ -1,4 +1,5 @@
 import * as THREE from '../lib/three.module.js';
+import { AvatarLib } from '../characters/SoldierAvatar.js';
 
 export class Bot {
   constructor(id, scene, map, position) {
@@ -41,6 +42,44 @@ export class Bot {
     this.shootCooldown = 0;
     this.strafeDir = Math.random() > 0.5 ? 1 : -1;
     this.strafeTimer = 0;
+
+    // CLASH SQUAD: arma comprada por ronda (la IA "compra" en la fase de compra)
+    this.weaponKey = 'pistol';
+
+    // Avatar GLB real: se inyecta cuando AvatarLib termina de cargar; hasta
+    // entonces (o si falla) la malla blocky de arriba ES el personaje.
+    this._avatar = null;
+    this._blockyParts = [];
+  }
+
+  // Reemplaza el cuerpo blocky por el soldado GLB animado (mismo group:
+  // posición/rotación/muerte/respawn siguen operando igual).
+  // Compra en la fase de compra: cambia el arma VISIBLE en la mano
+  setWeapon(key) {
+    this.weaponKey = key;
+    if (!this._avatar || !AvatarLib.ready) return;
+    // localizar el gunPivot (hijo de la mano derecha) y swap el modelo
+    const oldGun = this._gunPivot && this._gunPivot.children[0];
+    const gun = AvatarLib.makeHeldWeapon(key, this.team === 'ally' ? 0x2ee86e : 0xff5a4a);
+    if (oldGun) this._gunPivot.remove(oldGun);
+    if (this._gunPivot) this._gunPivot.add(gun);
+  }
+
+  attachAvatar() {
+    if (!AvatarLib.ready || this._avatar) return;
+    const gun = AvatarLib.makeHeldWeapon(this.weaponKey,
+      this.team === 'ally' ? 0x2ee86e : 0xff5a4a);
+    const av = AvatarLib.create({ team: this.team || 'enemy', weapon: gun });
+    if (!av) return;
+    this._avatar = av;
+    av.root.scale.setScalar(1.15); // presencia: personajes más grandes (pedido del usuario)
+    this._gunPivot = null;
+    // localizar el pivote del arma (hijo de la mano derecha creado por create())
+    av.root.traverse((o) => { if (o.isBone && /RightHand$/i.test(o.name)) { this._gunPivot = o.children.find(c => c.type === 'Group') || null; } });
+    // Ocultar piezas blocky (conservar el grupo: Game las posiciona igual)
+    this._blockyParts = this.mesh.children.filter(c => c !== av.root).map(c => { c.userData.__wasVisible = c.visible; return c; });
+    for (const c of this._blockyParts) c.visible = false;
+    this.mesh.add(av.root);
   }
 
   _createMesh() {
@@ -270,6 +309,7 @@ export class Bot {
     this.targetYaw = this.yaw;
     this.state = 'wander';
     this.stateTimer = 0;
+    if (this._avatar) { this._avatar.setMoving(false); }
   }
 
   update(dt, player, bots, map) {
@@ -459,6 +499,12 @@ export class Bot {
     if (this.mesh) {
       const bounce = moving ? Math.abs(Math.sin(this._stridePhase)) * 0.03 * (speedNow / 4) : 0;
       this.mesh.position.y = this.position.y - this.height + bounce;
+    }
+
+    // Avatar GLB: crossfade idle↔run + mixer tick (personajes REALES animados)
+    if (this._avatar) {
+      if (this._avatar._moving !== moving) this._avatar.setMoving(moving);
+      this._avatar.update(dt);
     }
 
     // Shooting

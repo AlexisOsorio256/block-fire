@@ -17,6 +17,14 @@ export class HUD {
     this._dmgDirTimer = null;
     this._killTimer = null;
     this._hitTimer = null;
+    this._bannerHide = 0; // reloj del banner de ronda (tickRoundBanner)
+    this._buyCountAt = -1;
+    this._shopTab = 'weapons';
+    this._shopData = null;
+    const tw = document.getElementById('bp-tab-weapons');
+    const ts = document.getElementById('bp-tab-skins');
+    if (tw) tw.addEventListener('click', () => { this._shopTab = 'weapons'; this._renderShop(); });
+    if (ts) ts.addEventListener('click', () => { this._shopTab = 'skins'; this._renderShop(); });
   }
 
   // ── Duelo de Escuadras ──
@@ -31,51 +39,143 @@ export class HUD {
     el.classList.add('show');
   }
 
-  updateTeamScore(ally, enemy) {
-    const el = document.getElementById('squad-score');
-    if (el) el.textContent = `${ally} — ${enemy}`;
+  // Marcador por RONDAS: ALIADOS x — y ENEMIGOS · RONDA N/4
+  updateTeamScore(ally, enemy, round, roundTarget) {
+    const a = document.getElementById('score-ally');
+    const e = document.getElementById('score-enemy');
+    const r = document.getElementById('round-ind');
+    if (a) a.textContent = ally;
+    if (e) e.textContent = enemy;
+    if (r && round) r.textContent = `RONDA ${round}/${roundTarget || 4}`;
+    const wrap = document.getElementById('squad-score');
+    if (wrap) wrap.classList.add('show');
   }
 
-  showShop(onBuy, getCoins, weapons) {
-    let panel = document.getElementById('shop-panel');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'shop-panel';
-      panel.innerHTML = `
-        <div class="shop-head"><span>ARSENAL</span><span id="shop-coins"></span><button id="shop-close">✕</button></div>
-        <div class="shop-grid"></div>`;
-      document.getElementById('hud').appendChild(panel);
-      panel.querySelector('#shop-close').onclick = () => this.closeShop();
+  // Banners de ronda: RONDA N · ¡A LUCHAR! · ¡RONDA GANADA! · RONDA PERDIDA
+  showRoundBanner(title, sub, color) {
+    const el = document.getElementById('round-banner');
+    if (!el) return;
+    const t = el.querySelector('.rb-title');
+    const s = el.querySelector('.rb-sub');
+    if (t) t.textContent = title;
+    if (s) s.textContent = sub || '';
+    el.style.setProperty('--rb-color', color || '#ffd23f');
+    el.classList.remove('show');
+    void el.offsetWidth; // reiniciar animación CSS
+    el.classList.add('show');
+    this._bannerT = 2.6;
+  }
+
+  tickRoundBanner(dt) {
+    if (this._bannerT > 0) {
+      this._bannerT -= dt;
+      if (this._bannerT <= 0) {
+        const el = document.getElementById('round-banner');
+        if (el) el.classList.remove('show');
+      }
     }
-    panel.classList.add('show');
-    const grid = panel.querySelector('.shop-grid');
+  }
+
+  // Fase de compra: contador grande (la tienda abre sola — showShop lo maneja)
+  tickBuyPhase(secondsLeft, total) {
+    const wrap = document.getElementById('buy-phase');
+    if (!wrap) return;
+    if (secondsLeft < 0) { wrap.classList.remove('show'); return; }
+    const cd = document.getElementById('bp-countdown');
+    if (cd) {
+      const s = Math.max(0, Math.ceil(secondsLeft));
+      if (s !== this._buyCountAt) {
+        this._buyCountAt = s;
+        cd.textContent = s;
+        cd.classList.remove('pulse');
+        void cd.offsetWidth;
+        cd.classList.add('pulse');
+      }
+    }
+    wrap.classList.add('show');
+  }
+
+  // Tienda: weapons [{key,name,price,owned}] + skins + callbacks
+  showShop({ weapons, skins, onBuyWeapon, onBuySkin, getCoins, getEquipped, getCurrentWeaponKey }) {
+    this._shopCallbacks = { onBuyWeapon, onBuySkin, getCoins, getEquipped, getCurrentWeaponKey };
+    this._shopData = { weapons, skins };
+    this._shopTab = 'weapons';
+    const panel = document.getElementById('buy-phase');
+    if (panel) panel.classList.add('show');
+    this._renderShop();
+  }
+
+  _renderShop() {
+    const panel = document.getElementById('buy-phase');
+    if (!panel || !this._shopCallbacks) return;
+    const { onBuyWeapon, onBuySkin, getCoins, getEquipped } = this._shopCallbacks;
+    const coins = getCoins ? getCoins() : 0;
+    const coinsEl = document.getElementById('bp-coins');
+    if (coinsEl) coinsEl.textContent = '🪙 ' + coins;
+    const tabW = document.getElementById('bp-tab-weapons');
+    const tabS = document.getElementById('bp-tab-skins');
+    if (tabW) tabW.classList.toggle('on', this._shopTab === 'weapons');
+    if (tabS) tabS.classList.toggle('on', this._shopTab === 'skins');
+    const grid = document.getElementById('bp-grid');
+    if (!grid) return;
     grid.innerHTML = '';
-    weapons.forEach((w, i) => {
-      const card = document.createElement('button');
-      card.className = 'shop-item';
-      card.innerHTML = `<b>${w.name}</b><span>${w.price} oro</span>`;
-      card.onclick = () => { onBuy(i); this._refreshCoins(); };
-      grid.appendChild(card);
-    });
-    this._refreshCoins();
+    const data = this._shopData || { weapons: [], skins: [] };
+    if (this._shopTab === 'weapons') {
+      const icons = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
+      data.weapons.forEach((w, i) => {
+        const card = document.createElement('button');
+        card.className = 'bp-item' + (w.owned ? ' owned' : '') + (!w.owned && coins >= w.price ? ' affordable' : '');
+        card.innerHTML = `<span class="bp-ico">${icons[w.key] || '⌗'}</span><b>${w.name}</b><span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
+        card.onclick = () => { onBuyWeapon(i); };
+        grid.appendChild(card);
+      });
+    } else {
+      const wKey = cb.getCurrentWeaponKey ? cb.getCurrentWeaponKey() : 'rifle';
+      data.skins.forEach((s) => {
+        const equipped = getEquipped ? getEquipped(wKey) === s.key : false;
+        const card = document.createElement('button');
+        card.className = 'bp-item skin' + (equipped ? ' owned' : '') + (!equipped && coins >= s.price ? ' affordable' : '');
+        card.innerHTML = `<span class="bp-ico skin-swatch" data-skin="${s.key}"></span><b>${s.name}</b><span class="bp-price">${equipped ? 'EQUIPADA' : '🪙 ' + s.price}</span>`;
+        card.onclick = () => { onBuySkin(s.key); };
+        grid.appendChild(card);
+      });
+    }
+  }
+
+  // Re-render al comprar (oro nuevo + estado owned) — panel vivo en la fase
+  refreshShop(coins, ownedSet) {
+    const coinsEl = document.getElementById('bp-coins');
+    if (coinsEl) coinsEl.textContent = '🪙 ' + coins;
+    if (this._shopData && ownedSet) for (const w of this._shopData.weapons) w.owned = ownedSet.has(w.key);
+    if (this._shopCallbacks) this._renderShop();
   }
 
   refreshCoins(coins) {
-    const el = document.getElementById('shop-coins');
-    if (el) el.textContent = '🪙 ' + coins;
+    this.refreshShop(coins, null);
   }
 
   closeShop() {
-    const panel = document.getElementById('shop-panel');
-    if (panel) panel.classList.remove('show');
+    const panel = document.getElementById('buy-phase');
+    if (panel && !panel.classList.contains('buy-locked')) panel.classList.remove('show');
   }
 
+  lockBuyPhase() {
+    const panel = document.getElementById('buy-phase');
+    if (panel) { panel.classList.add('buy-locked'); panel.classList.add('show'); }
+  }
+
+  unlockBuyPhase() {
+    const panel = document.getElementById('buy-phase');
+    if (panel) panel.classList.remove('buy-locked');
+  }
+
+  // tickSquad maneja el ESCUDO de inmunidad: cuenta atrás visible y desaparece.
   tickSquad(dt, immuneUntil, matchTime) {
     const el = document.getElementById('squad-immunity');
     if (!el) return;
     const left = Math.max(0, immuneUntil - matchTime);
     if (left > 0) {
-      el.textContent = '🛡️ INMUNIDAD ' + Math.ceil(left) + 's';
+      el.textContent = '🛡️ ' + Math.ceil(left) + 's · DISPARAR LO ROMPE';
       el.classList.add('show');
     } else {
       el.classList.remove('show');
@@ -93,7 +193,6 @@ export class HUD {
     if (this.healthEl) {
       this.healthEl.textContent = Math.max(0, Math.round(health));
       this.healthEl.style.color = health > 60 ? '#4ade80' : health > 30 ? '#facc15' : '#f87171';
-      // Low-HP urgency: pulsing red border + heartbeat urgency below 30%
       if (this.healthEl.parentElement) {
         this.healthEl.parentElement.classList.toggle('critical', health <= 30 && health > 0);
       }
@@ -102,7 +201,6 @@ export class HUD {
       this.ammoEl.textContent = ammo || '0/0';
       const parts = String(ammo).split('/');
       const inMag = Number(parts[0]);
-      // Low ammo warning: pulse when ≤ 8 rounds, red at 0
       this.ammoEl.style.color = inMag === 0 ? '#f87171' : '#fff';
       if (this.ammoEl) {
         if (inMag > 0 && inMag <= 8) this.ammoEl.classList.add('low');
@@ -111,8 +209,6 @@ export class HUD {
     }
     if (this.weaponNameEl) this.weaponNameEl.textContent = (weaponName || 'RIFLE').toUpperCase();
 
-    // Persistent critical state: subtle pulsing red rim while ≤30 HP so
-    // "about to die" is ambient knowledge, not just a per-hit flash.
     if (this._vignEl === undefined) this._vignEl = document.getElementById('damage-vignette');
     if (this._vignEl) this._vignEl.classList.toggle('low', health <= 30 && health > 0);
 
@@ -138,10 +234,6 @@ export class HUD {
     }, 2200);
   }
 
-  // Big centered kill confirmation — strong but brief. Streak escalation:
-  // 1 kill = ELIMINADO; 2 in 3.5s = DOBLE BAJA; 3+ = RACHA xN.
-  // Kill reward: +100 per kill, +50 extra for headshots (cosmetic kill score
-  // per product decision — the user explicitly asked for it; NOT an economy).
   showKillBanner(isHeadshot, streak = 1) {
     if (!this.killbannerEl) return;
     const title = this.killbannerEl.querySelector('.kb-title');
@@ -162,13 +254,12 @@ export class HUD {
       sub.textContent = `+${points}${hsTag}`;
     }
     this.killbannerEl.classList.remove('show');
-    void this.killbannerEl.offsetWidth; // restart animation
+    void this.killbannerEl.offsetWidth;
     this.killbannerEl.classList.add('show');
     clearTimeout(this._killTimer);
     this._killTimer = setTimeout(()=> this.killbannerEl.classList.remove('show'), 900);
   }
 
-  // Small damage-dealt indicator (hit confirm) — optional extra clarity
   showHitBanner(isHeadshot) {
     if (!this.hitbannerEl) return;
     this.hitbannerEl.textContent = isHeadshot ? 'HEADSHOT' : '';
@@ -180,13 +271,11 @@ export class HUD {
     this._hitTimer = setTimeout(()=> this.hitbannerEl.classList.remove('show'), 600);
   }
 
-  // Directional damage indicator: a red wedge orbiting the crosshair, rotated
-  // toward the attacker (0° = front, clockwise positive). Re-fires per hit.
   showDamageDirection(angleDeg = 0) {
     if (!this.dmgDirEl) return;
     this.dmgDirEl.style.transform = `translate(-50%, -50%) rotate(${angleDeg}deg)`;
     this.dmgDirEl.classList.remove('show');
-    void this.dmgDirEl.offsetWidth; // restart animation
+    void this.dmgDirEl.offsetWidth;
     this.dmgDirEl.classList.add('show');
     clearTimeout(this._dmgDirTimer);
     this._dmgDirTimer = setTimeout(() => this.dmgDirEl.classList.remove('show'), 650);

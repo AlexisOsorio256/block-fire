@@ -79,11 +79,13 @@ if (params.has('runTests')) {
       // trusting whatever the lobby left in the camera.
       const bot = game.bots[0];
       const botStart = bot.position.clone();
-      const eye = new THREE.Vector3(30, 1.65, 24);
+      // Punto de tiro determinista: buscar un lugar abierto del mapa (los dos
+      // mapas tienen suelo despejado a ±size*0.7 en la diagonal)
+      const eye = new THREE.Vector3(game.map.size*0.7, 1.65, game.map.size*0.7);
       game.camera.position.copy(eye);
-      game.camera.lookAt(30, 1.65, 14); // aim straight -Z at torso height
+      game.camera.lookAt(eye.x, 1.65, eye.z - 10); // aim straight -Z at torso height
       game.camera.updateMatrixWorld();
-      bot.position.set(30, 1.65, 14);   // 10u ahead of the muzzle
+      bot.position.set(eye.x, 1.65, eye.z - 10);   // 10u ahead of the muzzle
       bot.health = bot.maxHealth;
       bot.isAlive = true;
       bot.mesh.visible = true;
@@ -118,27 +120,36 @@ if (params.has('runTests')) {
       bot.respawn(botStart);
       game.playerKills = 0;
 
-      // Test 8: Duelo de Escuadras — un equipo que llega a 20 kills de equipo
-      // termina la partida. El equipo ENEMIGO al llegar = DERROTA, una vez.
-      const winsBefore = localStorage.getItem('bf_wins') || '0';
+      // Test 8: DUELO DE ESCUADRAS POR RONDAS — eliminar al equipo enemigo
+      // COMPLETO gana la RONDA (no la partida). La partida se gana a 4 rondas.
       game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
       game._resultShown = false;
-      const botA = game.bots[0], botB = game.bots[1]; // 0-2 aliados, 3+ enemigos
-      const enemyBot = game.bots[3];
-      game.teamScore.enemy = game.killTarget - 1;
+      game.phase = 'combat';       // ronda en pleno combate
+      game.round = 1;
+      game.roundWins = { ally: 0, enemy: 0 };
+      const botB = game.bots[1]; // ALIADO_2 — lo usamos como víctima
       const bBStart = botB.position.clone();
-      const enemyKiller = game.bots[6]; // ENEMIGO_4 (team 'enemy')
-      game.applyDamage(botB, 999, 'body', enemyKiller);
-      const endedOk = game.matchState === 'FINISHED'
-        && document.getElementById('result-title').textContent === 'DERROTA';
-      game.showResult(true); // duplicate call in the same frame must be a no-op
-      const idempotentOk = document.getElementById('result-title').textContent === 'DERROTA'
-        && (localStorage.getItem('bf_wins') || '0') === winsBefore;
-      log('8 BOT REACHES TARGET ENDS MATCH', endedOk && idempotentOk,
-        `state ${game.matchState} result DERROTA:${endedOk} noDoubleShow:${idempotentOk}`);
-      botA.kills = 0;
+      // matar a los 4 enemigos con un atacante aliado
+      for (let bi = 3; bi <= 6; bi++) {
+        const b = game.bots[bi];
+        b.isAlive = true; b.health = 1;
+        game.applyDamage(b, 999, 'body', botB);
+      }
+      const roundWon = game.roundWins.ally === 1 && game.phase === 'roundEnd'
+        && document.getElementById('round-banner').classList.contains('show');
+      log('8 SQUAD ROUND WIN ON ELIMINATION', roundWon,
+        `roundWins ${game.roundWins.ally}-${game.roundWins.enemy} phase ${game.phase} banner ${document.getElementById('round-banner').classList.contains('show')}`);
+      // 4 rondas ganadas = FIN DEL DUELO (VICTORIA)
+      game.phase = 'roundEnd';
+      game.roundWins.ally = 4;
+      game._afterRoundEnd();
+      const matchWon = game.matchState === 'FINISHED'
+        && document.getElementById('result-title').textContent === 'VICTORIA';
+      log('8b SQUAD MATCH AT 4 ROUND WINS', matchWon, `state ${game.matchState}`);
       botB.respawn(bBStart);
       game.matchState = 'LOADING';
+      game._resultShown = false;
 
       // Test 9: 'next' cycles through all three weapons (KeyE / mobile button)
       game.weaponSystem.isReloading = false;
@@ -272,23 +283,54 @@ if (params.has('runTests')) {
       input17._firePointers.delete(910);
       input17.fire = input17._firePointers.size > 0;
 
-      // Test 18: the result screen lives INSIDE #overlay (a refactor once left
-      // it outside — fixed elements covered it, so VICTORIA/DERROTA was blank).
+      // Test 18: the result screen lives INSIDE #overlay + FFA legacy:
+      // 20 kills (modo Todos contra Todos) finaliza la partida con VICTORIA.
       const rb18 = document.getElementById('result-block');
-      const inOverlay = document.getElementById('overlay').contains(rb18);
       game.matchState = 'PLAYING';
       game._resultShown = false;
-      game.teamScore.ally = game.killTarget;
+      game.gameMode = 'ffa';
+      game.phase = 'ffa';
       game.playerKills = game.killTarget;
       game.applyDamage(game.bots[6], 999, 'body', game.player);
       const title18 = document.getElementById('result-title').textContent;
       const r18 = rb18.getBoundingClientRect();
       const visible18 = r18.width > 100 && r18.top < innerHeight && r18.bottom > 0;
-      log('18 RESULT SCREEN VISIBLE', document.getElementById('overlay').contains(rb18) && title18 === 'VICTORIA' && visible18,
+      log('18 RESULT SCREEN VISIBLE (FFA 20 KILLS)', document.getElementById('overlay').contains(rb18) && title18 === 'VICTORIA' && visible18,
         `inOverlay:${document.getElementById('overlay').contains(rb18)} "${title18}" rect ${r18.width.toFixed(0)}x${r18.height.toFixed(0)}@${r18.top.toFixed(0)}`);
       game.playerKills = 0;
       game._resultShown = false;
       game.matchState = 'LOADING';
+
+      // ── Test 19: FASE DE COMPRA — abrir startRound abre la tienda animada ──
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.startRound(2);
+      const bp = document.getElementById('buy-phase');
+      const buyOpen = bp.classList.contains('show')
+        && game.phase === 'buy'
+        && game.bots.every(b => b.weaponKey);
+      log('19 BUY PHASE OPENS + BOTS BUY', buyOpen,
+        `shop ${bp.classList.contains('show')} phase ${game.phase} weapons ${game.bots.map(b=>b.weaponKey).join(',')}`);
+      // skins: aplicar cambia el color del acento del viewmodel
+      game.weaponSystem.owned.add('rifle');
+      game.weaponSystem.switchWeapon(1);
+      const accentBefore = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
+      game.skinsFor = { oro: { name: 'Oro', price: 0 } };
+      game.coins = 5000;
+      game.buySkin('oro');
+      const accentAfter = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
+      log('20 SKIN APPLIES TO WEAPON', accentBefore !== accentAfter && game.skins.rifle === 'oro',
+        `accent ${accentBefore} → ${accentAfter}`);
+      // inmunidad se ROMPE al disparar (regla Free Fire)
+      game.matchState = 'PLAYING';
+      game.phase = 'combat';
+      game.immuneUntil = game.matchTime + 5;
+      game.onPlayerFired();
+      const immuneBroken = game.matchTime >= game.immuneUntil;
+      log('21 IMMUNITY BREAKS ON FIRE', immuneBroken, `immuneUntil ${game.immuneUntil.toFixed(2)} matchTime ${game.matchTime.toFixed(2)}`);
+      game.matchState = 'LOADING';
+      game._shopOpen = false;
+
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);
@@ -359,6 +401,14 @@ if (params.has('capture')) {
     if(mode==='playing'){
       game.startMatch();
       document.getElementById('overlay').classList.add('hidden');
+      // acortar la fase de compra para la captura del combate
+      game.phaseTime = 1.5;
     }
+    if(mode==='combat'){
+      game.startMatch();
+      document.getElementById('overlay').classList.add('hidden');
+      // fase de compra corta → combate real con bots GLB en movimiento
+      game.phaseTime = 1.2;
+      }
   }, 600);
 }

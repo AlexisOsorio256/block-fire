@@ -6,7 +6,8 @@
 <meta name="theme-color" content="#0a0f1e">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0f1e'/%3E%3Crect x='7' y='14' width='18' height='5' rx='1.5' fill='%23ffd23f'/%3E%3Crect x='21' y='15.5' width='5' height='2' rx='1' fill='%23ff5a3c'/%3E%3Crect x='12' y='9' width='6' height='3' rx='1' fill='%23ffd23f'/%3E%3C/svg%3E">
 <title>BLOCKFIRE — FPS Blocky</title>
-<link rel="stylesheet" href="style.css">
+  <link rel="preload" href="assets/models/soldier.glb" as="fetch" crossorigin>
+  <link rel="stylesheet" href="style.css">
 <script type="importmap">
 {
   "imports": {
@@ -23,6 +24,12 @@
   <button id="btn-arsenal" aria-label="Arsenal">🛒 ARSENAL</button>
   <div id="hud">
     <div id="hud-top">
+      <div id="squad-score">
+        <span class="ss-side ss-ally">ALIADOS</span><span id="score-ally" class="ss-num">0</span>
+        <span class="ss-dash">—</span>
+        <span id="score-enemy" class="ss-num">0</span><span class="ss-side ss-enemy">ENEMIGOS</span>
+        <span id="round-ind">RONDA 1/4</span>
+      </div>
       <div id="score-chip">
         <span id="kills">0</span><label>KILLS</label>
         <span id="leader">0</span><label>LÍDER</label>
@@ -37,6 +44,25 @@
     <div id="death-overlay"><span>MUERTE</span><label>REAPARECIENDO...</label></div>
     <div id="killbanner"><span class="kb-title">ELIMINADO</span><span class="kb-sub"></span></div>
     <div id="hitbanner">HEADSHOT</div>
+    <div id="round-banner"><h2 class="rb-title">RONDA 1</h2><p class="rb-sub"></p></div>
+
+    <!-- FASE DE COMPRA (Clash Squad): se abre SOLA antes de cada ronda.
+         Bottom sheet animada estilo Free Fire: countdown + tabs ARMAS/SKINS. -->
+    <div id="buy-phase">
+      <div class="bp-sheet">
+        <div class="bp-head">
+          <span class="bp-title">FASE DE COMPRA</span>
+          <span id="bp-coins">🪙 1000</span>
+          <div id="bp-count"><b id="bp-countdown">15</b><i>s</i></div>
+        </div>
+        <div class="bp-tabs">
+          <button id="bp-tab-weapons" class="on">ARMAS</button>
+          <button id="bp-tab-skins">SKINS</button>
+        </div>
+        <div id="bp-grid" class="bp-grid"></div>
+        <p class="bp-foot">GANA EL PRIMERO EN LLEGAR A <b>4 RONDAS</b> · las rondas se ganan eliminando al equipo rival</p>
+      </div>
+    </div>
     <div id="hud-bottom">
       <div id="health-block"><span id="health">100</span><label>HP</label></div>
       <div id="ammo-block"><span id="ammo">30/90</span><label id="weapon-name">RIFLE</label></div>
@@ -112,19 +138,17 @@
   <div id="overlay">
     <div id="title-block">
       <h1>BLOCK<span>FIRE</span></h1>
-      <p class="tagline">FPS ARCADE · FFA · 8 JUGADORES</p>
-      <div id="lobby-weapons">
-        <button class="lobby-weapon selected" data-weapon="0" aria-label="Rifle">
-          <svg viewBox="0 0 48 20" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="8" width="30" height="6" rx="1"/><rect x="36" y="9" width="8" height="4" rx="1"/><path d="M12 14v4h6l-1-4"/><rect x="18" y="4" width="8" height="4" rx="1"/></svg>
-          <label>RIFLE</label>
+      <p class="tagline">FPS ARCADE · DUELO DE ESCUADRAS 4v4 · TODOS CONTRA TODOS</p>
+      <div id="lobby-modes">
+        <button class="lobby-mode selected" data-mode="squad">
+          <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="6" width="10" height="12" rx="1.5"/><rect x="17" y="6" width="10" height="12" rx="1.5"/><rect x="30" y="6" width="10" height="12" rx="1.5" stroke-dasharray="3 2"/></svg>
+          <b>DUELO DE ESCUADRAS</b>
+          <label>4v4 · RONDAS · TIENDA</label>
         </button>
-        <button class="lobby-weapon" data-weapon="1" aria-label="Pistola">
-          <svg viewBox="0 0 48 20" fill="none" stroke="currentColor" stroke-width="2"><rect x="14" y="7" width="16" height="7" rx="1"/><path d="M18 14v5h8"/><rect x="24" y="4" width="6" height="3" rx="1"/></svg>
-          <label>PISTOLA</label>
-        </button>
-        <button class="lobby-weapon" data-weapon="2" aria-label="Escopeta">
-          <svg viewBox="0 0 48 20" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="6" y="8" width="36" height="5" rx="1"/><path d="M10 13l-4 5M16 13l-3 5"/></svg>
-          <label>ESCOPETA</label>
+        <button class="lobby-mode" data-mode="ffa">
+          <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="10" cy="12" r="4"/><circle cx="24" cy="12" r="4"/><circle cx="38" cy="12" r="4"/><path d="M14 12h6M28 12h6" stroke-dasharray="2 2"/></svg>
+          <b>TODOS CONTRA TODOS</b>
+          <label>8 JUGADORES · 20 KILLS</label>
         </button>
       </div>
       <div id="lobby-stats"></div>

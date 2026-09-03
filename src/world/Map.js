@@ -1,7 +1,8 @@
 import * as THREE from '../lib/three.module.js';
 
 export class Map {
-  constructor(scene) {
+  constructor(scene, mode = 'squad') {
+    this.mode = mode;
     this.scene = scene;
     this.boxes = []; // For collision: { min: Vector3, max: Vector3, mesh }
     this.spawns = [];
@@ -43,17 +44,29 @@ export class Map {
     this._matEnemyWall = loadTex('wall.png', 4, 1, 0x7a4038);
     this._matWood = loadTex('cover.png', 2, 1, 0x8a6a3a);
 
-    this._createGround();
-    this._createWalls();
-    this._createCover();
-    this._createSpawns();
-    // spawns fijos de escuadra: cada equipo sale de SU base (sur vs norte)
-    this.squadSpawns = {
-      ally:  [new THREE.Vector3(-4, 1.6, this.size*0.42), new THREE.Vector3(0, 1.6, this.size*0.44),
-              new THREE.Vector3(4, 1.6, this.size*0.42),  new THREE.Vector3(-1, 1.6, this.size*0.36)],
-      enemy: [new THREE.Vector3(-4, 1.6, -this.size*0.42), new THREE.Vector3(0, 1.6, -this.size*0.44),
-              new THREE.Vector3(4, 1.6, -this.size*0.42), new THREE.Vector3(1, 1.6, -this.size*0.36)],
-    };
+    if (this.mode === 'squad') {
+      // CLASH SQUAD: arena propia (bases espejo + centro + lanes) — SIN la
+      // estructura clásica encima (antes se apilaban y el mapa se veía igual).
+      this._createGround();
+      this._createWalls();
+      this._buildClashSquad();
+      // spawns fijos de escuadra: cada equipo sale de SU base (sur vs norte)
+      this.squadSpawns = {
+        ally:  [new THREE.Vector3(-4, 0, this.size*0.42), new THREE.Vector3(0, 0, this.size*0.44),
+                new THREE.Vector3(4, 0, this.size*0.42),  new THREE.Vector3(-1, 0, this.size*0.36)],
+        enemy: [new THREE.Vector3(-4, 0, -this.size*0.42), new THREE.Vector3(0, 0, -this.size*0.44),
+                new THREE.Vector3(4, 0, -this.size*0.42), new THREE.Vector3(1, 0, -this.size*0.36)],
+      };
+      // spawns genéricos (respawns FFA usan _createSpawns; aquí alimenta
+      // getRandomSpawn del lobby/respawn con los puntos de las bases)
+      this.spawns = [...this.squadSpawns.ally, ...this.squadSpawns.enemy].map(v => v.clone());
+    } else {
+      // FFA clásico: arena original
+      this._createGround();
+      this._createWalls();
+      this._createCover();
+      this._createSpawns();
+    }
   }
 
   _createGround() {

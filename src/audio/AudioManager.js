@@ -198,6 +198,10 @@ export class AudioManager {
       case 'empty': this._tone(t, 0.04, {type:'square', from:1100, to:700, gain:0.1}); break;
       case 'jump': this._tone(t, 0.09, {type:'sine', from:320, to:470, gain:0.12}); break;
       case 'step': this._noise(null, t, 0.05, {freq:260, gain:0.06}); break;
+      case 'round_start': this._tone(t, 0.12, {type:'square', from:520, to:780, gain:0.2}); this._tone(t, 0.18, {type:'square', from:780, to:1040, gain:0.2, delay:0.12}); break;
+      case 'win_round': this._tone(t, 0.1, {type:'triangle', from:520, gain:0.22}); this._tone(t, 0.1, {type:'triangle', from:660, gain:0.22, delay:0.1}); this._tone(t, 0.22, {type:'triangle', from:1040, gain:0.24, delay:0.2}); break;
+      case 'lose_round': this._tone(t, 0.16, {type:'sawtooth', from:320, to:160, gain:0.2}); this._tone(t, 0.24, {type:'sawtooth', from:200, to:80, gain:0.2, delay:0.14}); break;
+      case 'buy': this._tone(t, 0.06, {type:'sine', from:900, to:1200, gain:0.14}); break;
       default: this._tone(t, 0.1, {type:'sine', from:440, gain:0.12}); break;
     }
   }

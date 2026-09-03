@@ -192,13 +192,14 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #title-block .credits{ font-size:9px; color:rgba(140,160,200,0.45); margin-top:10px; letter-spacing:0.04em; }
 #title-block .credits a{ color:rgba(160,180,220,0.6); text-decoration:underline; }
 
-/* Lobby weapon selector */
-#lobby-weapons{ display:flex; gap:10px; justify-content:center; margin-top:22px; }
-.lobby-weapon{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#b8c8e2; transition:all 0.15s; }
-.lobby-weapon svg{ width:56px; height:24px; }
-.lobby-weapon label{ font-size:10px; font-weight:800; letter-spacing:0.16em; pointer-events:none; }
-.lobby-weapon:hover{ background:rgba(255,255,255,0.1); }
-.lobby-weapon.selected{ border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,0.1); box-shadow:0 0 18px rgba(255,210,63,0.18); }
+/* Lobby: selector de MODO (escuadras / todos contra todos) */
+#lobby-modes{ display:flex; gap:12px; justify-content:center; margin-top:18px; }
+.lobby-mode{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 22px; border-radius:14px; border:2px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#b8c8e2; transition:all 0.15s; }
+.lobby-mode svg{ width:52px; height:26px; margin-bottom:4px; }
+.lobby-mode b{ font-size:12px; font-weight:900; letter-spacing:0.12em; }
+.lobby-mode label{ font-size:9px; font-weight:800; letter-spacing:0.14em; opacity:0.75; pointer-events:none; }
+.lobby-mode:hover{ background:rgba(255,255,255,0.1); }
+.lobby-mode.selected{ border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,0.1); box-shadow:0 0 22px rgba(255,210,63,0.2); transform:translateY(-2px); }
 
 /* Lobby last-match stats */
 #lobby-stats{ margin-top:14px; min-height:18px; font-size:12px; font-weight:700; letter-spacing:0.08em; color:#8fa4c8; }
@@ -244,10 +245,12 @@ body:not(.playing) #mobile-controls{ display:none !important; }
   #title-block, #result-block{ max-height:100%; overflow:hidden; }
   #title-block h1{ font-size: clamp(26px, 6.5vh, 42px); line-height:1; }
   .tagline{ margin-top:2px; font-size:8.5px; letter-spacing:0.2em; }
-  #lobby-weapons{ margin-top:6px; gap:8px; }
-  .lobby-weapon{ padding:5px 8px; }
-  .lobby-weapon svg{ width:36px; height:15px; }
-  .lobby-weapon label{ font-size:8.5px; }
+  #lobby-modes{ margin-top:5px; gap:8px; }
+  .lobby-mode{ padding:5px 10px; gap:1px; }
+  .lobby-mode svg{ width:30px; height:14px; }
+  .lobby-mode b{ font-size:9.5px; }
+  .lobby-mode label{ font-size:7.5px; }
+  .lobby-mode.selected{ transform:none; }
   #lobby-stats{ margin-top:3px; font-size:9.5px; min-height:12px; }
   #playBtn, #retryBtn{ margin-top:7px; padding:8px 40px; font-size:13px; box-shadow: 0 3px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
   #lobby-menu{ margin-top:7px; gap:6px; }
@@ -264,6 +267,79 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 
 
 /* ═══ Duelo de Escuadras ═══ */
+/* ═══ MARCADOR DE RONDAS (top-center) ═══ */
+#squad-score{ position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:36;
+  display:none; align-items:center; gap:8px; background:rgba(8,12,22,0.82); border:1px solid rgba(255,255,255,0.14);
+  border-radius:12px; padding:6px 14px; font-weight:900; letter-spacing:0.06em; }
+#squad-score.show{ display:flex; }
+body:not(.playing) #squad-score{ display:none !important; }
+#squad-score .ss-side{ font-size:9px; letter-spacing:0.14em; }
+#squad-score .ss-ally{ color:#2ee86e; }
+#squad-score .ss-enemy{ color:#ff5a4a; }
+#squad-score .ss-num{ font-size:20px; font-weight:900; color:#fff; font-variant-numeric:tabular-nums; }
+#squad-score .ss-dash{ opacity:0.5; }
+#round-ind{ font-size:9px; letter-spacing:0.16em; color:#ffd23f; border-left:1px solid rgba(255,255,255,0.18); padding-left:8px; margin-left:4px; }
+
+/* ═══ BANNER DE RONDA (centro, animado) ═══ */
+#round-banner{ position:fixed; top:26%; left:0; right:0; z-index:45; text-align:center; pointer-events:none; opacity:0; pointer-events:none; }
+#round-banner.show{ animation: rb-pop 2.6s ease forwards; }
+#round-banner .rb-title{ font-size:clamp(34px,7vw,58px); font-weight:900; letter-spacing:0.1em; color:var(--rb-color,#ffd23f);
+  text-shadow:0 0 26px rgba(255,210,63,0.45), 0 3px 0 rgba(0,0,0,0.5); }
+#round-banner .rb-sub{ font-size:13px; font-weight:800; letter-spacing:0.22em; color:#fff; opacity:0.85; margin-top:2px; }
+@keyframes rb-in{ 0%{ opacity:0; transform:scale(1.7);} 12%{ opacity:1; transform:scale(1);} 82%{ opacity:1;} 100%{ opacity:0; transform:scale(0.94);} }
+#round-banner.show{ animation: rb-pop 2.6s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes rb-pop{ 0%{ opacity:0; transform:scale(1.65);} 12%{ opacity:1; transform:scale(1);} 80%{ opacity:1; transform:scale(1);} 100%{ opacity:0; transform:scale(0.95);} }
+
+/* ═══ FASE DE COMPRA — bottom sheet animada (estilo Free Fire) ═══ */
+#buy-phase{ position:fixed; left:0; right:0; bottom:0; z-index:55; display:none; justify-content:center; pointer-events:none; }
+#buy-phase.show{ display:flex; }
+#buy-phase .bp-sheet{ pointer-events:auto; width:min(760px, 96vw); margin-bottom:8px;
+  background:linear-gradient(180deg, rgba(12,16,28,0.97) 0%, rgba(8,11,20,0.99) 100%);
+  border:1px solid rgba(255,210,63,0.4); border-radius:18px 18px 14px 14px; padding:10px 16px 12px;
+  box-shadow:0 -10px 50px rgba(0,0,0,0.7); animation: bp-up 0.32s cubic-bezier(.2,.9,.3,1.05); }
+@keyframes bp-up{ from{ transform:translateY(110%);} to{ transform:translateY(0);} }
+.bp-head{ display:flex; align-items:center; gap:12px; }
+.bp-title{ font-size:12px; font-weight:900; letter-spacing:0.2em; color:#ffd23f; flex:1; }
+#bp-coins{ font-size:15px; font-weight:900; color:#ffe9a0; font-variant-numeric:tabular-nums; }
+#bp-count{ display:flex; align-items:baseline; gap:2px; background:rgba(255,255,255,0.08); border-radius:10px; padding:4px 12px; }
+#bp-count b{ font-size:22px; font-weight:900; color:#fff; font-variant-numeric:tabular-nums; }
+#bp-count i{ font-size:10px; color:#9fb0d0; font-style:normal; }
+#bp-countdown.pulse{ animation: cd-pulse 0.9s ease; }
+@keyframes cd-pulse{ 0%{ transform:scale(1.35); color:#ffd23f;} 100%{ transform:scale(1);} }
+#bp-countdown.pulse{ animation: cd-pulse 0.9s ease; }
+.bp-tabs{ display:flex; gap:6px; margin-top:8px; }
+.bp-tabs button{ appearance:none; cursor:pointer; pointer-events:auto; border:1px solid rgba(255,255,255,0.16);
+  background:rgba(255,255,255,0.05); color:#b8c8e2; font-size:10px; font-weight:900; letter-spacing:0.14em;
+  padding:7px 16px; border-radius:8px; }
+.bp-tabs button.on{ background:rgba(255,210,63,0.14); border-color:#ffd23f; color:#ffd23f; }
+.bp-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:9px; }
+.bp-item{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:10px 6px; border-radius:11px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.05);
+  color:#cdd8ee; transition:all 0.12s; }
+.bp-item .bp-ico{ font-size:19px; line-height:1; }
+.bp-item b{ font-size:11px; font-weight:900; letter-spacing:0.08em; }
+.bp-item .bp-price{ font-size:9.5px; font-weight:800; color:#8fa4c8; letter-spacing:0.06em; }
+.bp-item.affordable .bp-price{ color:#7dff9a; }
+.bp-item.owned{ border-color:rgba(125,255,154,0.4); background:rgba(125,255,154,0.06); }
+.bp-item.owned .bp-price{ color:#7dff9a; }
+.bp-item:active{ transform:scale(0.95); }
+.bp-item.skin .bp-ico{ width:26px; height:14px; border-radius:4px; background:#5a6a8a; }
+.bp-item.skin .bp-ico[data-skin="oro"]{ background:linear-gradient(135deg,#ffe9a0,#c8952a); }
+.bp-item.skin .bp-ico[data-skin="bosque"]{ background:linear-gradient(135deg,#5d9c48,#2f4a2c); }
+.bp-item.skin .bp-ico[data-skin="hielo"]{ background:linear-gradient(135deg,#a8e4ff,#2f5a78); }
+.bp-item.skin .bp-ico[data-skin="carbon"]{ background:linear-gradient(135deg,#3a4560,#10131f); }
+.bp-foot{ margin-top:9px; font-size:9px; font-weight:800; letter-spacing:0.12em; color:#8fa4c8; text-align:center; }
+.bp-foot b{ color:#ffd23f; }
+
+/* Contador de compra compacto en landscape móvil */
+@media (orientation: landscape) and (max-height: 500px){
+  .bp-sheet{ padding:6px 12px 8px; }
+  .bp-grid{ grid-template-columns:repeat(4, 1fr); gap:6px; margin-top:5px; }
+  .bp-item{ padding:5px 4px; }
+  .bp-foot{ margin-top:4px; font-size:8px; }
+  #bp-count b{ font-size:16px; }
+}
+
 #squad-immunity{ position:fixed; top:14%; left:50%; transform:translateX(-50%); z-index:40;
   font-size:26px; font-weight:800; color:#8fd7ff; text-shadow:0 2px 8px rgba(0,0,0,.8);
   display:none; letter-spacing:1px; }
