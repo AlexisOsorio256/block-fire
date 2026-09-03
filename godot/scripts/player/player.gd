@@ -14,6 +14,7 @@ var _crouch_blend := 0.0
 var _base_cam_y := 0.35
 var _trauma := 0.0
 var _step_timer := 0.2
+var _pc_crouch := false
 
 # sacudida de cámara al recibir daño / disparar (trauma con decaimiento)
 func add_trauma(amount: float) -> void:
@@ -109,6 +110,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not active:
 		return
+	if input_layer != null and Engine.get_process_frames() % 60 == 0:
+		print("[TOUCH-DBG] move=", input_layer.move_vec(), " fire=", input_layer.fire_held())
 	_read_look(delta)
 	_move(delta)
 	_animate(delta)
@@ -162,7 +165,9 @@ func _move(delta: float) -> void:
 		mv = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		want_jump = Input.is_action_just_pressed("jump")
 		want_sprint = Input.is_action_pressed("sprint")
-		want_crouch = Input.is_action_just_pressed("crouch")
+		if Input.is_action_just_pressed("crouch"):
+			_pc_crouch = not _pc_crouch
+		want_crouch = _pc_crouch
 
 	crouching = want_crouch
 	var sprinting := want_sprint and not _aiming() and not crouching and mv.length() > 0.5
@@ -235,6 +240,11 @@ func respawn(pos: Vector3) -> void:
 	hp = max_hp
 	active = true
 	visible = true
+	_pc_crouch = false
+	crouching = false
+	_trauma = 0.0
+	_last_attacker = null
+	_last_headshot = false
 	spring.spring_length = 3.2
 	Audio.play("respawn", -6.0)
 
@@ -250,8 +260,8 @@ func die() -> void:
 	if char_model != null:
 		char_model.die_pose()
 	add_trauma(0.8)
-	spring.spring_length = 4.4  # death cam: cámara se aleja
+	spring.spring_length = 4.4  # death cam
 	Audio.play("death", -2.0)
 	Game.register_kill(self, _last_attacker, _last_headshot)
-	Game.queue_respawn(self, global_position)
+	Game.queue_respawn(self, Arena.SPAWNS[0])  # spawn validado, no donde murió
 	died.emit()

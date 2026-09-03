@@ -123,11 +123,8 @@ func _prop_crate(pos: Vector3, size: Vector3, mat: StandardMaterial3D) -> void:
 	sun.rotation_degrees = Vector3(-52, -38, 0)
 	sun.light_energy = 1.15
 	sun.light_color = Color(1.0, 0.96, 0.9)
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 30.0
-	sun.shadow_bias = 0.12       # anti-acné (sombra jagged)
-	sun.shadow_normal_bias = 2.0
-	sun.shadow_blur = 1.0
+	# sombras: blob para personajes (limpio en móvil); la direccional pinta acné jagged
+	sun.shadow_enabled = false
 	add_child(sun)
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()

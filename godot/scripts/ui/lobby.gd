@@ -150,7 +150,7 @@ func _build_ui() -> void:
 	root.add_child(cfg)
 
 func _on_sens_changed(v: float) -> void:
-	Settings.sens = v
+	Settings.sens_mul = v
 	Settings.save_settings()
 
 func _cycle_skin(dir: int) -> void:
@@ -196,7 +196,7 @@ func _build_settings() -> Control:
 	sens_slider.min_value = 0.3
 	sens_slider.max_value = 2.0
 	sens_slider.step = 0.1
-	sens_slider.value = Settings.sens
+	sens_slider.value = Settings.sens_mul
 	sens_slider.custom_minimum_size = Vector2(160, 0)
 	sens_slider.value_changed.connect(_on_sens_changed)
 	sens_row.add_child(sens_slider)

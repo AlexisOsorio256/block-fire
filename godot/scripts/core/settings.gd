@@ -6,8 +6,9 @@ signal changed
 
 const PATH := "user://settings.cfg"
 
-# sensibilidad (rad/px)
-var sens: float = 0.0022
+# sensibilidad base (rad/px) + multiplicador de usuario (0.3–2.0)
+const SENS_BASE := 0.0022
+var sens_mul: float = 1.0
 var ads_mul: float = 0.6
 # touch sensibilidad (parity web 0.0052 rad/px)
 var touch_sens: float = 0.0052
@@ -24,7 +25,7 @@ func load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
 		return
-	sens = cfg.get_value("input", "sens", sens)
+	sens_mul = cfg.get_value("input", "sens_mul", sens_mul)
 	ads_mul = cfg.get_value("input", "ads_mul", ads_mul)
 	touch_sens = cfg.get_value("input", "touch_sens", touch_sens)
 	btn_scale = cfg.get_value("ui", "btn_scale", btn_scale)
@@ -33,7 +34,7 @@ func load_settings() -> void:
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
-	cfg.set_value("input", "sens", sens)
+	cfg.set_value("input", "sens_mul", sens_mul)
 	cfg.set_value("input", "ads_mul", ads_mul)
 	cfg.set_value("input", "touch_sens", touch_sens)
 	cfg.set_value("ui", "btn_scale", btn_scale)
@@ -42,7 +43,7 @@ func save_settings() -> void:
 	cfg.save(PATH)
 
 func look_mul() -> float:
-	return sens
+	return SENS_BASE * sens_mul
 
 func aim_mul() -> float:
 	return ads_mul

@@ -30,6 +30,7 @@ var _base: Control
 func _ready() -> void:
 	layer = 5
 	_build_ui()
+	print("[TOUCH-DBG] capa táctil construida")
 
 func _stick_center() -> Vector2:
 	return Vector2(150, get_viewport().get_visible_rect().size.y - 150)
@@ -111,6 +112,9 @@ func _button(text: String, diameter: float, color: Color) -> Button:
 	return b
 
 func _fire_input(ev: InputEvent) -> void:
+	if _dbg < 40 and (ev is InputEventScreenTouch or ev is InputEventMouseButton):
+		_dbg += 1
+		print("[TOUCH-DBG] FUEGO recibe: ", ev.get_class(), " pressed=", ev.pressed)
 	if ev is InputEventScreenTouch or ev is InputEventScreenDrag or ev is InputEventMouseButton or ev is InputEventMouseMotion:
 		get_viewport().set_input_as_handled()  # FUEGO posee su dedo: nunca activa la zona de mirar
 	if ev is InputEventScreenTouch:
@@ -127,7 +131,11 @@ func _fire_input(ev: InputEvent) -> void:
 	elif ev is InputEventMouseMotion and _fire_drag:
 		look_delta += ev.relative
 
+var _dbg := 0
 func _unhandled_input(event: InputEvent) -> void:
+	if _dbg < 30 and (event is InputEventScreenTouch or event is InputEventScreenDrag):
+		_dbg += 1
+		print("[TOUCH-DBG] unhandled: ", event.get_class(), " pressed=", event.pressed if event is InputEventScreenTouch else "-", " pos=", event.position)
 	if event is InputEventScreenTouch:
 		var st := event as InputEventScreenTouch
 		var n := st.position / get_viewport().get_visible_rect().size
@@ -163,19 +171,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			_sprint = mag > 0.95
 
 var _stick_last := 0
-
-func _physics_process(_delta: float) -> void:
-	# anti-drift: si el dedo murió (release consumido por un botón), soltar
-	var now := Time.get_ticks_msec()
-	if _stick_idx != -1 and now - _stick_last > 350:
-		_stick_idx = -1
-		_move = Vector2.ZERO
-		_sprint = false
-		_knob.position = Vector2(68, 68)
-	if _look_idx != -1 and now - _look_last_ms > 700:
-		_look_idx = -1
-
 var _look_last_ms := 0
+
+# releases en _input: SIEMPRE se ven aunque un botón consuma el evento
+# (el timeout de 350ms rompía el sprint sostenido — auditoría B3)
+func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and not event.pressed:
+		if event.index == _stick_idx:
+			_stick_idx = -1
+			_move = Vector2.ZERO
+			_sprint = false
+			_knob.position = Vector2(68, 68)
+		elif event.index == _look_idx:
+			_look_idx = -1
 
 func take_look_delta() -> Vector2:
 	var d := look_delta

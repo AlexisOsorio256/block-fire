@@ -31,6 +31,7 @@ func setup(skin: int) -> void:
 		return
 	rig = scene.instantiate()
 	add_child(rig)
+	_no_cast(rig)
 	anim = rig.find_child("AnimationPlayer", true, false)
 	if anim == null:
 		push_warning("[CHAR] sin AnimationPlayer en " + path)
@@ -44,6 +45,26 @@ func setup(skin: int) -> void:
 	_build_gear(rig, outfit)
 	arm_right = rig.find_child("arm-right", true, false)
 	play("idle")
+	# blob shadow: sombra SIEMPRE limpia en móvil (la direccional jagged queda para el mapa)
+	var blob := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(1.3, 1.3)
+	q.orientation = PlaneMesh.FACE_Y
+	blob.mesh = q
+	var bm := StandardMaterial3D.new()
+	bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bm.albedo_color = Color(0, 0, 0, 0.35)
+	bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	blob.mesh = q
+	blob.material_override = bm
+	blob.position.y = 0.03
+	add_child(blob)
+
+func _no_cast(n: Node) -> void:
+	if n is MeshInstance3D:
+		(n as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for c in n.get_children():
+		_no_cast(c)
 
 # AABB combinado en espacio LOCAL (funciona fuera del árbol — el bug del personaje flotando)
 func _whole_aabb(root: Node) -> AABB:

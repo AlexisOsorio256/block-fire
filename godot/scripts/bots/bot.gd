@@ -98,7 +98,6 @@ func respawn(pos: Vector3) -> void:
 
 func take_damage(amount: float, headshot: bool, from: Vector3) -> void:
 	hp -= amount
-	Audio.play_at("hit", global_position, -6.0)
 	if char_model != null:
 		char_model.hit_flash()
 	if hp <= 0.0:

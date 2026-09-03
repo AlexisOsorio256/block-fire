@@ -93,7 +93,12 @@ func queue_respawn(who: Node, pos: Vector3, delay: float = RESPAWN_DELAY) -> voi
 	})
 	if is_instance_valid(who) and "active" in who:
 		who.set("active", false)
-		who.visible = false
+		# la caída se ve 0.7s (muerte visible), luego se oculta para el respawn
+		var tree := who.get_tree()
+		if tree != null:
+			tree.create_timer(0.7).timeout.connect(func():
+				if is_instance_valid(who):
+					who.visible = false)
 
 func _end_match(won: bool) -> void:
 	if finished:

@@ -82,8 +82,7 @@ func _setup_match() -> void:
 		var bot := Bot.new()
 		bot.name = "Bot_%d" % i
 		add_child(bot)
-		bot.global_position = Arena.SPAWNS[i + 1]
-		bot.target = player
+		bot.setup(player, Arena.SPAWNS[i + 1])
 		bots.append(bot)
 
 	# controles táctiles solo en móvil/touch
@@ -176,7 +175,7 @@ func _build_pause_menu() -> CanvasLayer:
 	sens_row.add_child(sl)
 	var slider := HSlider.new()
 	slider.min_value = 0.3; slider.max_value = 2.0; slider.step = 0.1
-	slider.value = Settings.sens
+	slider.value = Settings.sens_mul
 	slider.custom_minimum_size = Vector2(150, 0)
 	slider.value_changed.connect(_on_sens_changed)
 	sens_row.add_child(slider)
@@ -191,7 +190,7 @@ func _build_pause_menu() -> CanvasLayer:
 	return layer
 
 func _on_sens_changed(v: float) -> void:
-	Settings.sens = v
+	Settings.sens_mul = v
 	Settings.save_settings()
 
 func _score_label_update() -> void:
