@@ -2,40 +2,49 @@
 
 # 🔥 BLOCKFIRE
 
-**FPS blocky arcade — la base web es la referencia funcional; la migración nativa vive en `godot/`.**
+**FPS arcade three.js — en PC (navegador) y Android (WebView nativa).**
 
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 20 kills y ganas. Así de simple.
 
-## 🎮 Dos versiones, un mismo juego
+## 🏗️ Arquitectura definitiva (decidida con evidencia)
 
-| | Web (Three.js) | Godot 4.7 |
+| Capa | Qué es | Dueño |
 |---|---|---|
-| Estado | **Producto vivo** — la referencia | **Migración del núcleo** en curso |
-| Jugable | ✔ completo (multitouch pulido) | ✔ núcleo jugable (third-person) |
-| Cómo | `python3 -m http.server 8931` | `godot godot/` o APK (ver abajo) |
-| Pruebas | `?runTests=1` (18) | selftest headless (16) |
+| `src/` | **BLOCKFIRE RUNTIME** — mini-motor propio con contratos claros (una responsabilidad por sistema, una sola ruta de daño, sin magia) | IA |
+| `index.html` + `style.css` | Presentación y HUD | IA |
+| `tools/webview/` + `tools/build-web.sh` | **Empaquetado Android**: three.js → HTML/JS → APK (aapt2+d8+apksigner sin gradle) | IA |
+| `android/` | Capacitor (producción: plugins, storage persistente, ads futuros) | IA |
+| `assets/` | Samples de audio + texturas (CC0/propios) | IA |
+| `docs/migration/` | Conocimiento preservado: mapa de comportamiento + auditorías | IA |
 
-### Godot (nativo — rama `godot-migration`)
+**Decisión de motor** (probada en Galaxy S22 con capturas y logs): Three.js itera ~5×
+más rápido con IA y con 0 regresiones de escena vs. engine completo; el WebView corre
+estable en hardware real. Godot fue descartado y retirado del repo (la experiencia
+aprendida vive en `docs/migration/`).
+
+### Comandos
 
 ```bash
-# editor
-godot ~/Documentos/BlockFire/godot        # requiere Godot 4.7.x
-# probar desde terminal
-godot --path godot
-# tests headless
-godot --headless --path godot scenes/main.tscn -- --selftest
-# APK Android (debug, firmada con keystore de debug local)
-godot --headless --path godot --export-debug "Android" builds/blockfire-debug.apk
+# web en local
+python3 -m http.server 8931        # → http://localhost:8931  |  ?runTests=1 (tests)
+# empaquetar web
+bash tools/build-web.sh            # → www/
+# APK de prueba rápida (aapt2, sin gradle)
+cd tools/webview && bash build.sh  # → builds/blockfire-webview.apk
+# APK de producción (Capacitor)
+bash tools/build-web.sh && npx cap sync android && cd android && ./gradlew assembleDebug
 ```
 
-Núcleo ya migrado: third-person player con paridad numérica del web (walk 7.2 /
-sprint 8.6 / accel 58 / gravedad -22), 3 armas data-driven con hitscan+recoil+
-tracer+muzzle flash, ruta única de daño/respawn con banners (+100/+150/+200/xN),
-7 bots con NavigationAgent3D y oclusión real, arena con navmesh horneado en
-runtime, HUD completo, controles táctiles con ownership por dedo (drag-fire,
-ADS toggle), audio real con atenuación por distancia. **59.5 FPS (vsync) a
-1080p en una iGPU HD 520.**
+### Hoja de ruta de producción (aprobada)
+
+| Prioridad | Librería | Para qué |
+|---|---|---|
+| **1** | `three-pathfinding` (S) | NavMesh de bots — no más bots trabados en mapas con forma |
+| **2** | `DRACOLoader` (three) | GLTFs de armas/skins comprimidos ~80% |
+| **3** | `@capacitor/preferences` | storage persistente de settings/skins |
+| **4** | `postprocessing` (Bloom/SMAA) | look premium en dispositivos capaces, degradación en modestos |
+| LATER | Rapier.js, AdMob | gatillo: escaleras/vehículos · monetización aprobada |
 
 </div>
 
