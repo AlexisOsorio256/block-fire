@@ -262,3 +262,28 @@ body:not(.playing) #mobile-controls{ display:none !important; }
   #retryBtn{ margin-top:8px; }
 }
 
+
+/* ═══ Duelo de Escuadras ═══ */
+#squad-immunity{ position:fixed; top:14%; left:50%; transform:translateX(-50%); z-index:40;
+  font-size:26px; font-weight:800; color:#8fd7ff; text-shadow:0 2px 8px rgba(0,0,0,.8);
+  display:none; letter-spacing:1px; }
+#squad-immunity.show{ display:block; animation:pop-in .25s ease; }
+#squad-score{ color:#fff; font-weight:800; }
+.shop-panel{ position:fixed; inset:0; z-index:60; background:rgba(10,12,18,.92); display:none;
+  flex-direction:column; align-items:center; justify-content:center; gap:18px; }
+.shop-panel.show{ display:flex; }
+.shop-head{ display:flex; gap:24px; align-items:center; font-size:26px; font-weight:800; color:#ffd166; }
+.shop-head button{ background:#ff5a4a; border:none; color:#fff; font-size:18px; padding:6px 14px; border-radius:8px; cursor:pointer; }
+.shop-grid{ display:flex; gap:16px; }
+.shop-item{ background:#1a1f2b; border:2px solid #2a3040; color:#fff; padding:22px 28px;
+  border-radius:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px; font-size:18px; transition:transform .1s, border-color .1s; }
+.shop-item:hover{ transform:scale(1.06); border-color:#ffd166; }
+.shop-item span{ color:#ffd166; font-weight:700; }
+
+
+/* ═══ Botón ARSENAL (tienda in-match) ═══ */
+#btn-arsenal{ position:fixed; top:12px; right:14px; z-index:35; background:rgba(20,24,33,.78);
+  color:#ffd166; border:2px solid #ffd166; border-radius:10px; font-size:15px; font-weight:800;
+  padding:8px 14px; cursor:pointer; display:none; letter-spacing:.5px; }
+body.playing #btn-arsenal{ display:block; }
+#btn-arsenal:active{ transform:scale(.94); }

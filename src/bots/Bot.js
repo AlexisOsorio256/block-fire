@@ -34,6 +34,7 @@ export class Bot {
 
     // AI state
     this.state = 'wander'; // wander, chase, attack
+    this.team = 'enemy';
     this.target = null;
     this.stateTimer = 0;
     this.wanderDir = new THREE.Vector3((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
@@ -177,6 +178,7 @@ export class Bot {
 
   takeDamage(amount, hitType, attacker) {
     if (!this.isAlive) return false;
+    if (attacker && attacker.team && attacker.team === this.team) return false; // fuego amigo OFF
     this.health -= amount;
     // Hit flinch: short knockback away from the attacker — visible hit confirm
     if (attacker && this.mesh) {
@@ -277,10 +279,12 @@ export class Bot {
     this.shootCooldown = Math.max(0, this.shootCooldown - dt);
     this.strafeTimer -= dt;
 
-    // Find nearest target (player + other bots)
+    // Find nearest target — SOLO el equipo contrario (Duelo de Escuadras)
     let nearest = null;
     let nearestDist = Infinity;
-    const candidates = [player, ...bots].filter(t => t !== this && t.isAlive);
+    const myTeam = this.team || 'enemy';
+    const myTag = (t) => (t === player ? 'ally' : (t.team || 'enemy'));
+    const candidates = [player, ...bots].filter(t => t !== this && t.isAlive && myTag(t) !== this.team);
     for (const c of candidates) {
       const d = this.position.distanceTo(c.position);
       // Check line of sight (simple: no wall between)

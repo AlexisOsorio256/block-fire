@@ -85,6 +85,8 @@ if (params.has('runTests')) {
       game.playerKills = 0;
       game.weaponSystem.fireCooldown = 0;
       game.weaponSystem.ammoInMag = game.weaponSystem.currentWeapon.magazineSize;
+      game.weaponSystem.owned.add('rifle');
+      game.weaponSystem.switchWeapon(1); // rifle: daño de perfil para el test
       let combatResult = null;
       // Deterministic shots: zero spread for the test (spread is random and
       // made this test flaky when flinch pushed the bot).
@@ -111,15 +113,17 @@ if (params.has('runTests')) {
       bot.respawn(botStart);
       game.playerKills = 0;
 
-      // Test 8: an FFA ends when ANY combatant reaches the kill target —
-      // a bot hitting 20 must finish the match as a defeat, exactly once.
+      // Test 8: Duelo de Escuadras — un equipo que llega a 20 kills de equipo
+      // termina la partida. El equipo ENEMIGO al llegar = DERROTA, una vez.
       const winsBefore = localStorage.getItem('bf_wins') || '0';
       game.matchState = 'PLAYING';
       game._resultShown = false;
-      const botA = game.bots[0], botB = game.bots[1];
-      botA.kills = game.killTarget - 1;
+      const botA = game.bots[0], botB = game.bots[1]; // 0-2 aliados, 3+ enemigos
+      const enemyBot = game.bots[3];
+      game.teamScore.enemy = game.killTarget - 1;
       const bBStart = botB.position.clone();
-      game.applyDamage(botB, 999, 'body', botA);
+      const enemyKiller = game.bots[6]; // ENEMIGO_4 (team 'enemy')
+      game.applyDamage(botB, 999, 'body', enemyKiller);
       const endedOk = game.matchState === 'FINISHED'
         && document.getElementById('result-title').textContent === 'DERROTA';
       game.showResult(true); // duplicate call in the same frame must be a no-op
@@ -134,14 +138,16 @@ if (params.has('runTests')) {
       // Test 9: 'next' cycles through all three weapons (KeyE / mobile button)
       game.weaponSystem.isReloading = false;
       game.weaponSystem.fireCooldown = 0;
-      game.weaponSystem.switchWeapon(1); // rifle
+      document.getElementById('btn-arsenal').onclick = () => game.openShop();
+      game.weaponSystem.owned = new Set(['rifle', 'pistol', 'shotgun', 'smg']);
+      game.weaponSystem.switchWeapon(1); // pistol (pos 1)
       game.weaponSystem.switchWeapon('next');
       const w1 = game.weaponSystem.currentWeapon.name;
       game.weaponSystem.switchWeapon('next');
       const w2 = game.weaponSystem.currentWeapon.name;
       game.weaponSystem.switchWeapon('next');
       const w3 = game.weaponSystem.currentWeapon.name;
-      const cycleOk = w1 === 'Pistol' && w2 === 'Shotgun' && w3 === 'Rifle';
+      const cycleOk = w1 === 'Pistol' && w2 === 'Shotgun' && w3 === 'SMG';
       log('9 WEAPON CYCLE NEXT', cycleOk, `${w1} → ${w2} → ${w3}`);
       game.weaponSystem.switchWeapon(1);
 
@@ -268,6 +274,7 @@ if (params.has('runTests')) {
       const inOverlay = document.getElementById('overlay').contains(rb18);
       game.matchState = 'PLAYING';
       game._resultShown = false;
+      game.teamScore.ally = game.killTarget;
       game.playerKills = game.killTarget;
       game.applyDamage(game.bots[6], 999, 'body', game.player);
       const title18 = document.getElementById('result-title').textContent;

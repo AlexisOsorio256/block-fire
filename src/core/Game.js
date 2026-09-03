@@ -91,6 +91,7 @@ export class Game {
     // Weapon
     this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this, this.applyDamage.bind(this));
     this.weaponSystem.playerController = this.playerController;
+    this.weaponData = this.weaponSystem.weaponData; // datos del arsenal (tienda)
 
     // Bots — Duelo de Escuadras: 4v4 (jugador + 3 aliados vs 4 enemigos)
     this.bots = [];
@@ -105,6 +106,10 @@ export class Game {
 
     // Match
     this.matchState = 'LOADING'; // LOADING, COUNTDOWN, PLAYING, FINISHED
+    // ARSENAL: tecla B abre/cierra la tienda en PC (en móvil, botón dedicado)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyB' && this.matchState === 'PLAYING') this.openShop();
+    });
     this.matchTime = 0;
     this.matchDuration = 5 * 60; // 5 minutes
     this.killTarget = 20;
@@ -417,6 +422,10 @@ export class Game {
     this.coins = 9999;
     this.immuneUntil = this.matchTime + 5.0; // 5s de inmunidad al spawn (Free Fire)
     this.hud.showImmunity(5);
+    // Economía: Pistola gratis; el ARSENAL se compra con oro en la partida
+    this.weaponSystem.owned = new Set(['pistol']);
+    this.weaponSystem.switchWeapon(2); // Pistola (índice 2 en el selector)
+    this._shopOpen = false;
     this._resultShown = false; // showResult must fire exactly once per match
     // Rule §4: a restart returns ALL temporal state to clean. Pending respawn
     // timers from the previous match would teleport entities 1.8s in; leftover
@@ -490,10 +499,40 @@ export class Game {
   }
 
   // DamageSystem central
+  // ── ARSENAL (tienda in-match, Duelo de Escuadras) ──
+  openShop() {
+    if (this.shopOpenFlag) { this.hud.closeShop(); this.shopOpenFlag = false; return; }
+    const weapons = this.weaponSystem.weapons.map(k => ({
+      name: this.weaponData[k].name,
+      price: this.weaponData[k].price || 0,
+    }));
+    this.hud.showShop(
+      (i) => this.buyWeapon(i),
+      () => this.coins,
+      weapons
+    );
+    this.shopOpenFlag = true;
+  }
+
+  buyWeapon(i) {
+    const key = this.weaponSystem.weapons[i];
+    const price = this.weaponData[key].price || 0;
+    if (this.weaponSystem.owned.has(key)) { this.hud.closeShop(); return; }
+    if (this.coins < price) { this.audio.play('empty'); return; }
+    this.coins -= price;
+    this.weaponSystem.owned.add(key);
+    this.weaponSystem.switchWeapon(i + 1);
+    this.audio.play('switch');
+    this.hud.refreshCoins(this.coins);
+    this.hud.closeShop();
+  }
+
   applyDamage(target, amount, hitType, attacker) {
     // Once a match is decided, late damage (stray bullets in the same frame)
     // must not change scores or retrigger the result screen.
     if(!target.isAlive || this.matchState === 'FINISHED') return false;
+    // Inmunidad de spawn (Duelo de Escuadras): 5s sin recibir daño
+    if(target === this.player && this.matchTime < this.immuneUntil) return false;
     
     let died = false;
     if(target.isBot){
@@ -516,7 +555,10 @@ export class Game {
     }
 
     if(died){
-      // Score
+      // Score por escuadra: el equipo del atacante suma (jugador y aliados → 'ally')
+      const killerTeam = attacker ? (attacker.isBot ? (attacker.team || 'enemy') : 'ally') : (target.isBot ? 'ally' : 'enemy');
+      this.teamScore[killerTeam] = (this.teamScore[killerTeam] || 0) + 1;
+      this.hud.updateTeamScore(this.teamScore.ally, this.teamScore.enemy);
       if(attacker && !attacker.isBot){
         this.playerKills++;
         this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
@@ -548,12 +590,10 @@ export class Game {
         // FFA the leaderboard race must stay legible, not only your own kills.
         this.hud.showKill(attacker.name || 'BOT', target.isBot ? (target.name || 'BOT') : 'YOU', hitType==='head');
       }
-      // A bot reaching the kill target wins the FFA: the match must end in
-      // defeat here, not keep running until the timer silently decides.
-      const botLeader = target.isBot && attacker && attacker.isBot ? Math.max(attacker.kills, 0) : 0;
-      if(botLeader >= this.killTarget){
+      // Duelo de Escuadras: un equipo que llega a 20 kills de equipo GANA
+      if(this.teamScore.ally >= this.killTarget || this.teamScore.enemy >= this.killTarget){
         this.matchState = 'FINISHED';
-        this.showResult(false);
+        this.showResult(this.teamScore.ally >= this.killTarget);
         return died;
       }
 
@@ -590,11 +630,7 @@ export class Game {
       }, 1800);
       this._pendingRespawns.push(respawnTimer);
 
-      // Check win condition (player reached the target)
-      if(this.playerKills >= this.killTarget){
-        this.matchState = 'FINISHED';
-        this.showResult(true);
-      }
+      // Win por escuadra (el bloque de arriba ya la evalúa)
     }
 
     return died;
@@ -878,19 +914,24 @@ export class Game {
     // XZ-only push-apart, validated against the map (never shove through walls).
     this._separateEntities();
 
-    // Check win (guarded: applyDamage already finishes + shows the result)
-    if(this.matchState === 'PLAYING' && this.playerKills >= this.killTarget){
+    // Check win por escuadra (guarded: applyDamage ya finaliza + muestra resultado)
+    if(this.matchState === 'PLAYING' && (this.teamScore.ally >= this.killTarget || this.teamScore.enemy >= this.killTarget)){
       this.matchState = 'FINISHED';
-      this.showResult(true);
+      this.showResult(this.teamScore.ally >= this.killTarget);
       return;
     }
+
+    this.hud.tickSquad(dt, this.immuneUntil, this.matchTime);
+    if (Input.wasKeyPressedThisFrame === undefined) { /* guard */ }
+
+    // ARSENAL: tecla B (PC). En móvil hay botón dedicado.
 
     // HUD
     const aliveBots = this.bots.filter(b=>b.isAlive).length;
     const botLeader = this.bots.reduce((a,b)=>Math.max(a,b.kills),0);
     this.hud.update({
-      score: `${this.playerKills} - ${botLeader}`,
-      leader: botLeader,
+      score: `${this.teamScore.ally} — ${this.teamScore.enemy}`,
+      leader: Math.max(this.teamScore.ally, this.teamScore.enemy),
       timeLeft,
       health: this.playerController.health,
       ammo: this.weaponSystem.getAmmoText(),

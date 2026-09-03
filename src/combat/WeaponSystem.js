@@ -3,6 +3,7 @@ import * as THREE from '../lib/three.module.js';
 export const WeaponData = {
   rifle: {
     name: 'Rifle',
+    price: 1500,
     damage: 24,
     headshotMul: 2.0,
     fireRate: 0.11, // seconds between shots
@@ -19,7 +20,8 @@ export const WeaponData = {
   },
   pistol: {
     name: 'Pistol',
-    damage: 28,
+    price: 0, // arma inicial: gratis, siempre en el inventario
+
     headshotMul: 2.0,
     fireRate: 0.32,
     magazineSize: 12,
@@ -35,6 +37,7 @@ export const WeaponData = {
   },
   shotgun: {
     name: 'Shotgun',
+    price: 1200,
     damage: 21, // 21x6=126 > 125HP: a bocajarro (todas las postas) es kill de 1 disparo
     headshotMul: 1.5,
     fireRate: 0.72,
@@ -48,6 +51,23 @@ export const WeaponData = {
     bulletSpeed: 0,
     falloffStart: 6, // full damage to 6u, then falls hard to 35% at 22u
     falloffMin: 0.35,
+  },
+  smg: {
+    name: 'SMG',
+    damage: 16,
+    headshotMul: 2.0,
+    fireRate: 0.075,
+    magazineSize: 36,
+    reloadTime: 1.8,
+    spread: 0.018,
+    recoil: 0.4,
+    range: 60,
+    pellets: 1,
+    automatic: true,
+    bulletSpeed: 0,
+    falloffStart: 25,
+    falloffMin: 0.7,
+    price: 1800,
   }
 };
 
@@ -58,9 +78,11 @@ export class WeaponSystem {
     this.audio = audio;
     this.vfx = vfx;
     this.applyDamage = applyDamage;
+    this.weaponData = WeaponData; // el arsenal vive aquí (la tienda lo consulta)
 
-    this.weapons = ['rifle', 'pistol', 'shotgun'];
-    this.currentIndex = 0;
+    this.weapons = ['rifle', 'pistol', 'shotgun', 'smg'];
+    this.currentIndex = 1; // Pistola: arma inicial del Duelo de Escuadras
+    this.owned = new Set(['pistol']); // el resto se desbloquea en la TIENDA
     this.currentWeapon = WeaponData[this.weapons[this.currentIndex]];
     
     this.ammoInMag = this.currentWeapon.magazineSize;
@@ -379,28 +401,38 @@ export class WeaponSystem {
       // gets a wider assist cone; PC gets a subtle one. Bots never assist.
       // Occlusion is still checked afterwards — assist never shoots walls.
       if (usesPlayerAmmo) {
-        const assistAngle = (this._isTouch || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) ? 0.075 : 0.028;
+        // AGRESIVO (filosofía Free Fire): cono ancho + snap completo al pecho.
+        // "Levantar la mira": si la puntería ya pasa por encima del pecho,
+        // el snap va a la CABEZA (la maestría se premia). Solo enemigos
+        // (escuadras: los aliados no reciben asistencia). Nunca atraviesa muros.
+        const coarse = this._isTouch || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        const assistAngle = coarse ? 0.16 : 0.028;
         let bestDot = Math.cos(assistAngle);
         let assistDir = null;
         for (const target of targets) {
           if (target === shooter || !target.isAlive) continue;
+          // escuadras: no asistir sobre aliados
+          if (target.team && shooter.team && target.team === shooter.team) continue;
+          if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
           const th = target.height || 1.65;
           const chest = target.position.clone(); chest.y -= th * 0.38;
+          const head = target.position.clone(); head.y -= th * 0.82;
           const toChest = chest.clone().sub(this.camera.position);
           const dist = toChest.length();
           if (dist > weapon.range) continue;
           toChest.normalize();
           const dot = toChest.dot(direction);
           if (dot > bestDot) {
-            // Only assist toward enemies the player is actually facing
             bestDot = dot;
-            assistDir = toChest;
+            // "Levantar la mira": si el rayo crudo pasa por encima del pecho,
+            // el jugador apunta arriba → el snap sube a la CABEZA (red numbers)
+            const toHead = head.clone().sub(this.camera.position).normalize();
+            assistDir = (direction.dot(toHead) > direction.dot(toChest)) ? toHead : toChest;
           }
         }
         if (assistDir) {
-          // Blend 70% onto the chest — a nudge, not an aimbot: the ray keeps
-          // most of its original direction so spray still requires tracking.
-          direction.lerp(assistDir, 0.7).normalize();
+          if (coarse) direction.copy(assistDir); // snap completo en móvil
+          else direction.lerp(assistDir, 0.7).normalize(); // PC: sutil
         }
       }
 
@@ -550,13 +582,19 @@ export class WeaponSystem {
   // players on the pistol).
   switchWeapon(dir) {
     if (this.isReloading) return;
+    // Duelo de Escuadras: SOLO armas en propiedad (la TIENDA desbloquea el resto)
+    const isOwned = (i) => this.owned.has(this.weapons[i]);
     let idx = this.currentIndex;
     if (dir === 'next') {
-      idx = (idx + 1) % this.weapons.length;
-    } else if (typeof dir === 'number' && dir >= 1 && dir <= 3) {
+      let g = 0;
+      do { idx = (idx + 1) % this.weapons.length; g++; } while (g <= this.weapons.length && !isOwned(idx));
+      if (!isOwned(idx)) return; // el inventario entero sin posesión
+    } else if (typeof dir === 'number' && dir >= 1 && dir <= this.weapons.length) {
+      if (!isOwned(dir - 1)) return; // no comprada: la tienda manda
       idx = dir - 1;
     } else {
       idx = (idx + dir + this.weapons.length) % this.weapons.length;
+      if (!isOwned(idx)) return;
     }
     if (idx === this.currentIndex) return;
     this.currentIndex = idx;

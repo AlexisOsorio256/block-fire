@@ -19,6 +19,69 @@ export class HUD {
     this._hitTimer = null;
   }
 
+  // ── Duelo de Escuadras ──
+  showImmunity(seconds) {
+    this._immuneT = seconds;
+    let el = document.getElementById('squad-immunity');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'squad-immunity';
+      document.getElementById('hud').appendChild(el);
+    }
+    el.classList.add('show');
+  }
+
+  updateTeamScore(ally, enemy) {
+    const el = document.getElementById('squad-score');
+    if (el) el.textContent = `${ally} — ${enemy}`;
+  }
+
+  showShop(onBuy, getCoins, weapons) {
+    let panel = document.getElementById('shop-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'shop-panel';
+      panel.innerHTML = `
+        <div class="shop-head"><span>ARSENAL</span><span id="shop-coins"></span><button id="shop-close">✕</button></div>
+        <div class="shop-grid"></div>`;
+      document.getElementById('hud').appendChild(panel);
+      panel.querySelector('#shop-close').onclick = () => this.closeShop();
+    }
+    panel.classList.add('show');
+    const grid = panel.querySelector('.shop-grid');
+    grid.innerHTML = '';
+    weapons.forEach((w, i) => {
+      const card = document.createElement('button');
+      card.className = 'shop-item';
+      card.innerHTML = `<b>${w.name}</b><span>${w.price} oro</span>`;
+      card.onclick = () => { onBuy(i); this._refreshCoins(); };
+      grid.appendChild(card);
+    });
+    this._refreshCoins();
+  }
+
+  refreshCoins(coins) {
+    const el = document.getElementById('shop-coins');
+    if (el) el.textContent = '🪙 ' + coins;
+  }
+
+  closeShop() {
+    const panel = document.getElementById('shop-panel');
+    if (panel) panel.classList.remove('show');
+  }
+
+  tickSquad(dt, immuneUntil, matchTime) {
+    const el = document.getElementById('squad-immunity');
+    if (!el) return;
+    const left = Math.max(0, immuneUntil - matchTime);
+    if (left > 0) {
+      el.textContent = '🛡️ INMUNIDAD ' + Math.ceil(left) + 's';
+      el.classList.add('show');
+    } else {
+      el.classList.remove('show');
+    }
+  }
+
   update({ score, timeLeft, health, ammo, kills, deaths, fps, pos, botCount, weaponName, leader }) {
     if (this.leaderEl) this.leaderEl.textContent = leader !== undefined ? leader : (this.leaderEl.textContent || '0');
     if (this.timerEl) {
