@@ -92,12 +92,14 @@ export class Game {
     this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this, this.applyDamage.bind(this));
     this.weaponSystem.playerController = this.playerController;
 
-    // Bots
+    // Bots — Duelo de Escuadras: 4v4 (jugador + 3 aliados vs 4 enemigos)
     this.bots = [];
     for(let i=0;i<7;i++){
       const pos = this.map.getRandomSpawn(this.player.position);
       const bot = new Bot(i, this.scene, this.map, pos);
-      bot.name = `BOT_${i+1}`;
+      bot.name = (i < 3 ? `ALIADO_${i+1}` : `ENEMIGO_${i-2}`);
+      bot.team = (i < 3 ? 'ally' : 'enemy');
+      bot.colorStripe = (i < 3 ? 0x2ee86e : 0xff5a4a);
       this.bots.push(bot);
     }
 
@@ -106,6 +108,11 @@ export class Game {
     this.matchTime = 0;
     this.matchDuration = 5 * 60; // 5 minutes
     this.killTarget = 20;
+    // Duelo de Escuadras: equipos, economía de prueba y inmunidad de spawn
+    this.gameMode = 'squad';
+    this.teamScore = { ally: 0, enemy: 0 };
+    this.coins = 9999;
+    this.immuneUntil = 0;
     this.playerKills = 0;
     this.playerDeaths = 0;
     this._resultShown = false;
@@ -405,6 +412,11 @@ export class Game {
     this.matchTime = 0;
     this.playerKills = 0;
     this.playerDeaths = 0;
+    this.teamScore.ally = 0;
+    this.teamScore.enemy = 0;
+    this.coins = 9999;
+    this.immuneUntil = this.matchTime + 5.0; // 5s de inmunidad al spawn (Free Fire)
+    this.hud.showImmunity(5);
     this._resultShown = false; // showResult must fire exactly once per match
     // Rule §4: a restart returns ALL temporal state to clean. Pending respawn
     // timers from the previous match would teleport entities 1.8s in; leftover
