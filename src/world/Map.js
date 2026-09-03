@@ -30,11 +30,30 @@ export class Map {
     this._matWall = loadTex('wall.png', 24, 1, 0x5a6b80);
     this._matCover = loadTex('cover.png', 1.6, 1.6, 0xc9b8a0);
     this._matPlatform = loadTex('platform.png', 2.5, 1.5, 0x9fb06a);
+    // Duelo de Escuadras: identidad de base (suelo/pared tintados por equipo)
+    this._matAllyFloor = loadTex('ground.png', 6, 2, 0x2f6b5a);
+    this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x7a4038);
+    this._matAllyWall = loadTex('wall.png', 4, 1, 0x2f6b5a);
+    this._matEnemyWall = loadTex('wall.png', 4, 1, 0x7a4038);
+    this._matWood = loadTex('cover.png', 2, 1, 0x8a6a3a);
+    // Duelo de Escuadras: colores de equipo (aliado verde-azul, enemigo rojo)
+    this._matAllyFloor = loadTex('ground.png', 6, 2, 0x2b4a52);
+    this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x52303a);
+    this._matAllyWall = loadTex('wall.png', 4, 1, 0x2f6b5a);
+    this._matEnemyWall = loadTex('wall.png', 4, 1, 0x7a4038);
+    this._matWood = loadTex('cover.png', 2, 1, 0x8a6a3a);
 
     this._createGround();
     this._createWalls();
     this._createCover();
     this._createSpawns();
+    // spawns fijos de escuadra: cada equipo sale de SU base (sur vs norte)
+    this.squadSpawns = {
+      ally:  [new THREE.Vector3(-4, 1.6, this.size*0.42), new THREE.Vector3(0, 1.6, this.size*0.44),
+              new THREE.Vector3(4, 1.6, this.size*0.42),  new THREE.Vector3(-1, 1.6, this.size*0.36)],
+      enemy: [new THREE.Vector3(-4, 1.6, -this.size*0.42), new THREE.Vector3(0, 1.6, -this.size*0.44),
+              new THREE.Vector3(4, 1.6, -this.size*0.42), new THREE.Vector3(1, 1.6, -this.size*0.36)],
+    };
   }
 
   _createGround() {
@@ -49,9 +68,11 @@ export class Map {
   // material: 'wall' | 'cover' | 'platform' (shared textured material)
   _createBox(x, y, z, w, h, d, material = 'cover') {
     const geo = new THREE.BoxGeometry(w, h, d);
-    const mat = material === 'wall' ? this._matWall
-      : material === 'platform' ? this._matPlatform
-      : this._matCover;
+    const mat = {
+      wall: this._matWall, platform: this._matPlatform, cover: this._matCover,
+      allyFloor: this._matAllyFloor, enemyFloor: this._matEnemyFloor,
+      allyWall: this._matAllyWall, enemyWall: this._matEnemyWall, wood: this._matWood,
+    }[material] || this._matCover;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y + h/2, z);
     mesh.castShadow = true;
@@ -298,5 +319,49 @@ export class Map {
       }
     }
     return closest;
+  }
+
+
+  // ═══ ARENA CLASH SQUAD: dos bases espejo + encuentro central ═══
+  // (Duelo de Escuadras — inspiración Free Fire: spawns opuestos por equipo,
+  //  lane central de encuentro y flancos con cobertura alternada.)
+  _buildClashSquad() {
+    const s = this.size;
+    const add = (x, z, w, h, d, mat) => this._createBox(x, 0, z, w, h, d, mat);
+
+    // BASE ALIADA (Sur, z>0): suelo pintado, casas refugio, muros bajos
+    add(0, s*0.40, 12, 0.12, s*0.34, 'allyFloor');
+    add(-s*0.24, s*0.30, 6, 2.6, 4, 'allyWall');
+    add(s*0.24, s*0.30, 6, 2.6, 4, 'allyWall');
+    add(-s*0.13, this.size*0.36, 5, 1.2, 1.4, 'wood');
+    add(s*0.13, this.size*0.36, 5, 1.2, 1.4, 'wood');
+    add(0, s*0.30, 1.4, 1.1, 6, 'allyWall');
+
+    // BASE ENEMIGA (Norte) — espejo exacto
+    add(0, -s*0.40, 12, 0.12, s*0.34, 'enemyFloor');
+    add(-s*0.24, -s*0.30, 6, 2.6, 4, 'enemyWall');
+    add(s*0.24, -s*0.30, 6, 2.6, 4, 'enemyWall');
+    add(-s*0.12, -this.size*0.36, 5, 1.2, 1.4, 'wood');
+    add(s*0.12, -this.size*0.36, 5, 1.2, 1.4, 'wood');
+    add(0, -s*0.30, 1.4, 1.1, 6, 'enemyWall');
+
+    // CENTRO: casa con dos paredes + coberturas cruzadas
+    add(-4, 0, 1.2, 2.6, 7, 'wall');
+    add(4, 0, 1.2, 2.6, 7, 'wall');
+    add(0, -3.2, 9, 2.6, 1.2, 'wall');
+    add(-6.5, 0, 3.2, 1.2, 1.2, 'wood');
+    add(6.5, 0, -3.2, 1.2, 1.2, 'wood');
+
+    // LANES laterales (flanqueo) con coberturas alternadas
+    for (const side of [-1, 1]) {
+      add(side * s*0.34, s*0.12, 2.2, 1.5, 4.5, 'wood');
+      add(side * s*0.26, -s*0.12, 2.4, 2.2, 3, 'cover');
+      add(side * s*0.12, s*0.16, 2.6, 1.2, 1.2, 'wood');
+      add(side * s*0.18, -s*0.26, 3, 1.6, 1.6, 'cover');
+    }
+
+    // PROPS: contenedores industriales (identidad, no graybox)
+    add(-s*0.16, -s*0.2, 2.6, 2.2, 2.6, 'cover');
+    add(s*0.16, s*0.2, 2.6, 1.4, 2.6, 'enemyWall');
   }
 }

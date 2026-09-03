@@ -411,8 +411,8 @@ export class WeaponSystem {
         let assistDir = null;
         for (const target of targets) {
           if (target === shooter || !target.isAlive) continue;
-          // escuadras: no asistir sobre aliados
-          if (target.team && shooter.team && target.team === shooter.team) continue;
+          // escuadras: no asistir sobre ALIADOS (target.team === 'ally' = tu escuadra)
+          if (target.isBot && (target.team || 'enemy') === 'ally') continue;
           if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
           const th = target.height || 1.65;
           const chest = target.position.clone(); chest.y -= th * 0.38;

@@ -7,6 +7,11 @@ import { Game } from './core/Game.js';
 let game;
 try {
   game = new Game();
+  // ARSENAL + PAUSA: botones del flujo REAL (no en tests)
+  const arsenalBtn = document.getElementById('btn-arsenal');
+  if (arsenalBtn) arsenalBtn.addEventListener('click', () => game.openShop());
+  const pauseBtn = document.getElementById('btn-pause');
+  if (pauseBtn) pauseBtn.addEventListener('click', () => game.abandonMatch());
 } catch(e){
   console.error('Game init failed', e);
   document.body.insertAdjacentHTML('beforeend', `<div style="position:fixed;top:40px;left:0;background:#f00;color:#fff;padding:4px;z-index:9999;font:12px monospace">GAME ERROR: ${e.message}</div>`);
@@ -138,7 +143,6 @@ if (params.has('runTests')) {
       // Test 9: 'next' cycles through all three weapons (KeyE / mobile button)
       game.weaponSystem.isReloading = false;
       game.weaponSystem.fireCooldown = 0;
-      document.getElementById('btn-arsenal').onclick = () => game.openShop();
       game.weaponSystem.owned = new Set(['rifle', 'pistol', 'shotgun', 'smg']);
       game.weaponSystem.switchWeapon(1); // pistol (pos 1)
       game.weaponSystem.switchWeapon('next');

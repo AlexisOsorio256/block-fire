@@ -440,14 +440,15 @@ export class Game {
     this._hitstop = 0;
     this._shake = 0;
     this.hitFlash = 0;
-    // Reset player and bots
-    const playerSpawn = this.map.getRandomSpawn();
-    this.playerController.respawn(playerSpawn);
+    // Reset por escuadra: cada equipo sale de SU base (jugador Sur, enemigos Norte)
+    const squadSpawns = this.map.squadSpawns || { ally: [this.map.getRandomSpawn()], enemy: [this.map.getRandomSpawn()] };
+    this.playerController.respawn(squadSpawns.ally[0]);
     this.playerController.health = this.playerController.maxHealth;
     this.hud.update({ health: this.playerController.maxHealth, ammo: this.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: '0 - 0', timeLeft: this.matchDuration, fps: 60, pos: this.player.position, botCount: this.bots.length });
     
+    let allyIdx = 1, enemyIdx = 0;
     for(const bot of this.bots){
-      const pos = this.map.getRandomSpawn(this.player.position);
+      const pos = (bot.team === 'ally') ? squadSpawns.ally[allyIdx++ % 4] : squadSpawns.enemy[enemyIdx++ % 4];
       bot.respawn(pos);
       bot.kills = 0;
       bot.deaths = 0;
