@@ -124,7 +124,10 @@ func _prop_crate(pos: Vector3, size: Vector3, mat: StandardMaterial3D) -> void:
 	sun.light_energy = 1.15
 	sun.light_color = Color(1.0, 0.96, 0.9)
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 40.0
+	sun.directional_shadow_max_distance = 30.0
+	sun.shadow_bias = 0.12       # anti-acné (sombra jagged)
+	sun.shadow_normal_bias = 2.0
+	sun.shadow_blur = 1.0
 	add_child(sun)
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()

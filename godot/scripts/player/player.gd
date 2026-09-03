@@ -204,8 +204,9 @@ func _move(delta: float) -> void:
 
 	# crouch: colisión + ojo animados (parity: crouchBlend)
 	_crouch_blend = move_toward(_crouch_blend, 1.0 if crouching else 0.0, delta * 6.0)
-	collision.shape.height = lerpf(BODY_H, CROUCH_H, _crouch_blend)
-	collision.position.y = 0.0
+	var h := lerpf(BODY_H, CROUCH_H, _crouch_blend)
+	collision.shape.height = h
+	collision.position.y = h * 0.5  # cápsula centrada: pies EN el suelo (bug flotación)
 	head.position.y = lerpf(EYE_H, CROUCH_EYE, _crouch_blend)
 
 func _animate(delta: float) -> void:

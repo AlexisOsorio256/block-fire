@@ -48,16 +48,18 @@ func _build_ui() -> void:
 	_base.offset_top = -280; _base.offset_bottom = -60
 	_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_base.draw.connect(func():
-		_base.draw_circle(Vector2(110, 110), 110, Color(1, 1, 1, 0.14))
-		_base.draw_circle(Vector2(110, 110), 96, Color(1, 1, 1, 0.08)))
+		_base.draw_circle(Vector2(110, 110), 110, Color(0.05, 0.06, 0.09, 0.30))
+		_base.draw_circle(Vector2(110, 110), 96, Color(0.05, 0.06, 0.09, 0.18))
+		_base.draw_arc(Vector2(110, 110), 103, 0, TAU, 48, Color(1, 1, 1, 0.5), 3.0))
 	root.add_child(_base)
 	_knob = Control.new()
 	_knob.custom_minimum_size = Vector2(84, 84)
 	_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_knob.position = Vector2(108, 168)
+	_knob.position = Vector2(68, 68)  # hijo de la base: centro exacto
 	_knob.draw.connect(func():
-		_knob.draw_circle(Vector2(42, 42), 42, Color(1, 1, 1, 0.4)))
-	root.add_child(_knob)
+		_knob.draw_circle(Vector2(42, 42), 40, Color(0.92, 0.94, 0.98, 0.75))
+		_knob.draw_arc(Vector2(42, 42), 40, 0, TAU, 40, Color(0.08, 0.09, 0.12, 0.9), 4.0))
+	_base.add_child(_knob)
 
 	# FUEGO — grande, rojo, con drag-to-aim
 	var fire := _button("FUEGO", 160, Color(1.0, 0.35, 0.3, 0.85))
@@ -133,8 +135,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if n.x < 0.42 and n.y > 0.4 and _stick_idx == -1:
 				_stick_idx = event.index
 				_stick_origin = event.position
+				_stick_last = Time.get_ticks_msec()
 			elif n.x >= 0.42 and _look_idx == -1 and _fire_held == false:
 				_look_idx = event.index
+				_look_last_ms = Time.get_ticks_msec()
 		else:
 			if event.index == _stick_idx:
 				_stick_idx = -1
@@ -145,16 +149,33 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if event.index == _look_idx:
 			look_delta += event.relative
+			_look_last_ms = Time.get_ticks_msec()
 		elif event.index == _stick_idx:
+			_stick_last = Time.get_ticks_msec()
 			var dr := event as InputEventScreenDrag
 			var d := (dr.position - _stick_origin).limit_length(STICK_RADIUS)
-			_knob.position = Vector2(108, 168) + d - Vector2(42, 42)
+			_knob.position = Vector2(68, 68) + d
 			var mag := d.length() / STICK_RADIUS
 			if mag > 0.001:
 				_move = d.normalized() * pow(mag, 1.45)
 			else:
 				_move = Vector2.ZERO
 			_sprint = mag > 0.95
+
+var _stick_last := 0
+
+func _physics_process(_delta: float) -> void:
+	# anti-drift: si el dedo murió (release consumido por un botón), soltar
+	var now := Time.get_ticks_msec()
+	if _stick_idx != -1 and now - _stick_last > 350:
+		_stick_idx = -1
+		_move = Vector2.ZERO
+		_sprint = false
+		_knob.position = Vector2(68, 68)
+	if _look_idx != -1 and now - _look_last_ms > 700:
+		_look_idx = -1
+
+var _look_last_ms := 0
 
 func take_look_delta() -> Vector2:
 	var d := look_delta

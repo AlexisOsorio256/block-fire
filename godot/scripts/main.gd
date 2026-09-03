@@ -93,6 +93,7 @@ func _setup_match() -> void:
 		add_child(touch)
 		player.input_layer = touch
 		_check_orientation()
+		_add_settings_button()
 
 	# fin de partida: resultado 3s → volver al lobby limpio
 	Game.match_over.connect(func(_won):
@@ -114,6 +115,26 @@ func _process(_delta: float) -> void:
 	_score_label_update()
 	_fps_probe_tick()
 	_internal_shot(_delta)
+
+func _add_settings_button() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 15
+	var b := Button.new()
+	b.text = "⚙"
+	b.add_theme_font_size_override("font_size", 30)
+	b.anchor_left = 0.0; b.anchor_top = 0.0
+	b.offset_left = 20; b.offset_top = 14
+	b.offset_right = 76; b.offset_bottom = 66
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.11, 0.15, 0.7)
+	sb.set_corner_radius_all(12)
+	b.add_theme_stylebox_override("normal", sb)
+	b.pressed.connect(func():
+		_toggle_pause()
+		# pausa muestra el menú: el root del pause_menu
+		pause_menu.get_child(0).visible = true)
+	layer.add_child(b)
+	add_child(layer)
 
 func _toggle_pause() -> void:
 	var paused := not get_tree().paused

@@ -68,9 +68,10 @@ func _ready() -> void:
 	root.add_child(vignette)
 
 	hp_bar = ProgressBar.new()
-	hp_bar.anchor_top = 0.92; hp_bar.anchor_bottom = 0.92
-	hp_bar.anchor_left = 0.02; hp_bar.anchor_right = 0.2
-	hp_bar.offset_top = -30; hp_bar.offset_bottom = -8
+	hp_bar.anchor_top = 0.0; hp_bar.anchor_bottom = 0.0
+	hp_bar.anchor_left = 0.0; hp_bar.anchor_right = 0.0
+	hp_bar.offset_left = 20; hp_bar.offset_right = 340
+	hp_bar.offset_top = 84; hp_bar.offset_bottom = 108
 	hp_bar.show_percentage = false
 	hp_bar.modulate = Color(1, 1, 1, 0.95)
 	# identidad: fondo oscuro + relleno que va de verde a rojo con la vida
@@ -83,15 +84,15 @@ func _ready() -> void:
 	fill.set_corner_radius_all(6)
 	hp_bar.add_theme_stylebox_override("fill", fill)
 	root.add_child(hp_bar)
-	hp_label = _mk_label(root, 0b0101, Vector2(10, -28), 20, Color.WHITE)
+	hp_label = _mk_label(root, 0b0101, Vector2(22, 52), 26, Color.WHITE)
 
-	ammo_label = _mk_label(root, 0b0110, Vector2(-260, -40), 26, Color(1, 1, 1, 0.95))
+	ammo_label = _mk_label(root, 0b0110, Vector2(-300, 64), 34, Color(1, 1, 1, 0.97))
 	ammo_label.anchor_left = 1.0; ammo_label.anchor_right = 1.0
-	ammo_label.offset_left = -260; ammo_label.offset_right = -20
+	ammo_label.offset_left = -300; ammo_label.offset_right = -20
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ammo_label.anchor_top = 0.94; ammo_label.anchor_bottom = 0.94
+	ammo_label.anchor_top = 0.0; ammo_label.anchor_bottom = 0.0
 
-	score_label = _mk_label(root, 0b0100, Vector2(-120, 8), 22, Color(1, 1, 1, 0.9))
+	score_label = _mk_label(root, 0b0100, Vector2(-340, 8), 52, Color(1, 1, 1, 0.97))
 	score_label.anchor_left = 0.5; score_label.anchor_right = 0.5
 
 	banner_label = _mk_label(root, 0b0100, Vector2(-260, 90), 30, Color(1.0, 0.85, 0.4))
@@ -104,8 +105,8 @@ func _ready() -> void:
 
 	kill_feed = VBoxContainer.new()
 	kill_feed.anchor_left = 1.0; kill_feed.anchor_right = 1.0
-	kill_feed.offset_left = -320; kill_feed.offset_right = -20
-	kill_feed.offset_top = 60
+	kill_feed.offset_left = -340; kill_feed.offset_right = -20
+	kill_feed.offset_top = 110
 	root.add_child(kill_feed)
 
 	hitmarker = ColorRect.new()
@@ -150,11 +151,11 @@ func bind_player(p: Player, w: WeaponSystem) -> void:
 		ammo_label.text = ("RECARGANDO" if w.reloading else "%d / %d" % [m, r]))
 	w.hitmarker.connect(flash_hitmarker)
 	ammo_label.text = "%d / %d" % [w.mag, w.reserve]
-	weapon_name_label = _mk_label(kill_feed.get_parent(), 0b0110, Vector2(-260, -76), 18, Color(1, 0.85, 0.4, 0.9))
+	weapon_name_label = _mk_label(kill_feed.get_parent(), 0b0110, Vector2(-300, 30), 22, Color(1, 0.85, 0.4, 0.95))
 	weapon_name_label.anchor_left = 1.0; weapon_name_label.anchor_right = 1.0
-	weapon_name_label.offset_left = -260; weapon_name_label.offset_right = -20
+	weapon_name_label.offset_left = -300; weapon_name_label.offset_right = -20
 	weapon_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	weapon_name_label.anchor_top = 0.94; weapon_name_label.anchor_bottom = 0.94
+	weapon_name_label.anchor_top = 0.0; weapon_name_label.anchor_bottom = 0.0
 	weapon_name_label.text = w.WEAPONS[w.current]["name"].to_upper()
 	w.ammo_changed.connect(func(_m: int, _r: int):
 		weapon_name_label.text = w.WEAPONS[w.current]["name"].to_upper())
