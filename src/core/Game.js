@@ -502,6 +502,12 @@ export class Game {
     // The gameplay HUD + touch controls only exist DURING a match: without
     // this, mobile controls and health/ammo chips bleed through the lobby.
     document.body.classList.add('playing');
+    // Reset squad-specific HUD (round score, immunity, shop) so FFA doesn't
+    // inherit stale elements from a prior squad match.
+    const ss = document.getElementById('squad-score');
+    if (ss) ss.classList.remove('show');
+    this.hud.closeShop();
+    this.shopOpenFlag = false;
     // El pedestal del héroe es decorado del lobby: en partida confundía
     // (un "noveno" soldado dorado en medio de la arena).
     if (this._lobbyGroup) this._lobbyGroup.visible = false;
