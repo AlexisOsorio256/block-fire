@@ -73,6 +73,7 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
 | Saltar / Recargar | Espacio / R | Botones |
 | Cambiar arma | 1-2-3 · Q/E cicla | Botón **ARMA** cicla |
 | Ajustes en partida | — | Botón ⚙ (arriba-izquierda) |
+| Abandonar partida | Botón **ABANDONAR** | Botón **ABANDONAR** |
 
 - **Multitouch real**: mueve y mira a la vez; dispara con un dedo y mira con
   otro; nada se pisa ni queda pegado.

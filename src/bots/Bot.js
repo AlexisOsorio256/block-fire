@@ -323,7 +323,7 @@ export class Bot {
     let nearest = null;
     let nearestDist = Infinity;
     const myTeam = this.team || 'enemy';
-    const myTag = (t) => (t === player ? 'ally' : (t.team || 'enemy'));
+    const myTag = (t) => (t.team || (t === player ? 'ally' : 'enemy'));
     const candidates = [player, ...bots].filter(t => t !== this && t.isAlive && myTag(t) !== this.team);
     for (const c of candidates) {
       const d = this.position.distanceTo(c.position);

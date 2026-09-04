@@ -22,6 +22,7 @@
 
   <!-- HUD mínimo -->
   <button id="btn-arsenal" aria-label="Arsenal">🛒 ARSENAL</button>
+  <button id="btn-pause" aria-label="Abandonar partida">ABANDONAR</button>
   <div id="hud">
     <div id="hud-top">
       <div id="squad-score">
@@ -54,10 +55,6 @@
           <span class="bp-title">FASE DE COMPRA</span>
           <span id="bp-coins">🪙 1000</span>
           <div id="bp-count"><b id="bp-countdown">15</b><i>s</i></div>
-        </div>
-        <div class="bp-tabs">
-          <button id="bp-tab-weapons" class="on">ARMAS</button>
-          <button id="bp-tab-skins">SKINS</button>
         </div>
         <div id="bp-grid" class="bp-grid"></div>
         <p class="bp-foot">GANA EL PRIMERO EN LLEGAR A <b>4 RONDAS</b> · las rondas se ganan eliminando al equipo rival</p>
@@ -150,6 +147,10 @@
           <b>TODOS CONTRA TODOS</b>
           <label>8 JUGADORES · 20 KILLS</label>
         </button>
+      </div>
+      <div id="lobby-skins-wrap">
+        <span class="ls-label">SKINS DE ARMAS</span>
+        <div id="lobby-skins"></div>
       </div>
       <div id="lobby-stats"></div>
       <button id="playBtn">JUGAR</button>

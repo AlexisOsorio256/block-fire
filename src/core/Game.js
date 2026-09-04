@@ -81,7 +81,8 @@ export class Game {
       isAlive: true,
       isBot: false,
       mesh: null,
-      name: 'YOU'
+      name: 'YOU',
+      team: this.gameMode === 'squad' ? 'ally' : 'ffa_player'
     };
     this.playerController = new PlayerController(this.player, this.input, this.camera, this.scene, this.map);
     this.playerController.audio = this.audio; // for land/jump feedback sounds
@@ -95,10 +96,12 @@ export class Game {
     this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audio, this, this.applyDamage.bind(this));
     this.weaponSystem.playerController = this.playerController;
     this.weaponData = this.weaponSystem.weaponData; // datos del arsenal (tienda)
-    // Skins: data + aplicar las compradas al viewmodel (import diferido)
+    // Skins: data + aplicar la skin global del lobby a todo el arsenal
     import('../combat/WeaponSystem.js').then(({ WeaponSkins }) => {
       this.skinsFor = WeaponSkins;
-      for (const [wKey, sKey] of Object.entries(this.skins)) this.weaponSystem.applySkin(wKey, sKey);
+      if (!WeaponSkins[this.globalSkin]) this.globalSkin = 'none';
+      for (const wKey of this.weaponSystem.weapons) this.weaponSystem.applySkin(wKey, this.globalSkin);
+      this._renderLobbySkins();
     });
 
     // Bots — Duelo de Escuadras: 4v4 (jugador + 3 aliados vs 4 enemigos)
@@ -153,10 +156,13 @@ export class Game {
     this.immuneUntil = 0;
     this._roundEndTime = 0;
     this._combatStarted = false;
-    // SKINS de armas compradas (persistente en este dispositivo)
-    this.skins = {};
-    this.skinsOwned = new Set();
-    try { this.skins = JSON.parse(localStorage.getItem('bf_skins') || '{}'); } catch(e) { this.skins = {}; }
+    // SKIN global del arsenal (loadout de lobby, gratis, persistente).
+    // Decisión de producto: las skins se eligen en el LOBBY, no en partida.
+    this.globalSkin = 'none';
+    try {
+      const gs = localStorage.getItem('bf_skin_global') || 'none';
+      if (gs) this.globalSkin = gs;
+    } catch(e) {}
     this.playerKills = 0;
     this.playerDeaths = 0;
     this._resultShown = false;
@@ -301,6 +307,10 @@ export class Game {
         localStorage.setItem('bf_mode', this.gameMode);
         refreshModeUI();
         this.audio.play('ui');
+        // El mapa, los equipos y los tintes se construyen una sola vez al
+        // arrancar para este modo: recargar es el único reinicio limpio
+        // (regla §4) en vez de jugar FFA con arena y equipos de escuadras.
+        location.reload();
       });
     });
     refreshModeUI();
@@ -474,6 +484,7 @@ export class Game {
       } catch(e){ /* storage full/blocked: lobby stats just stay stale */ }
       showLobbyStats();
       document.body.classList.remove('playing'); // back to lobby: hide gameplay HUD/touch controls
+      if (this._lobbyGroup) this._lobbyGroup.visible = true; // vuelve el héroe tras la partida
       resultBlock.classList.remove('hidden');
       titleBlock.classList.add('hidden');
       overlay.classList.remove('hidden');
@@ -481,10 +492,19 @@ export class Game {
     };
   }
 
+  // ABANDONAR (regla: sin pausa genérica): salir de la partida es recargar —
+  // el reinicio más limpio posible, todo el estado temporal muere (regla §4).
+  abandonMatch() {
+    location.reload();
+  }
+
   startMatch() {
     // The gameplay HUD + touch controls only exist DURING a match: without
     // this, mobile controls and health/ammo chips bleed through the lobby.
     document.body.classList.add('playing');
+    // El pedestal del héroe es decorado del lobby: en partida confundía
+    // (un "noveno" soldado dorado en medio de la arena).
+    if (this._lobbyGroup) this._lobbyGroup.visible = false;
     this.matchState = 'PLAYING';
     this.matchTime = 0;
     this.playerKills = 0;
@@ -494,6 +514,7 @@ export class Game {
     if (this.gameMode === 'squad') {
       // ── CLASH SQUAD: mejor-de-7, primero a 4 rondas (reglas Free Fire) ──
       this.round = 1;
+      this.player.team = 'ally'; // sin esto el fuego amigo no aplica al jugador
       this.roundWins = { ally: 0, enemy: 0 };
       this.coins = 1000;               // oro inicial (arrastra entre rondas)
       this.weaponSystem.owned = new Set(['pistol']);
@@ -504,6 +525,7 @@ export class Game {
     }
     // ── FFA (Todos contra Todos): 20 kills, respawns, 5 minutos ──
     this.phase = 'ffa';
+    this.player.team = 'ffa_player'; // equipo único: todos son enemigos
     this.teamScore.ally = 0;
     this.teamScore.enemy = 0;
     this.coins = 0;
@@ -520,6 +542,7 @@ export class Game {
       bot.respawn(this.map.getRandomSpawn(this.player.position));
       bot.kills = 0;
       bot.deaths = 0;
+      bot.immuneUntil = this.matchTime + 5.0; // mismo escudo que el jugador
       bot.setWeapon('rifle');
     }
     this.weaponSystem.ammoInMag = this.weaponSystem.currentWeapon.magazineSize;
@@ -532,6 +555,10 @@ export class Game {
   _resetTemporalState() {
     for (const t of this._pendingRespawns) clearTimeout(t);
     this._pendingRespawns.length = 0;
+    this.shopOpenFlag = false;
+    this._streakCount = 0;
+    this._lastKillAt = 0;
+    if (this.hud && this.hud.killfeedEl) this.hud.killfeedEl.innerHTML = '';
     const dOv = document.getElementById('death-overlay');
     if (dOv) dOv.classList.remove('show');
     this.weaponSystem.fireCooldown = 0;
@@ -539,7 +566,6 @@ export class Game {
     this._hitstop = 0;
     this._shake = 0;
     this.hitFlash = 0;
-    this._streakCount = 0;
   }
 
   // ═══ CLASH SQUAD — RONDAS (reglas Free Fire: BO7, compra antes de ronda,
@@ -591,11 +617,20 @@ export class Game {
     this.phaseTime = this.ROUND_TIME;
     this._combatStarted = true;
     this.hud.closeShop();
+    this.shopOpenFlag = false;
+    // Defensa en profundidad (B5): si la fase de compra dejó un equipo a cero,
+    // cerrar la ronda de inmediato en vez de jugar 75s contra un mapa vacío.
     this.hud.showRoundBanner('¡A LUCHAR!', `RONDA ${this.round}`, '#ffd23f');
     // Inmunidad corta al chocar (3s), y DISPARAR la rompe (regla Free Fire)
     this.immuneUntil = this.matchTime + 3.0;
     for (const b of this.bots) b.immuneUntil = this.matchTime + 3.0;
     this.hud.showImmunity(3);
+    const allyAlive = (this.player.isAlive ? 1 : 0) + this.bots.filter(b => b.team === 'ally' && b.isAlive).length;
+    const enemyAlive = this.bots.filter(b => b.team === 'enemy' && b.isAlive).length;
+    if (this.gameMode === 'squad' && (allyAlive === 0 || enemyAlive === 0)) {
+      this._endRound(enemyAlive === 0 ? 'ally' : 'enemy');
+      return;
+    }
   }
 
   // Fin de ronda: banner + oro → siguiente ronda o fin del duelo
@@ -603,6 +638,7 @@ export class Game {
     if (this.phase === 'roundEnd') return;
     this.phase = 'roundEnd';
     this.hud.closeShop();
+    this.shopOpenFlag = false;
     if (winner === 'ally') {
       this.roundWins.ally++;
       this.coins += 400;
@@ -667,7 +703,7 @@ export class Game {
     let rel = toAtk - facing;
     while (rel > Math.PI) rel -= Math.PI * 2;
     while (rel < -Math.PI) rel += Math.PI * 2;
-    return -rel; // CSS clockwise-positive
+    return -rel * 180 / Math.PI; // HUD.showDamageDirection espera GRADOS (no radianes)
   }
 
   // DamageSystem central
@@ -684,17 +720,10 @@ export class Game {
       price: this.weaponData[k].price || 0,
       owned: this.weaponSystem.owned.has(k),
     }));
-    const skins = this.skinsFor ? Object.keys(this.skinsFor).map(key => ({
-      key, name: this.skinsFor[key].name, price: this.skinsFor[key].price,
-    })) : [];
     this.hud.showShop({
       weapons,
-      skins,
       onBuyWeapon: (i) => this.buyWeapon(i),
-      onBuySkin: (key) => this.buySkin(key),
       getCoins: () => this.coins,
-      getEquipped: (wKey) => this.skins[wKey],
-      getCurrentWeaponKey: () => this.weaponSystem.weapons[this.weaponSystem.currentIndex],
     });
     this.shopOpenFlag = true;
   }
@@ -716,31 +745,43 @@ export class Game {
     this.hud.refreshShop(this.coins, this.weaponSystem.owned);
   }
 
-  // Comprar/equipar skin del arma ACTUAL (persistente en este dispositivo)
-  buySkin(skinKey) {
-    if (!this.skinsFor) return;
-    const skin = this.skinsFor[skinKey];
-    if (!skin) return;
-    const wKey = this.weaponSystem.weapons[this.weaponSystem.currentIndex];
-    if (this.skins[wKey] === skinKey) return;
-    if (this.coins < skin.price) { this.audio.play('empty'); return; }
-    this.coins -= skin.price;
-    this.skins[wKey] = skinKey;
-    try { localStorage.setItem('bf_skins', JSON.stringify(this.skins)); } catch(e) {}
-    this.weaponSystem.applySkin(wKey, skinKey);
-    this.audio.play('switch');
-    this.hud.refreshShop(this.coins, this.weaponSystem.owned);
+  // Skin global del arsenal (se elige en el LOBBY, gratis, persistente).
+  setGlobalSkin(skinKey) {
+    if (!this.skinsFor || !this.skinsFor[skinKey]) return;
+    if (this.globalSkin === skinKey) return;
+    this.globalSkin = skinKey;
+    try { localStorage.setItem('bf_skin_global', skinKey); } catch(e) {}
+    for (const wKey of this.weaponSystem.weapons) this.weaponSystem.applySkin(wKey, skinKey);
+    if (this.audio) this.audio.play('ui');
+    this._renderLobbySkins();
+  }
+
+  // Chips de skins del lobby (se construyen al cargar WeaponSkins).
+  _renderLobbySkins() {
+    const wrap = document.getElementById('lobby-skins');
+    if (!wrap || !this.skinsFor) return;
+    wrap.innerHTML = '';
+    for (const key of Object.keys(this.skinsFor)) {
+      const b = document.createElement('button');
+      b.className = 'lobby-skin' + (key === this.globalSkin ? ' on' : '');
+      b.dataset.skin = key;
+      b.innerHTML = `<span class="ls-swatch" data-skin="${key}"></span><b>${this.skinsFor[key].name}</b>`;
+      b.addEventListener('click', () => this.setGlobalSkin(key));
+      wrap.appendChild(b);
+    }
   }
 
   applyDamage(target, amount, hitType, attacker) {
     // Once a match is decided, late damage (stray bullets in the same frame)
     // must not change scores or retrigger the result screen.
     if(!target.isAlive || this.matchState === 'FINISHED') return false;
-    // Inmunidad de spawn (Free Fire): breve escudo al empezar el combate;
-    // el JUGADOR la rompe al disparar (onPlayerFired → breakImmunity).
-    if(this.matchTime < this.immuneUntil) {
-      if (target === this.player) return false;
-      if (target.isBot && target.immuneUntil && this.matchTime < target.immuneUntil) return false;
+    // Inmunidad de spawn (Free Fire): escudo POR ENTIDAD al empezar el combate.
+    // onPlayerFired solo caduca el del jugador: disparar ya no desprotege a
+    // los bots (el gate global hacía exactamente eso).
+    if (target === this.player) {
+      if (this.matchTime < this.immuneUntil) return false;
+    } else if (target.isBot && target.immuneUntil && this.matchTime < target.immuneUntil) {
+      return false;
     }
     
     let died = false;
@@ -765,7 +806,7 @@ export class Game {
 
     if(died){
       // Oro por eliminación (solo escuadras: la economía del Clash Squad)
-      const killerTeam = attacker ? (attacker.isBot ? (attacker.team || 'enemy') : 'ally') : (target.isBot ? 'ally' : 'enemy');
+      const killerTeam = attacker ? (attacker.team || (attacker.isBot ? 'enemy' : 'ally')) : (target.isBot ? 'ally' : 'enemy');
       if (this.gameMode === 'squad' && killerTeam === 'ally') {
         this.coins += 80;
         this.hud.refreshShop(this.coins, this.weaponSystem.owned);
@@ -787,6 +828,9 @@ export class Game {
         this._shake = Math.min(1.6, (this._shake||0) + 1.4);
       } else if(!target.isBot){
         this.playerDeaths++;
+        // El bot que mató al jugador acredita su kill: sin esto la carrera
+        // FFA a 20 era invisible para el rival (LÍDER espejo).
+        if (attacker && attacker.isBot) attacker.kills++;
         // Player death breaks any active streak
         this._streakCount = 0;
         // The death drone belongs to the player's own death. Bot deaths already
@@ -866,6 +910,13 @@ export class Game {
 
   _maxBotKills() {
     return Math.max(...this.bots.map(b=>b.kills), 0);
+  }
+
+  // En escuadras solo se dispara en combate: la compra es para comprar y el
+  // roundEnd ya decidió. Sin este gate, la fase de compra acumulaba muertes
+  // que corrompían la paridad de la ronda (hasta rondas vacías de 75s).
+  _canFight() {
+    return this.gameMode !== 'squad' || this.phase === 'combat';
   }
 
   // Regla Free Fire: disparar rompe la protección de spawn
@@ -953,7 +1004,9 @@ export class Game {
   tracer(from, to) {
     const dir = new THREE.Vector3().subVectors(to, from);
     const len = dir.length();
-    if (len < 0.5) return;
+    // A quemarropa el streak degenera en un tablón gigante frente a la cámara
+    // (visto en gameplay real: cinta blanca cruzando la pantalla).
+    if (len < 1.0) return;
     const geo = this._geoTracer || (this._geoTracer = new THREE.BoxGeometry(0.012, 0.012, 1));
     const mat = (this._matTracer || (this._matTracer = new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.85 }))).clone();
     const m = new THREE.Mesh(geo, mat);
@@ -965,6 +1018,9 @@ export class Game {
   }
 
   blood(point) {
+    // A quemarropa las esferas nacen pegadas al objetivo y tapan la pantalla
+    // entera de rojo (gameplay real). El feedback ya lo dan hitmarker+sonido.
+    if (this.camera && point.distanceTo(this.camera.position) < 0.9) return;
     for(let i=0;i<5;i++){
       const mat = this._matBlood.clone();
       const p = new THREE.Mesh(this._geoBlood, mat);
@@ -1036,11 +1092,13 @@ export class Game {
     }
 
     if(this.matchState !== 'PLAYING'){
-      // LOBBY 3D: cámara cinematográfica orbitando AL HÉROE animado
+      // LOBBY 3D: cámara cinematográfica orbitando AL HÉROE animado.
+      // El héroe se encuadra a la DERECHA (la UI del lobby ocupa el centro):
+      // la cámara mira 1.5m a la izquierda del pedestal.
       const t = this.clock.elapsedTime;
       const r = 3.2, h = 1.7;
       this.camera.position.set(2.6 + Math.sin(t * 0.13) * r, h, Math.cos(t * 0.13) * r + 5.2);
-      this.camera.lookAt(2.6, 1.2, 5.2);
+      this.camera.lookAt(1.1, 1.2, 5.2);
       if (this._lobbyHero) {
         this._lobbyHero.update(Math.min(dt, 0.033));
         this._lobbyHero.root.rotation.y = Math.PI + Math.sin(t * 0.35) * 0.5;
@@ -1052,6 +1110,15 @@ export class Game {
       this.player.isAlive = false;
       for (const bot of this.bots) {
         if (!bot.isAlive) { if (bot._dyingT > 0) bot._updateDying(Math.min(dt, 0.033)); continue; }
+        // En el lobby los bots pasean LEJOS del héroe: uno parado junto a la
+        // cámara tapaba el encuadre con un pilar negro.
+        const dx = bot.position.x - 2.6, dz = bot.position.z - 5.2;
+        if (dx * dx + dz * dz < 4.5 * 4.5) {
+          bot.state = 'wander';
+          bot.stateTimer = 0;
+          if (dx * dx + dz * dz > 0.001) bot.wanderDir.set(dx, 0, dz).normalize();
+          else bot.wanderDir.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+        }
         bot.update(Math.min(dt, 0.033), this.player, this.bots, this.map);
       }
       this.player.isAlive = playerWasTargetable;
@@ -1126,8 +1193,8 @@ export class Game {
     this.weaponSystem.setMoveSpeed(Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z));
     this.weaponSystem.update(dt, this.player.isAlive);
 
-    // Shooting (player)
-    if(this.input.fire && this.player.isAlive){
+    // Shooting (player) — en escuadras solo en combate (ver _canFight)
+    if(this.input.fire && this.player.isAlive && this._canFight()){
       const allTargets = [...this.bots, this.player];
       this.weaponSystem.fire(this.player, allTargets, this.map);
     }
@@ -1140,7 +1207,7 @@ export class Game {
         continue;
       }
       const action = bot.update(dt, this.player, this.bots, this.map);
-      if(action && action.shoot && bot.isAlive){
+      if(action && action.shoot && bot.isAlive && this._canFight()){
         // Bot shooting: eye is at head, not 0.6 above top
         const botEyePos = bot.position.clone(); botEyePos.y -= 0.12;
         const botDir = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
@@ -1199,7 +1266,7 @@ export class Game {
     const botLeader = this.bots.reduce((a,b)=>Math.max(a,b.kills),0);
     this.hud.update({
       score: this.gameMode === 'squad' ? `${this.roundWins.ally} — ${this.roundWins.enemy}` : `${this.teamScore.ally} — ${this.teamScore.enemy}`,
-      leader: this.gameMode === 'squad' ? this.round : Math.max(this.teamScore.ally, this.teamScore.enemy),
+      leader: this.gameMode === 'squad' ? this.round : Math.max(this.playerKills, this._maxBotKills()),
       timeLeft,
       health: this.playerController.health,
       ammo: this.weaponSystem.getAmmoText(),

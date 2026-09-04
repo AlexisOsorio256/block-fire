@@ -366,7 +366,7 @@ body.playing #btn-arsenal{ display:block; }
 
 
 /* ── HUD de sistema: PAUSA + ARSENAL juntos arriba-derecha (no pegados a la esquina) ── */
-#btn-arsenal{ position:fixed; top:14px; right:64px; z-index:35; background:rgba(20,24,33,.8);
+#btn-arsenal{ position:fixed; top:14px; right:150px; z-index:35; background:rgba(20,24,33,.8);
   color:#ffd166; border:2px solid #ffd166; border-radius:10px; font-size:14px; font-weight:800;
   padding:9px 16px; cursor:pointer; display:none; letter-spacing:.5px; }
 body.playing #btn-arsenal{ display:block; }
@@ -379,3 +379,18 @@ body.playing #btn-pause{ display:block; }
 
 /* ═══ Botón abandonar ═══ */
 #btn-pause{ border-color:#ff5a4a; color:#ff8a7a; }
+
+/* ═══ Skins del lobby (loadout global, gratis) ═══ */
+#lobby-skins-wrap{ margin-top:10px; display:flex; flex-direction:column; gap:6px; align-items:center; }
+.ls-label{ font-size:10px; font-weight:900; letter-spacing:0.2em; color:#8fa4c8; }
+#lobby-skins{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+.lobby-skin{ appearance:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;
+  padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05);
+  color:#cdd8ee; font-size:10px; font-weight:900; letter-spacing:0.08em; }
+.lobby-skin.on{ border-color:#ffd23f; background:rgba(255,210,63,0.12); color:#ffd23f; }
+.lobby-skin:active{ transform:scale(0.95); }
+.ls-swatch{ width:26px; height:14px; border-radius:4px; background:#5a6a8a; }
+.ls-swatch[data-skin="oro"]{ background:linear-gradient(135deg,#ffe9a0,#c8952a); }
+.ls-swatch[data-skin="bosque"]{ background:linear-gradient(135deg,#5d9c48,#2f4a2c); }
+.ls-swatch[data-skin="hielo"]{ background:linear-gradient(135deg,#a8e4ff,#2f5a78); }
+.ls-swatch[data-skin="carbon"]{ background:linear-gradient(135deg,#3a4560,#10131f); }

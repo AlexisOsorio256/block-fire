@@ -19,12 +19,8 @@ export class HUD {
     this._hitTimer = null;
     this._bannerHide = 0; // reloj del banner de ronda (tickRoundBanner)
     this._buyCountAt = -1;
-    this._shopTab = 'weapons';
     this._shopData = null;
-    const tw = document.getElementById('bp-tab-weapons');
-    const ts = document.getElementById('bp-tab-skins');
-    if (tw) tw.addEventListener('click', () => { this._shopTab = 'weapons'; this._renderShop(); });
-    if (ts) ts.addEventListener('click', () => { this._shopTab = 'skins'; this._renderShop(); });
+    // La tienda in-match es SOLO armas (las skins viven en el lobby).
   }
 
   // ── Duelo de Escuadras ──
@@ -46,7 +42,7 @@ export class HUD {
     const r = document.getElementById('round-ind');
     if (a) a.textContent = ally;
     if (e) e.textContent = enemy;
-    if (r && round) r.textContent = `RONDA ${round}/${roundTarget || 4}`;
+    if (r && round) r.textContent = `RONDA ${round} · 1º EN ${roundTarget || 4}`;
     const wrap = document.getElementById('squad-score');
     if (wrap) wrap.classList.add('show');
   }
@@ -95,11 +91,10 @@ export class HUD {
     wrap.classList.add('show');
   }
 
-  // Tienda: weapons [{key,name,price,owned}] + skins + callbacks
-  showShop({ weapons, skins, onBuyWeapon, onBuySkin, getCoins, getEquipped, getCurrentWeaponKey }) {
-    this._shopCallbacks = { onBuyWeapon, onBuySkin, getCoins, getEquipped, getCurrentWeaponKey };
-    this._shopData = { weapons, skins };
-    this._shopTab = 'weapons';
+  // Tienda in-match: SOLO armas [{key,name,price,owned}] + callbacks
+  showShop({ weapons, onBuyWeapon, getCoins }) {
+    this._shopCallbacks = { onBuyWeapon, getCoins };
+    this._shopData = { weapons };
     const panel = document.getElementById('buy-phase');
     if (panel) panel.classList.add('show');
     this._renderShop();
@@ -108,38 +103,22 @@ export class HUD {
   _renderShop() {
     const panel = document.getElementById('buy-phase');
     if (!panel || !this._shopCallbacks) return;
-    const { onBuyWeapon, onBuySkin, getCoins, getEquipped } = this._shopCallbacks;
+    const { onBuyWeapon, getCoins } = this._shopCallbacks;
     const coins = getCoins ? getCoins() : 0;
     const coinsEl = document.getElementById('bp-coins');
     if (coinsEl) coinsEl.textContent = '🪙 ' + coins;
-    const tabW = document.getElementById('bp-tab-weapons');
-    const tabS = document.getElementById('bp-tab-skins');
-    if (tabW) tabW.classList.toggle('on', this._shopTab === 'weapons');
-    if (tabS) tabS.classList.toggle('on', this._shopTab === 'skins');
     const grid = document.getElementById('bp-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    const data = this._shopData || { weapons: [], skins: [] };
-    if (this._shopTab === 'weapons') {
-      const icons = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
-      data.weapons.forEach((w, i) => {
-        const card = document.createElement('button');
-        card.className = 'bp-item' + (w.owned ? ' owned' : '') + (!w.owned && coins >= w.price ? ' affordable' : '');
-        card.innerHTML = `<span class="bp-ico">${icons[w.key] || '⌗'}</span><b>${w.name}</b><span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
-        card.onclick = () => { onBuyWeapon(i); };
-        grid.appendChild(card);
-      });
-    } else {
-      const wKey = cb.getCurrentWeaponKey ? cb.getCurrentWeaponKey() : 'rifle';
-      data.skins.forEach((s) => {
-        const equipped = getEquipped ? getEquipped(wKey) === s.key : false;
-        const card = document.createElement('button');
-        card.className = 'bp-item skin' + (equipped ? ' owned' : '') + (!equipped && coins >= s.price ? ' affordable' : '');
-        card.innerHTML = `<span class="bp-ico skin-swatch" data-skin="${s.key}"></span><b>${s.name}</b><span class="bp-price">${equipped ? 'EQUIPADA' : '🪙 ' + s.price}</span>`;
-        card.onclick = () => { onBuySkin(s.key); };
-        grid.appendChild(card);
-      });
-    }
+    const data = this._shopData || { weapons: [] };
+    const icons = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
+    data.weapons.forEach((w, i) => {
+      const card = document.createElement('button');
+      card.className = 'bp-item' + (w.owned ? ' owned' : '') + (!w.owned && coins >= w.price ? ' affordable' : '');
+      card.innerHTML = `<span class="bp-ico">${icons[w.key] || '⌗'}</span><b>${w.name}</b><span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
+      card.onclick = () => { onBuyWeapon(i); };
+      grid.appendChild(card);
+    });
   }
 
   // Re-render al comprar (oro nuevo + estado owned) — panel vivo en la fase

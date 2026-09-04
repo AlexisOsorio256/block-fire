@@ -21,7 +21,7 @@ export const WeaponData = {
   pistol: {
     name: 'Pistol',
     price: 0, // arma inicial: gratis, siempre en el inventario
-
+    damage: 18, // 18x7=126 > 125HP: 7 al cuerpo, 4 a la cabeza (2x) — secundaria digna
     headshotMul: 2.0,
     fireRate: 0.32,
     magazineSize: 12,
@@ -117,10 +117,15 @@ export class WeaponSystem {
   }
 
   _createWeaponMeshes() {
-    const bodyM  = new THREE.MeshStandardMaterial({ color: 0x3d4557, roughness: 0.55, metalness: 0.45 });
-    const blackM = new THREE.MeshStandardMaterial({ color: 0x191d2c, roughness: 0.45, metalness: 0.55 });
-    const gripM  = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0.1 });
-    const woodM  = new THREE.MeshStandardMaterial({ color: 0x6e4a2f, roughness: 0.75, metalness: 0.05 });
+    // Materiales POR ARMA (no compartidos): applySkin tiñe dark/accent solo del
+    // modelo comprado. Compartir una instancia hacía que la skin del rifle
+    // cambiara también pistola/escopeta/SMG.
+    const Mats = () => ({
+      body:  new THREE.MeshStandardMaterial({ color: 0x3d4557, roughness: 0.55, metalness: 0.45 }),
+      black: new THREE.MeshStandardMaterial({ color: 0x191d2c, roughness: 0.45, metalness: 0.55 }),
+      grip:  new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0.1 }),
+      wood:  new THREE.MeshStandardMaterial({ color: 0x6e4a2f, roughness: 0.75, metalness: 0.05 }),
+    });
     // Per-weapon accent materials (swapped by _updateWeaponMesh on switch)
     const accents = { rifle: 0xffb400, pistol: 0x4ade80, shotgun: 0xff5a3c };
     const accentM = {};
@@ -138,6 +143,8 @@ export class WeaponSystem {
 
     // ---- RIFLE: full-length, rail + vents + angled mag (the "standard") ----
     const rifle = new THREE.Group();
+    const rM = Mats();
+    const bodyM = rM.body, blackM = rM.black, gripM = rM.grip;
     add(rifle, new THREE.BoxGeometry(0.09, 0.11, 0.34), bodyM, 0, 0, 0);
     add(rifle, new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
     add(rifle, new THREE.BoxGeometry(0.058, 0.012, 0.28), accentM.rifle, 0, 0.062, -0.02); // identity line
@@ -159,60 +166,72 @@ export class WeaponSystem {
 
     // ---- PISTOL: compact slide + stubby barrel + big grip (the "sidearm") ----
     const pistol = new THREE.Group();
-    add(pistol, new THREE.BoxGeometry(0.075, 0.09, 0.22), blackM, 0, 0, -0.02);        // slide
-    add(pistol, new THREE.BoxGeometry(0.078, 0.02, 0.20), accentM.pistol, 0, 0.055, -0.02); // slide top stripe
-    add(pistol, new THREE.BoxGeometry(0.05, 0.05, 0.05), blackM, 0, 0.005, -0.16);     // short barrel tip
-    add(pistol, new THREE.BoxGeometry(0.06, 0.05, 0.18), bodyM, 0, -0.06, 0.02);       // frame
-    add(pistol, new THREE.BoxGeometry(0.06, 0.15, 0.07), gripM, 0, -0.13, 0.10, -0.32); // grip
-    add(pistol, new THREE.BoxGeometry(0.064, 0.02, 0.074), accentM.pistol, 0, -0.135, 0.115, -0.32); // mag base
-    add(pistol, new THREE.BoxGeometry(0.026, 0.045, 0.03), accentM.pistol, 0, 0.07, -0.12); // front sight
-    add(pistol, new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.06, 0.08);       // rear sight
-    add(pistol, new THREE.BoxGeometry(0.02, 0.03, 0.06), blackM, 0, -0.035, -0.045);   // trigger guard
-    pistol.userData.parts = { dark: bodyM, black: blackM, accent: accentM.pistol };
+    const pM = Mats();
+    const bodyM2 = pM.body, blackM2 = pM.black, gripM2 = pM.grip;
+    const addP = (geo, mat, x, y, z, rotX = 0) => add(pistol, geo, mat, x, y, z, rotX);
+    addP(new THREE.BoxGeometry(0.075, 0.09, 0.22), blackM2, 0, 0, -0.02);        // slide
+    addP(new THREE.BoxGeometry(0.078, 0.02, 0.20), accentM.pistol, 0, 0.055, -0.02); // slide top stripe
+    addP(new THREE.BoxGeometry(0.05, 0.05, 0.05), blackM2, 0, 0.005, -0.16);     // short barrel tip
+    addP(new THREE.BoxGeometry(0.06, 0.05, 0.18), bodyM2, 0, -0.06, 0.02);       // frame
+    addP(new THREE.BoxGeometry(0.06, 0.15, 0.07), gripM2, 0, -0.13, 0.10, -0.32); // grip
+    addP(new THREE.BoxGeometry(0.064, 0.02, 0.074), accentM.pistol, 0, -0.135, 0.115, -0.32); // mag base
+    addP(new THREE.BoxGeometry(0.026, 0.045, 0.03), accentM.pistol, 0, 0.07, -0.12); // front sight
+    addP(new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM2, 0, 0.06, 0.08);       // rear sight
+    addP(new THREE.BoxGeometry(0.02, 0.03, 0.06), blackM2, 0, -0.035, -0.045);   // trigger guard
+    pistol.userData.parts = { dark: bodyM2, black: blackM2, accent: accentM.pistol };
 
     // ---- SHOTGUN: long barrel + pump + wide stock (the "heavy") ----
     const shotgun = new THREE.Group();
-    add(shotgun, new THREE.BoxGeometry(0.11, 0.12, 0.30), bodyM, 0, 0, 0.02);          // chunky receiver
-    add(shotgun, new THREE.BoxGeometry(0.115, 0.02, 0.26), accentM.shotgun, 0, 0.072, 0.02); // receiver top band
-    add(shotgun, new THREE.BoxGeometry(0.055, 0.055, 0.46), blackM, 0, 0.015, -0.34);  // LONG barrel
-    add(shotgun, new THREE.BoxGeometry(0.085, 0.085, 0.035), blackM, 0, 0.015, -0.56); // thick muzzle
-    add(shotgun, new THREE.BoxGeometry(0.09, 0.022, 0.05), accentM.shotgun, 0, 0.015, -0.52); // muzzle ring
-    add(shotgun, new THREE.BoxGeometry(0.062, 0.062, 0.14), woodM, 0, -0.055, -0.22);  // pump handle
-    add(shotgun, new THREE.BoxGeometry(0.066, 0.02, 0.15), accentM.shotgun, 0, -0.055, -0.22); // pump rails
-    add(shotgun, new THREE.BoxGeometry(0.07, 0.13, 0.07), woodM, 0, -0.10, 0.18, -0.28); // wood grip
-    add(shotgun, new THREE.BoxGeometry(0.08, 0.11, 0.20), woodM, 0, -0.015, 0.30);     // wood stock
-    add(shotgun, new THREE.BoxGeometry(0.03, 0.05, 0.04), accentM.shotgun, 0, 0.09, -0.16); // bead sight
-    shotgun.userData.parts = { dark: bodyM, black: blackM, accent: accentM.shotgun };
+    const sM = Mats();
+    const addS = (geo, mat, x, y, z, rotX = 0) => add(shotgun, geo, mat, x, y, z, rotX);
+    addS(new THREE.BoxGeometry(0.11, 0.12, 0.30), sM.body, 0, 0, 0.02);          // chunky receiver
+    addS(new THREE.BoxGeometry(0.115, 0.02, 0.26), accentM.shotgun, 0, 0.072, 0.02); // receiver top band
+    addS(new THREE.BoxGeometry(0.055, 0.055, 0.46), sM.black, 0, 0.015, -0.34);  // LONG barrel
+    addS(new THREE.BoxGeometry(0.085, 0.085, 0.035), sM.black, 0, 0.015, -0.56); // thick muzzle
+    addS(new THREE.BoxGeometry(0.09, 0.022, 0.05), accentM.shotgun, 0, 0.015, -0.52); // muzzle ring
+    addS(new THREE.BoxGeometry(0.062, 0.062, 0.14), sM.wood, 0, -0.055, -0.22);  // pump handle
+    addS(new THREE.BoxGeometry(0.066, 0.02, 0.15), accentM.shotgun, 0, -0.055, -0.22); // pump rails
+    addS(new THREE.BoxGeometry(0.07, 0.13, 0.07), sM.wood, 0, -0.10, 0.18, -0.28); // wood grip
+    addS(new THREE.BoxGeometry(0.08, 0.11, 0.20), sM.wood, 0, -0.015, 0.30);     // wood stock
+    addS(new THREE.BoxGeometry(0.03, 0.05, 0.04), accentM.shotgun, 0, 0.09, -0.16); // bead sight
+    shotgun.userData.parts = { dark: sM.body, black: sM.black, accent: accentM.shotgun };
 
     // ---- SMG: compacta, cargador largo, culata plegable (la "rápida") ----
     accents.smg = 0x39d7ff;
     accentM.smg = new THREE.MeshStandardMaterial({ color: accents.smg, roughness: 0.35, metalness: 0.3, emissive: 0x0a2a33, emissiveIntensity: 0.35 });
     const smg = new THREE.Group();
-    add(smg, new THREE.BoxGeometry(0.075, 0.10, 0.26), bodyM, 0, 0, -0.02);
-    add(smg, new THREE.BoxGeometry(0.05, 0.028, 0.22), blackM, 0, 0.068, -0.04);
-    add(smg, new THREE.BoxGeometry(0.052, 0.012, 0.20), accentM.smg, 0, 0.05, -0.04);
-    add(smg, new THREE.BoxGeometry(0.042, 0.042, 0.14), blackM, 0, 0.005, -0.24);
-    add(smg, new THREE.BoxGeometry(0.062, 0.062, 0.045), blackM, 0, 0.005, -0.325);
-    add(smg, new THREE.BoxGeometry(0.078, 0.02, 0.035), accentM.smg, 0, 0.05, -0.30); // muzzle ring
-    add(smg, new THREE.BoxGeometry(0.055, 0.17, 0.075), blackM, 0, -0.115, 0.02);     // long mag
-    add(smg, new THREE.BoxGeometry(0.06, 0.02, 0.08), accentM.smg, 0, -0.205, 0.03);
-    add(smg, new THREE.BoxGeometry(0.05, 0.12, 0.06), gripM, 0, -0.095, 0.12, -0.28);
-    add(smg, new THREE.BoxGeometry(0.065, 0.075, 0.13), bodyM, 0, -0.005, 0.20);
-    add(smg, new THREE.BoxGeometry(0.06, 0.05, 0.10), blackM, 0, 0.02, 0.30);         // folded stock
-    add(smg, new THREE.BoxGeometry(0.024, 0.04, 0.03), accentM.smg, 0, 0.095, -0.16);
-    smg.userData.parts = { dark: bodyM, black: blackM, accent: accentM.smg };
+    const gM = Mats();
+    const addG = (geo, mat, x, y, z, rotX = 0) => add(smg, geo, mat, x, y, z, rotX);
+    addG(new THREE.BoxGeometry(0.075, 0.10, 0.26), gM.body, 0, 0, -0.02);
+    addG(new THREE.BoxGeometry(0.05, 0.028, 0.22), gM.black, 0, 0.068, -0.04);
+    addG(new THREE.BoxGeometry(0.052, 0.012, 0.20), accentM.smg, 0, 0.05, -0.04);
+    addG(new THREE.BoxGeometry(0.042, 0.042, 0.14), gM.black, 0, 0.005, -0.24);
+    addG(new THREE.BoxGeometry(0.062, 0.062, 0.045), gM.black, 0, 0.005, -0.325);
+    addG(new THREE.BoxGeometry(0.078, 0.02, 0.035), accentM.smg, 0, 0.05, -0.30); // muzzle ring
+    addG(new THREE.BoxGeometry(0.055, 0.17, 0.075), gM.black, 0, -0.115, 0.02);     // long mag
+    addG(new THREE.BoxGeometry(0.06, 0.02, 0.08), accentM.smg, 0, -0.205, 0.03);
+    addG(new THREE.BoxGeometry(0.05, 0.12, 0.06), gM.grip, 0, -0.095, 0.12, -0.28);
+    addG(new THREE.BoxGeometry(0.065, 0.075, 0.13), gM.body, 0, -0.005, 0.20);
+    addG(new THREE.BoxGeometry(0.06, 0.05, 0.10), gM.black, 0, 0.02, 0.30);         // folded stock
+    addG(new THREE.BoxGeometry(0.024, 0.04, 0.03), accentM.smg, 0, 0.095, -0.16);
+    smg.userData.parts = { dark: gM.body, black: gM.black, accent: accentM.smg };
 
     return { rifle, pistol, shotgun, smg };
   }
 
   // ── SKINS: aplica los colores de la skin al modelo del arma ──
+  // 'none'/Estándar restaura los colores originales (cacheados la 1ª vez).
   applySkin(weaponKey, skinKey) {
     const skin = WeaponSkins[skinKey] || WeaponSkins.none;
     const model = this._weaponModels[weaponKey];
     if (!model || !skin) return;
     const parts = model.userData.parts || {};
-    if (parts.accent && skin.accent !== null) parts.accent.color.setHex(skin.accent);
-    if (parts.dark && skin.dark !== null) parts.dark.color.setHex(skin.dark);
+    if (!model.userData.origColors && parts.accent && parts.dark) {
+      model.userData.origColors = { accent: parts.accent.color.getHex(), dark: parts.dark.color.getHex() };
+    }
+    const orig = model.userData.origColors || {};
+    if (parts.accent) parts.accent.color.setHex((skin.accent ?? orig.accent) ?? 0xffffff);
+    if (parts.dark) parts.dark.color.setHex((skin.dark ?? orig.dark) ?? 0xffffff);
   }
 
   // Per-weapon viewmodel presets (position offset + scale + muzzle tip z).
@@ -494,20 +513,27 @@ export class WeaponSystem {
       for (const target of targets) {
         if (target === shooter) continue;
         if (!target.isAlive) continue;
+        // Sin fuego amigo: mismo equipo nunca impacta (escuadras). En FFA los
+        // equipos son únicos, así que este filtro no cambia nada allí.
+        if (shooter.team && target.team && shooter.team === target.team) continue;
         // Target.position is eye height: feet = y - height. Hitboxes must be
         // measured DOWN from eye, matching the visible mesh:
         // head cube center ≈ feet+1.55 → eye-0.10, body torso ≈ eye-0.62.
         const h = target.height || 1.65;
         const bodyPos = target.position.clone(); bodyPos.y -= h * 0.38;
         const headPos = target.position.clone(); headPos.y -= 0.10;
+        const legPos = target.position.clone(); legPos.y -= h * 0.72;
         const toBody = new THREE.Vector3().subVectors(bodyPos, this.camera.position);
         const projDist = toBody.dot(direction);
         if (projDist < 0 || projDist > closestDist) continue;
         const closestPoint = this.camera.position.clone().addScaledVector(direction, projDist);
         const bodyHit = closestPoint.distanceTo(bodyPos) < 0.55;
         const headHit = closestPoint.distanceTo(headPos) < 0.28;
+        // Piernas: la esfera del pecho no llega a las espinillas de pie
+        // (cuenta como cuerpo, nunca como headshot).
+        const legHit = closestPoint.distanceTo(legPos) < 0.42;
 
-        if (bodyHit || headHit) {
+        if (bodyHit || headHit || legHit) {
           closestDist = projDist;
           closestHit = { target, distance: projDist, headshot: headHit, point: closestPoint.clone() };
         }

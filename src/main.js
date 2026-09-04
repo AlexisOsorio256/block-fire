@@ -77,7 +77,10 @@ if (params.has('runTests')) {
       // NOTE: in ?runTests=1 the match stays in LOADING (lobby orbit cam),
       // so the test sets its own deterministic camera pose instead of
       // trusting whatever the lobby left in the camera.
-      const bot = game.bots[0];
+      // La víctima debe ser un ENEMIGO: en escuadras no hay fuego amigo (el
+      // jugador no puede dañar a su escuadra), así que bots[0] (aliado) ya no
+      // sirve como dummy de tiro.
+      const bot = game.bots.find(b => (b.team || 'enemy') !== (game.player.team || 'ally')) || game.bots[3];
       const botStart = bot.position.clone();
       // Punto de tiro determinista: buscar un lugar abierto del mapa (los dos
       // mapas tienen suelo despejado a ±size*0.7 en la diagonal)
@@ -236,8 +239,8 @@ if (params.has('runTests')) {
       const angleRight = game._damageAngle(botDir);
       botDir.position.set(0, 1.65, -10); // north = in front
       const angleFront = game._damageAngle(botDir);
-      const dirOk = Math.abs(angleRight - Math.PI / 2) < 0.001 && Math.abs(angleFront) < 0.001;
-      log('14 DAMAGE DIRECTION ANGLES', dirOk, `right ${(angleRight * 180 / Math.PI).toFixed(0)}° front ${(angleFront * 180 / Math.PI).toFixed(0)}°`);
+      const dirOk = Math.abs(angleRight - 90) < 0.1 && Math.abs(angleFront) < 0.1;
+      log('14 DAMAGE DIRECTION ANGLES', dirOk, `right ${angleRight.toFixed(0)}° front ${angleFront.toFixed(0)}°`);
       botDir.respawn(botDirStart);
 
       // Test 15: ADS is a TAP-TO-LATCH on touch (the old hold-to-aim captured
@@ -311,16 +314,17 @@ if (params.has('runTests')) {
         && game.bots.every(b => b.weaponKey);
       log('19 BUY PHASE OPENS + BOTS BUY', buyOpen,
         `shop ${bp.classList.contains('show')} phase ${game.phase} weapons ${game.bots.map(b=>b.weaponKey).join(',')}`);
-      // skins: aplicar cambia el color del acento del viewmodel
+      // skins: la skin GLOBAL del lobby tiñe todo el arsenal (gratis, persistente)
       game.weaponSystem.owned.add('rifle');
       game.weaponSystem.switchWeapon(1);
       const accentBefore = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
-      game.skinsFor = { oro: { name: 'Oro', price: 0 } };
-      game.coins = 5000;
-      game.buySkin('oro');
+      const pistolBefore = game.weaponSystem._weaponModels.pistol.userData.parts.accent.color.getHexString();
+      game.skinsFor = { oro: { name: 'Oro', price: 0, accent: 0xffc93f, dark: 0x8a6a1f } };
+      game.setGlobalSkin('oro');
       const accentAfter = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
-      log('20 SKIN APPLIES TO WEAPON', accentBefore !== accentAfter && game.skins.rifle === 'oro',
-        `accent ${accentBefore} → ${accentAfter}`);
+      const pistolAfter = game.weaponSystem._weaponModels.pistol.userData.parts.accent.color.getHexString();
+      log('20 GLOBAL SKIN (LOBBY)', accentBefore !== accentAfter && pistolBefore !== pistolAfter && game.globalSkin === 'oro',
+        `rifle ${accentBefore} → ${accentAfter} · pistol ${pistolBefore} → ${pistolAfter}`);
       // inmunidad se ROMPE al disparar (regla Free Fire)
       game.matchState = 'PLAYING';
       game.phase = 'combat';
@@ -330,6 +334,54 @@ if (params.has('runTests')) {
       log('21 IMMUNITY BREAKS ON FIRE', immuneBroken, `immuneUntil ${game.immuneUntil.toFixed(2)} matchTime ${game.matchTime.toFixed(2)}`);
       game.matchState = 'LOADING';
       game._shopOpen = false;
+
+      // Test 22: REGRESIONES de la auditoría (un assert por fix, todos en squad
+      // salvo R5). Si alguno falla, volvió el bug correspondiente.
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.startRound(1);
+      // R1: tienda in-match SOLO armas + skins en el lobby
+      game.skinsFor = game.skinsFor || { oro: { name: 'Oro', price: 0, accent: 0xffc93f, dark: 0x8a6a1f } };
+      game._renderLobbySkins();
+      const r1ok = !document.getElementById('bp-tab-skins')
+        && document.getElementById('bp-grid').children.length > 0
+        && document.getElementById('lobby-skins').children.length > 0;
+      game._startCombat();
+      game.immuneUntil = 0; game.bots.forEach(b => b.immuneUntil = 0);
+      const allyT = game.bots.find(b => b.team === 'ally');
+      allyT.isAlive = true; allyT.health = allyT.maxHealth;
+      game.applyDamage(allyT, 200, 'body', game.player);
+      const r2ok = allyT.isAlive && allyT.health === allyT.maxHealth;
+      game.startRound(2);
+      const r3ok = document.getElementById('buy-phase').classList.contains('show') && game.phase === 'buy';
+      game._startCombat();
+      const hadShield = game.bots.every(b => b.immuneUntil > game.matchTime);
+      game.onPlayerFired();
+      const r4ok = hadShield && game.bots.every(b => b.immuneUntil > game.matchTime);
+      game.gameMode = 'ffa'; game.player.team = 'ffa_player';
+      game.playerController.respawn(new THREE.Vector3(0, 1.65, 18));
+      const kb22 = game.bots[4]; kb22.isAlive = true; kb22.kills = 0;
+      game.immuneUntil = 0; kb22.immuneUntil = 0;
+      game.applyDamage(game.player, 999, 'body', kb22);
+      const r5ok = kb22.kills === 1;
+      log('22 FIX REGRESSIONS', r1ok && r2ok && r3ok && r4ok && r5ok,
+        `skins:${r1ok} noFF:${r2ok} shopR2:${r3ok} imm:${r4ok} credit:${r5ok}`);
+      // R6: TODAS las armas tienen daño numérico (una pistola sin `damage`
+      // propagaba NaN: HP "NaN" e inmortales en el gameplay grabado).
+      const r6ok = game.weaponSystem.weapons.every(k =>
+        Number.isFinite(game.weaponData[k].damage) && Number.isFinite(game.weaponData[k].headshotMul));
+      log('22b WEAPON DAMAGE FINITE', r6ok, game.weaponSystem.weapons.map(k => `${k}:${game.weaponData[k].damage}`).join(' '));
+      // R7: VFX a quemarropa no tapan la pantalla (cinta blanca + flash rojo
+      // gigante vistos en el gameplay grabado).
+      const fl0 = game._activeFlashes.length, bl0 = game._activeBloods.length;
+      const eye23 = game.camera.position.clone();
+      game.tracer(eye23, eye23.clone().add(new THREE.Vector3(0, 0, -0.3)));
+      game.blood(eye23.clone());
+      const r7ok = game._activeFlashes.length === fl0 && game._activeBloods.length === bl0;
+      log('23 NO POINT-BLANK VFX SPAM', r7ok, `flashes ${fl0}→${game._activeFlashes.length} bloods ${bl0}→${game._activeBloods.length}`);
+      game.matchState = 'LOADING';
+      game._resultShown = false;
 
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
@@ -398,6 +450,10 @@ if (params.has('runTests')) {
 if (params.has('capture')) {
   const mode = params.get('capture');
   setTimeout(()=>{
+    if(mode==='lobbybare'){
+      // Auditoría visual del lobby 3D sin el velo del overlay
+      document.getElementById('overlay').style.display = 'none';
+    }
     if(mode==='playing'){
       game.startMatch();
       document.getElementById('overlay').classList.add('hidden');
