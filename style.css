@@ -7,7 +7,7 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 
 /* HUD */
 #hud{ position:fixed; inset:0; z-index:5; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; padding:10px 14px; font-variant-numeric: tabular-nums; }
-#hud-top{ display:flex; justify-content:center; }
+#hud-top{ display:flex; flex-direction:column; align-items:center; gap:6px; }
 #score-chip{ display:flex; gap:12px; align-items:center; background: rgba(10,16,28,0.55); border:1px solid rgba(255,255,255,0.1); padding:7px 16px; border-radius:10px; backdrop-filter: blur(6px); }
 #score-chip #kills{ color:#ffd23f; font-weight:900; font-size:22px; line-height:1; }
 #score-chip #leader{ color:#ff8a5c; font-weight:900; font-size:22px; line-height:1; }
@@ -268,7 +268,9 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 
 /* ═══ Duelo de Escuadras ═══ */
 /* ═══ MARCADOR DE RONDAS (top-center) ═══ */
-#squad-score{ position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:36;
+#squad-score{ /* en flujo dentro de #hud-top: el fixed se sentaba ENCIMA del
+  chip de kills/timer (visto en captura: "RONDA 1" cruzando "04:5?") */
+  position:static; z-index:36;
   display:none; align-items:center; gap:8px; background:rgba(8,12,22,0.82); border:1px solid rgba(255,255,255,0.14);
   border-radius:12px; padding:6px 14px; font-weight:900; letter-spacing:0.06em; }
 #squad-score.show{ display:flex; }

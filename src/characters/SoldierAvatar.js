@@ -39,10 +39,14 @@ export const AvatarLib = {
             root.updateMatrixWorld(true);
             this._template = root;
             const clips = gltf.animations || [];
-            const byName = (n) => clips.find(c => c.name.toLowerCase() === n);
-            this._idleClip = byName('Idle')  || clips[0] || null;
-            this._runClip  = byName('Run')   || byName('Walk') || clips[1] || null;
-            this._walkClip = byName('Walk')  || this._runClip;
+            // BUG: se comparaba el nombre en minúsculas con 'Idle'/'Run'/'Walk'
+            // capitalizados → el match por nombre NUNCA acertaba y todo caía al
+            // fallback por posición (clips[0]/clips[1]). Funciona por suerte con
+            // este GLB, pero cualquier reorden lo rompe en silencio.
+            const byName = (n) => clips.find(c => c.name.toLowerCase() === n.toLowerCase());
+            this._idleClip = byName('idle')  || clips[0] || null;
+            this._runClip  = byName('run')   || clips[1] || null;
+            this._walkClip = byName('walk')  || this._runClip;
             this.ready = true;
             console.log('[AvatarLib] soldier.glb cargado — clips:', clips.map(c=>c.name).join(','));
             resolve(true);
@@ -79,6 +83,15 @@ export const AvatarLib = {
           o.material = Array.isArray(o.material)
             ? o.material.map(tintOf)
             : tintOf(o.material);
+          // Visor con glow del equipo: el tinte 0.55 sobre la textura oliva
+          // dejaba aliados y enemigos indistinguibles a distancia de combate
+          // (visto en gameplay: todos khaki). El visor lleva la identidad.
+          if (/visor/i.test(o.name || '')) {
+            const teamCol = new THREE.Color(TEAM_TINTS[opts.team] || 0xffffff);
+            (Array.isArray(o.material) ? o.material : [o.material]).forEach((mm) => {
+              if (mm.emissive) { mm.emissive.copy(teamCol); mm.emissiveIntensity = 1.6; }
+            });
+          }
         }
       }
     });
@@ -86,15 +99,19 @@ export const AvatarLib = {
     // ejemplo original; nuestros bots miran +Z con yaw. Ajuste empírico abajo.
     clone.rotation.y = Math.PI; // el GLB mira hacia -Z; el juego usa +Z como frente
 
-    // Animaciones
+    // Animaciones: 3 estados (idle/walk/run) para amigos y enemigos.
+    // walk = merodeo, run = persecución/combate. Los tres arrancan en play y
+    // update() funde los pesos hacia el estado pedido (sin pops).
     const mixer = new THREE.AnimationMixer(clone);
     const actions = {};
     if (this._idleClip) actions.idle = mixer.clipAction(this._idleClip);
+    if (this._walkClip) actions.walk = mixer.clipAction(this._walkClip);
     if (this._runClip)  actions.run  = mixer.clipAction(this._runClip);
-    if (actions.idle) actions.idle.play();
-    if (actions.run) actions.run.play();
-    // run pesa 0: crossfade desde setMoving
-    if (actions.run) actions.run.setEffectiveWeight(0);
+    // walk y run pueden ser el MISMO clip (fallback): compartir acción evita
+    // doble peso sobre el mismo track (se contaría dos veces).
+    if (actions.walk && actions.run && this._walkClip === this._runClip) delete actions.walk;
+    for (const k of Object.keys(actions)) actions[k].play();
+    for (const k of ['walk', 'run']) if (actions[k]) actions[k].setEffectiveWeight(0);
 
     // Mano derecha para el arma (rig Mixamo)
     let hand = null;
@@ -115,16 +132,25 @@ export const AvatarLib = {
       root: clone,
       mixer,
       actions,
-      _moving: false,
-      setMoving(moving) {
-        this._moving = moving;
-        if (!actions.idle || !actions.run) return;
-        // crossfade corto: transición idle↔run legible, sin pop
-        const w = moving ? 1 : 0;
-        actions.run.setEffectiveWeight(w);
-        actions.idle.setEffectiveWeight(1 - w);
+      _loco: 'idle',
+      // Estado de locomoción: 'idle' | 'walk' | 'run'. Desconocidos → idle.
+      setLocomotion(state) {
+        this._loco = (state === 'walk' || state === 'run') ? state : 'idle';
+        this._moving = this._loco !== 'idle';
       },
-      update(dt) { mixer.update(dt); },
+      // Compat: el Bot llamaba setMoving(bool). walk genérico en movimiento.
+      setMoving(moving) { this.setLocomotion(moving ? 'walk' : 'idle'); },
+      update(dt) {
+        // Funde cada peso hacia su objetivo: transición legible sin pops y
+        // sin depender de que el llamador acierte el momento exacto.
+        for (const k of Object.keys(actions)) {
+          const target = (k === this._loco) ? 1 : 0;
+          const cur = actions[k].getEffectiveWeight();
+          const next = THREE.MathUtils.lerp(cur, target, Math.min(1, dt * 8));
+          actions[k].setEffectiveWeight(Math.abs(next - target) < 0.01 ? target : next);
+        }
+        mixer.update(dt);
+      },
     };
   },
 

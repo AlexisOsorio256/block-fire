@@ -243,8 +243,13 @@ export class Bot {
         }
       });
       if (flashed.length) {
+        // Timer con dueño: si el bot muere/reaparece antes de los 80ms, el
+        // restore caducado tocaba los materiales NUEVOS del respawn.
+        this._flashGen = (this._flashGen || 0) + 1;
+        const gen = this._flashGen;
         clearTimeout(this._flashTimer);
         this._flashTimer = setTimeout(()=> {
+          if (gen !== this._flashGen) return;
           flashed.forEach(c => {
             if (c.material && c.userData._savedEmissive !== undefined) {
               c.material.emissive.setHex(c.userData._savedEmissive);
@@ -299,6 +304,10 @@ export class Bot {
     this.health = this.maxHealth;
     this.isAlive = true;
     this._dyingT = 0;
+    this._flashGen = (this._flashGen || 0) + 1; // cancela el restore de hit-flash pendiente
+    // El fade de muerte (_updateDying) pudo interrumpirse (fin de ronda sin
+    // respawn): sin este reset el bot reaparece semitransparente.
+    this.mesh.traverse(o => { if (o.material) { o.material.opacity = 1; o.material.transparent = false; } });
     this.mesh.visible = true;
     this.mesh.rotation.set(0, this.yaw, 0);
     this.mesh.position.copy(this.position);
@@ -501,9 +510,11 @@ export class Bot {
       this.mesh.position.y = this.position.y - this.height + bounce;
     }
 
-    // Avatar GLB: crossfade idle↔run + mixer tick (personajes REALES animados)
+    // Avatar GLB: idle/walk/run por velocidad real + mixer tick. Amigos y
+    // enemigos comparten el mismo contrato (dificultad = parámetros, no trampas).
     if (this._avatar) {
-      if (this._avatar._moving !== moving) this._avatar.setMoving(moving);
+      const loco = !moving ? 'idle' : (this.state === 'wander' && speedNow < 4.2) ? 'walk' : 'run';
+      if (this._avatar._loco !== loco) this._avatar.setLocomotion(loco);
       this._avatar.update(dt);
     }
 

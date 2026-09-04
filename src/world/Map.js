@@ -243,7 +243,13 @@ export class Map {
   getGroundY(x, z, feetY = Infinity, stepUp = 0.5) {
     let best = 0;
     for(const box of this.boxes){
-      if(box.h >= 1) continue; // not a walkable platform
+      // BUG (gameplay real: entidades vibrando/pegadas sobre coberturas y sin
+      // poder saltar desde cajas): las cubiertas altas (h≥1) nunca contaban
+      // como suelo ni con los pies encima. En física (feetY finito) el filtro
+      // feetY+stepUp ya impide enganchar muros; solo el contexto de spawn
+      // (feetY=Infinity: constructor/respawn) debe ignorarlas para no nacer
+      // sobre muros.
+      if(box.h >= 1 && feetY === Infinity) continue; // spawn-context only
       if(box.max.y <= 0.5) continue;
       if(box.max.y > feetY + stepUp) continue; // above feet: not ground for this entity
       if(x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z){

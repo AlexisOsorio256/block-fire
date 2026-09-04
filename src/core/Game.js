@@ -587,13 +587,34 @@ export class Game {
     this._resetTemporalState();
     // Reset por escuadra: cada equipo sale de SU base (jugador Sur, enemigos Norte)
     const squadSpawns = this.map.squadSpawns || { ally: [this.map.getRandomSpawn()], enemy: [this.map.getRandomSpawn()] };
-    this.playerController.respawn(squadSpawns.ally[0]);
     this.playerController.health = this.playerController.maxHealth;
     this.playerController.velocity.set(0,0,0);
     let allyIdx = 1, enemyIdx = 0;
+    // Spawn que pisa cobertura = bot congelado en coll=true para siempre
+    // (autopsia: (-1,17.3)/(1,-17.3) muerden la esquina de una cobertura).
+    // Micro-espiral a la primera posición libre (jugador incluido).
+    const snapClear = (pos, radius, height) => {
+      // Margen +0.25: nacer a 2cm de un muro (válido pero infértil para moverse)
+      // también congela en la práctica — visto en la autopsia tras el primer nudge.
+      const R = radius + 0.25;
+      const probe = pos.clone();
+      const gy = this.map.getGroundY(probe.x, probe.z);
+      probe.y = gy + height;
+      if (!this.map.checkCollision(probe, R, height)) return probe;
+      for (const r of [0.8, 1.6, 2.4]) {
+        for (let a = 0; a < 8; a++) {
+          const ang = a * Math.PI / 4;
+          const cand = new THREE.Vector3(pos.x + Math.cos(ang) * r, pos.y, pos.z + Math.sin(ang) * r);
+          cand.y = this.map.getGroundY(cand.x, cand.z) + height;
+          if (!this.map.checkCollision(cand, R, height)) return cand;
+        }
+      }
+      return probe; // sin hueco: respawn original (no peor que antes)
+    };
+    this.playerController.respawn(snapClear(squadSpawns.ally[0], this.playerController.radius, this.playerController.height));
     for (const bot of this.bots) {
       const pos = (bot.team === 'ally') ? squadSpawns.ally[allyIdx++ % 4] : squadSpawns.enemy[enemyIdx++ % 4];
-      bot.respawn(pos);
+      bot.respawn(snapClear(pos, bot.radius, bot.height));
       bot.velocity.set(0,0,0);
       // LA COMPRA DE LOS BOTS: cada ronda mejoran arma (IA de economía)
       bot.setWeapon(this._botBuy(n, bot));
@@ -843,9 +864,15 @@ export class Game {
         // carry their feedback (VFX + kill jingle); playing it for every bot
         // kill — including bot-vs-bot across the map — was constant bass mud.
         if(this.audio) this.audio.play('death');
-        // Death transition: red fade + MUERTE banner until respawn
+        // Death transition: red fade + MUERTE banner. En escuadras nadie
+        // reaparece en la ronda (el "REAPARECIENDO..." estático mentía):
+        // el texto dice lo que toca según el modo.
         const dOv = document.getElementById('death-overlay');
-        if (dOv) dOv.classList.add('show');
+        if (dOv) {
+          const lbl = dOv.querySelector('label');
+          if (lbl) lbl.textContent = this.gameMode === 'squad' ? 'ESPERA EL FIN DE LA RONDA' : 'REAPARECIENDO...';
+          dOv.classList.add('show');
+        }
       } else if(target.isBot && attacker && attacker.isBot){
         attacker.kills++;
         // Bots killing each other (or the player) belong in the feed: in an
@@ -948,11 +975,20 @@ export class Game {
         const dx = b.position.x - a.position.x;
         const dz = b.position.z - a.position.z;
         const minDist = RADII[i] + RADII[j];
-        const dSq = dx * dx + dz * dz;
-        if (dSq >= minDist * minDist || dSq === 0) continue;
+        let dxn = dx, dzn = dz;
+        let dSq = dxn * dxn + dzn * dzn;
+        if (dSq >= minDist * minDist) continue;
+        if (dSq === 0) {
+          // Superposición exacta (visto en gameplay: enemigos pegados a
+          // quemarropa que nunca se resolvían): dirección determinista en vez
+          // de rendirse para siempre. d=0 → empuje de medio minDist por lado.
+          const ang = ((i * 7 + j * 13) % 8) * Math.PI / 4;
+          dxn = Math.cos(ang); dzn = Math.sin(ang);
+          dSq = 0;
+        }
         const d = Math.sqrt(dSq);
         const overlap = (minDist - d) / 2;
-        const nx = dx / d, nz = dz / d;
+        const nx = dxn / (d || 1), nz = dzn / (d || 1);
         // Candidate positions: push each entity half the overlap apart
         const tryA = { x: a.position.x - nx * overlap, z: a.position.z - nz * overlap };
         const tryB = { x: b.position.x + nx * overlap, z: b.position.z + nz * overlap };
@@ -981,7 +1017,9 @@ export class Game {
     this.scene.add(flash);
     this._activeFlashes.push({ mesh: flash, life: 0.055, maxLife: 0.055 });
 
-    const core = new THREE.Mesh(this._geoMuzzleCore, this._matMuzzleCore);
+    // Clonado: el fade de _updateVFX muta opacity por partícula; con el
+    // material compartido el primer tiro apagaba los siguientes.
+    const core = new THREE.Mesh(this._geoMuzzleCore, this._matMuzzleCore.clone());
     core.position.copy(flash.position);
     this.scene.add(core);
     this._activeFlashes.push({ mesh: core, life: 0.04, maxLife: 0.04 });
@@ -1038,12 +1076,19 @@ export class Game {
     }
   }
 
+  // Cada disparo crea 2–8 materiales clonados: sin dispose se acumulan en la
+  // GPU y la partida larga (o el móvil modesto) se degrada. Geometrías y
+  // materiales base son compartidos y NO se tocan — solo los clones por tiro.
+  _killVFX(mesh) {
+    this.scene.remove(mesh);
+    if (mesh.material && mesh.material !== this._matMuzzleCore) mesh.material.dispose();
+  }
   _updateVFX(dt) {
     // Flashes
     for(let i=this._activeFlashes.length-1;i>=0;i--){
       const f = this._activeFlashes[i];
       f.life -= dt;
-      if(f.life <= 0){ this.scene.remove(f.mesh); this._activeFlashes.splice(i,1); }
+      if(f.life <= 0){ this._killVFX(f.mesh); this._activeFlashes.splice(i,1); }
       else if (f.mesh.material.transparent) {
         f.mesh.material.opacity = Math.max(0, f.life / f.maxLife) * 0.9;
       }
@@ -1052,14 +1097,14 @@ export class Game {
     for(let i=this._activeImpacts.length-1;i>=0;i--){
       const it = this._activeImpacts[i];
       it.life -= dt;
-      if(it.life <= 0){ this.scene.remove(it.mesh); this._activeImpacts.splice(i,1); }
+      if(it.life <= 0){ this._killVFX(it.mesh); this._activeImpacts.splice(i,1); }
       else { it.mesh.position.y += dt * 1.2; it.mesh.material.opacity = it.life / it.maxLife; it.mesh.rotation.x += dt*6; it.mesh.rotation.y += dt*4; }
     }
     // Rings
     for(let i=this._activeRings.length-1;i>=0;i--){
       const r = this._activeRings[i];
       r.life -= dt;
-      if(r.life <= 0){ this.scene.remove(r.mesh); this._activeRings.splice(i,1); }
+      if(r.life <= 0){ this._killVFX(r.mesh); this._activeRings.splice(i,1); }
       else {
         const k = 1 - r.life / r.maxLife;
         const s = 1 + k * 2.2;
@@ -1071,7 +1116,7 @@ export class Game {
     for(let i=this._activeBloods.length-1;i>=0;i--){
       const b = this._activeBloods[i];
       b.life -= dt;
-      if(b.life <= 0){ this.scene.remove(b.mesh); this._activeBloods.splice(i,1); }
+      if(b.life <= 0){ this._killVFX(b.mesh); this._activeBloods.splice(i,1); }
       else {
         b.mesh.position.addScaledVector(b.vel, dt);
         b.vel.y -= 9.8 * dt * 0.6;
