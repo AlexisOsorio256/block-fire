@@ -345,6 +345,25 @@ export function runTestSuite(game) {
       game.matchState = 'LOADING';
       game._resultShown = false;
 
+      // Test 24: REGRESIÓN — MatchSquad usaba THREE.Vector3 en snapClear SIN
+      // importar THREE. Con los spawns actuales (despejados) la espiral nunca
+      // corría; con un spawn de base obstruido, startRound(1) moría con
+      // ReferenceError y la partida quedaba colgada en la fase de compra.
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      const savedSquadSpawns = game.map.squadSpawns;
+      const savedCheck = game.map.checkCollision.bind(game.map);
+      // Bloquear TODO el mapa: la espiral de snapClear tiene que correr entera
+      // (8 direcciones × 3 radios) y devolver el respawn original sin lanzar.
+      game.map.checkCollision = () => true;
+      let roundOpenSurvived = true;
+      try { game.startRound(1); } catch (e) { roundOpenSurvived = false; console.error('24 crash:', e); }
+      game.map.squadSpawns = savedSquadSpawns;
+      game.map.checkCollision = savedCheck;
+      game.matchState = 'LOADING';
+      log('24 ROUND START SURVIVES BLOCKED SPAWNS', roundOpenSurvived,
+        roundOpenSurvived ? 'startRound completó con mapa 100% obstruido' : 'startRound lanzó excepción');
+
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);

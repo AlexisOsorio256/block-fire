@@ -3,6 +3,8 @@
 // El ESTADO del partido vive en Game (fuente única: round, roundWins, phase,
 // phaseTime, coins, immuneUntil, _roundEndTime...); esta clase define CÓMO
 // evoluciona. FFA no pasa por aquí: Game lo orquesta directamente.
+import * as THREE from '../lib/three.module.js';
+
 export class MatchSquad {
   constructor(game) { this.g = game; }
 

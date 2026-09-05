@@ -11,9 +11,9 @@ Thumbs.db
 *.swo
 *~
 
-# Dependencies (no deps en este proyecto, pero por si acaso)
+# Dependencies (npm es parte del build: esbuild + Capacitor — el lockfile
+# SÍ se versiona para builds reproducibles; solo se ignoran los paquetes)
 node_modules/
-package-lock.json
 yarn.lock
 
 # Python http.server
