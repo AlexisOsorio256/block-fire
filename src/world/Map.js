@@ -31,12 +31,6 @@ export class Map {
     this._matWall = loadTex('wall.png', 24, 1, 0x5a6b80);
     this._matCover = loadTex('cover.png', 1.6, 1.6, 0xc9b8a0);
     this._matPlatform = loadTex('platform.png', 2.5, 1.5, 0x9fb06a);
-    // Duelo de Escuadras: identidad de base (suelo/pared tintados por equipo)
-    this._matAllyFloor = loadTex('ground.png', 6, 2, 0x2f6b5a);
-    this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x7a4038);
-    this._matAllyWall = loadTex('wall.png', 4, 1, 0x2f6b5a);
-    this._matEnemyWall = loadTex('wall.png', 4, 1, 0x7a4038);
-    this._matWood = loadTex('cover.png', 2, 1, 0x8a6a3a);
     // Duelo de Escuadras: colores de equipo (aliado verde-azul, enemigo rojo)
     this._matAllyFloor = loadTex('ground.png', 6, 2, 0x2b4a52);
     this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x52303a);

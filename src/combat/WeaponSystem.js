@@ -81,13 +81,17 @@ export const WeaponSkins = {
   carbon:  { name: 'Carbón',   price: 1800, accent: 0x39d7ff,  dark: 0x10131c },
 };
 
+// Arriba mundial compartido (cero allocs; nunca se muta)
+const UP = new THREE.Vector3(0, 1, 0);
+
 export class WeaponSystem {
-  constructor(scene, camera, audio, vfx, applyDamage) {
+  constructor(scene, camera, audio, vfx, applyDamage, game = null) {
     this.scene = scene;
     this.camera = camera;
     this.audio = audio;
-    this.vfx = vfx;
+    this.vfx = vfx;          // VfxSystem (partículas)
     this.applyDamage = applyDamage;
+    this.game = game;        // backref: onPlayerFired + hud (contrato pequeño)
     this.weaponData = WeaponData; // el arsenal vive aquí (la tienda lo consulta)
 
     this.weapons = ['rifle', 'pistol', 'shotgun', 'smg'];
@@ -355,32 +359,40 @@ export class WeaponSystem {
     return true;
   }
 
-  fire(shooter, targets, map = null, listenerPos = null) {
-    // Bots share the hitscan implementation, but never share the player's
-    // magazine/cooldown. Their own cadence is controlled by Bot.shootCooldown.
-    // Bots always engage with the rifle: letting them inherit the player's
-    // loadout coupled bot damage/range to the player's lobby pick (picking the
-    // shotgun silently nerfed every bot in the match).
-    // listenerPos: where the shot is heard from. Game.js temporarily moves the
-    // camera to the bot's eye before calling fire(), so bots must pass the
-    // real listener (the player camera) or distance attenuation measures ~0.12
-    // and every bot gunshot plays at full volume.
+  // ── fire(): la RUTA ÚNICA del disparo (intención → cadencia → trayectoria
+  // → oclusión → daño → feedback) ──
+  //
+  // opts (SOLO bots): { origin, aim, listener }
+  //   origin:   posición mundial del cañón (raycast + impactos).
+  //   aim:      dirección normalizada del disparo (base del spread).
+  //   listener: quién OYE el disparo (attenuación por distancia).
+  // El jugador omite opts: su cámara es dueña del origen y del aim.
+  // Sin esto, Game tenía que SECUESTRAR la cámara hacia el ojo de cada bot
+  // (mover → disparar → restaurar), acoplamiento que ya causó el bug de
+  // volumen del test 12.
+  fire(shooter, targets, map = null, opts = null) {
     const usesPlayerAmmo = !shooter.isBot;
     if (!this.canFire(usesPlayerAmmo)) return null;
     // Regla Free Fire: DISPARAR rompe la protección de spawn. Sin esto, el
     // jugador podría disparar inmune (la inmunidad nunca se quitaría en uso real).
-    if (usesPlayerAmmo && this.vfx && this.vfx.onPlayerFired) this.vfx.onPlayerFired();
+    if (usesPlayerAmmo && this.game && this.game.onPlayerFired) this.game.onPlayerFired();
+
+    // Los bots disparan SU arma comprada en la fase de compra; el jugador
+    // dispara la que tiene equipada. Nadie comparte arma con nadie.
+    const weapon = shooter.isBot ? (WeaponData[shooter.weaponKey] || WeaponData.rifle) : this.currentWeapon;
+
+    // Origen del rayo y oyente: explícitos para bots, cámara para el jugador.
+    const origin = (opts && opts.origin) || this.camera.position;
+    const aimDir = (opts && opts.aim) || null; // bots: puntería propia; jugador: cámara
+    const listener = (opts && opts.listener) || origin;
 
     // Tracer bookkeeping: one streak per shot from the muzzle to where the
     // round actually landed (hit or wall). Player sees their own bullet;
     // bot tracers make incoming fire visible and readable. For the player,
     // the origin gets refined to the viewmodel muzzle below.
-    const tracerFrom = this.camera.position.clone();
+    const tracerFrom = origin.clone();
     let tracerTo = null;
 
-    // Los bots disparan SU arma comprada en la fase de compra; el jugador
-    // dispara la que tiene equipada. Nadie comparte arma con nadie.
-    const weapon = shooter.isBot ? (WeaponData[shooter.weaponKey] || WeaponData.rifle) : this.currentWeapon;
     if (usesPlayerAmmo) {
       this.ammoInMag--;
       this.fireCooldown = weapon.fireRate;
@@ -410,7 +422,6 @@ export class WeaponSystem {
       if (usesPlayerAmmo) {
         this.audio.play('shoot', weapon.name);
       } else {
-        const listener = listenerPos || this.camera.position;
         const dist = shooter.position ? listener.distanceTo(shooter.position) : 20;
         const vol = Math.max(0.12, Math.min(0.85, 1 - dist / 45));
         this.audio.play('shoot', weapon.name, { throttleClass: 'shootBot', volumeScale: vol });
@@ -435,11 +446,18 @@ export class WeaponSystem {
 
     // Raycast for each pellet
     let hits = [];
-    // Spread in CAMERA space: world-space x/y offsets made the cone collapse
+    // Spread in SHOOTER space: world-space x/y offsets made the cone collapse
     // to a line when facing ±X (east/west), so shotgun spread depended on
-    // where you were looking, not where you aimed.
-    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    // where you were looking, not where you aimed. Jugador: ejes de cámara;
+    // bots: base ortonormal desde su aim explícito (sin secuestro de cámara).
+    let camRight, camUp;
+    if (aimDir) {
+      camRight = new THREE.Vector3().crossVectors(aimDir, UP).normalize();
+      camUp = new THREE.Vector3().crossVectors(camRight, aimDir).normalize();
+    } else {
+      camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+      camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    }
     // Crouch steadies the aim: up to −15% spread at full crouch (classic
     // crouch-accuracy contract, matches the slower crouch speed).
     const crouchBonus = this.playerController ? 1 - (this.playerController.crouchBlend || 0) * 0.15 : 1;
@@ -454,8 +472,9 @@ export class WeaponSystem {
       const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
 
       const direction = new THREE.Vector3();
-      this.camera.getWorldDirection(direction);
-      // Apply spread around the camera's own axes
+      if (aimDir) direction.copy(aimDir);
+      else this.camera.getWorldDirection(direction);
+      // Apply spread around the shooter's own axes
       direction.addScaledVector(camRight, spreadX).addScaledVector(camUp, spreadY);
       direction.normalize();
 
@@ -479,7 +498,7 @@ export class WeaponSystem {
           const th = target.height || 1.65;
           const chest = target.position.clone(); chest.y -= th * 0.38;
           const head = target.position.clone(); head.y -= th * 0.82;
-          const toChest = chest.clone().sub(this.camera.position);
+          const toChest = chest.clone().sub(origin);
           const dist = toChest.length();
           if (dist > weapon.range) continue;
           toChest.normalize();
@@ -488,7 +507,7 @@ export class WeaponSystem {
             bestDot = dot;
             // "Levantar la mira": si el rayo crudo pasa por encima del pecho,
             // el jugador apunta arriba → el snap sube a la CABEZA (red numbers)
-            const toHead = head.clone().sub(this.camera.position).normalize();
+            const toHead = head.clone().sub(origin).normalize();
             assistDir = (direction.dot(toHead) > direction.dot(toChest)) ? toHead : toChest;
           }
         }
@@ -497,7 +516,7 @@ export class WeaponSystem {
         }
       }
 
-      this.raycaster.set(this.camera.position, direction);
+      this.raycaster.set(origin, direction);
       // Check against targets (players/bots + map)
       // For map, we use a simple ray against map boxes (handled in Game)
       let closestHit = null;
@@ -505,7 +524,7 @@ export class WeaponSystem {
 
       // A wall takes priority over a target behind it. This must happen before
       // damage is applied; filtering the result afterwards cannot undo a hit.
-      const mapHit = map && map.raycast(this.camera.position, direction, closestDist);
+      const mapHit = map && map.raycast(origin, direction, closestDist);
       if (mapHit) closestDist = mapHit.distance;
 
       for (const target of targets) {
@@ -521,10 +540,10 @@ export class WeaponSystem {
         const bodyPos = target.position.clone(); bodyPos.y -= h * 0.38;
         const headPos = target.position.clone(); headPos.y -= 0.10;
         const legPos = target.position.clone(); legPos.y -= h * 0.72;
-        const toBody = new THREE.Vector3().subVectors(bodyPos, this.camera.position);
+        const toBody = new THREE.Vector3().subVectors(bodyPos, origin);
         const projDist = toBody.dot(direction);
         if (projDist < 0 || projDist > closestDist) continue;
-        const closestPoint = this.camera.position.clone().addScaledVector(direction, projDist);
+        const closestPoint = origin.clone().addScaledVector(direction, projDist);
         const bodyHit = closestPoint.distanceTo(bodyPos) < 0.55;
         const headHit = closestPoint.distanceTo(headPos) < 0.28;
         // Piernas: la esfera del pecho no llega a las espinillas de pie
@@ -543,7 +562,7 @@ export class WeaponSystem {
         if (this.vfx) {
           const missPoint = mapHit
             ? mapHit.point
-            : this.camera.position.clone().addScaledVector(direction, 45);
+            : origin.clone().addScaledVector(direction, 45);
           this.vfx.impact(missPoint, null);
           if (!tracerTo) tracerTo = missPoint;
         }
@@ -611,7 +630,7 @@ export class WeaponSystem {
       const headshot = hits.some(h => h.headshot);
       this.showHitmarker(killed, headshot && !killed);
       if (!killed && this.audio) this.audio.play(headshot ? 'headshot' : 'hit');
-      if (headshot && !killed && this.vfx && this.vfx.hud) this.vfx.hud.showHitBanner(true);
+      if (headshot && !killed && this.game && this.game.hud) this.game.hud.showHitBanner(true);
     }
 
     return { hits, totalDamage, killed };

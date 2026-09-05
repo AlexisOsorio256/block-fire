@@ -1,6 +1,19 @@
 import * as THREE from '../lib/three.module.js';
 import { settings } from '../core/Settings.js';
 
+// ── Scratch a nivel de módulo (reglas §6: cero allocs por frame) ──
+// update() corre 1× por frame; los vectores de trabajo nunca escapan.
+const S = {
+  forward: new THREE.Vector3(),
+  right: new THREE.Vector3(),
+  wishDir: new THREE.Vector3(),
+  wishVel: new THREE.Vector3(),
+  nextPos: new THREE.Vector3(),
+  cand: new THREE.Vector3(),
+  axis: new THREE.Vector3(), // sondeo por eje (X y luego Z)
+  up: new THREE.Vector3(0, 1, 0),
+};
+
 export class PlayerController {
   constructor(player, input, camera, scene, map) {
     this.player = player;
@@ -140,14 +153,15 @@ export class PlayerController {
     const isSprinting = this.input.sprint === true && !this.input.aim && this.crouchBlend < 0.4;
     const speed = (isSprinting ? this.sprintSpeed : this.moveSpeed) * (1 - this.crouchBlend * 0.45);
 
-    const forward = new THREE.Vector3();
-    const right = new THREE.Vector3();
+    const forward = S.forward;
+    const right = S.right;
     this.camera.getWorldDirection(forward);
     forward.y = 0; forward.normalize();
-    right.crossVectors(forward, new THREE.Vector3(0,1,0));
+    right.crossVectors(forward, S.up);
 
     // Input move is in local space: x = strafe, y = forward
-    const wishDir = new THREE.Vector3();
+    const wishDir = S.wishDir;
+    wishDir.set(0, 0, 0);
     wishDir.addScaledVector(forward, move.y);
     wishDir.addScaledVector(right, move.x);
     if (wishDir.lengthSq() > 0) wishDir.normalize();
@@ -155,7 +169,7 @@ export class PlayerController {
     // momentum but a mid-air direction change can't reach full strafe —
     // the movement reads as committed, not ice-skating.
     const speedCap = this.onGround ? speed : speed * 0.85;
-    const wishVel = wishDir.multiplyScalar(speedCap);
+    const wishVel = S.wishVel.copy(wishDir).multiplyScalar(speedCap);
 
     // Acceleration toward wish velocity. Separate accel/friction gives
     // instant response + precise stops without feeling glued mid-air.
@@ -177,7 +191,7 @@ export class PlayerController {
     this.velocity.y -= this.gravity * dt;
 
     // Apply movement with simple collision against map
-    const nextPos = this.player.position.clone().addScaledVector(this.velocity, dt);
+    const nextPos = S.nextPos.copy(this.player.position).addScaledVector(this.velocity, dt);
 
     // Ground resolve BEFORE wall checks: know the floor under the full next position
     const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z, nextPos.y - this.height) : 0;
@@ -186,7 +200,7 @@ export class PlayerController {
     // the CURRENT position; an axis only moves if its result is collision-free.
     // This cannot tunnel through geometry (each step is validated) and slides
     // naturally along walls.
-    const cand = this.player.position.clone();
+    const cand = S.cand.copy(this.player.position);
     // Y axis (gravity/jump)
     cand.y = nextPos.y;
     if (cand.y - this.height < groundY) {
@@ -202,14 +216,14 @@ export class PlayerController {
     }
 
     // X axis
-    const tryX = cand.clone(); tryX.x = nextPos.x;
+    const tryX = S.axis.copy(cand); tryX.x = nextPos.x;
     if (!this.map || !this.map.checkCollision(tryX, this.radius, this.height)) {
       cand.x = tryX.x;
     } else {
       this.velocity.x = 0;
     }
     // Z axis
-    const tryZ = cand.clone(); tryZ.z = nextPos.z;
+    const tryZ = S.axis.copy(cand); tryZ.z = nextPos.z;
     if (!this.map || !this.map.checkCollision(tryZ, this.radius, this.height)) {
       cand.z = tryZ.z;
     } else {

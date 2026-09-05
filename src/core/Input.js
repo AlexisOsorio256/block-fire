@@ -417,16 +417,20 @@ export class Input {
   // Raw pixels accumulated since last frame from BOTH sources (look-zone
   // drag + fire-button drag); consume-and-clear. No decay, no frame-rate
   // dependence — the consumer applies the configured scale exactly once.
+  // Contrato: devuelve SIEMPRE el mismo objeto interno (_lookDeltaOut) — el
+  // consumidor lo lee al instante, jamás lo retiene (cero allocs por frame).
   getLookDelta() {
     const look = this._touchLook;
     const fire = this._fireLook;
+    const out = this._lookDeltaOut || (this._lookDeltaOut = { x: 0, y: 0 });
     if (look.active || look.x !== 0 || look.y !== 0 || fire.x !== 0 || fire.y !== 0) {
-      const x = look.x + fire.x;
-      const y = look.y + fire.y;
+      out.x = look.x + fire.x;
+      out.y = look.y + fire.y;
       look.x = 0; look.y = 0;
       fire.x = 0; fire.y = 0;
-      return { x, y };
+      return out;
     }
-    return { x: 0, y: 0 };
+    out.x = 0; out.y = 0;
+    return out;
   }
 }

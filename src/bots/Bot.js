@@ -1,6 +1,25 @@
 import * as THREE from '../lib/three.module.js';
 import { AvatarLib } from '../characters/SoldierAvatar.js';
 
+// ── Scratch a nivel de módulo (reglas §6: cero allocs por frame) ──
+// Bot.update corre 7× por frame, SIEMPRE en secuencia y nunca reentrante:
+// un único set de vectores reutilizables. NINGUNO escapa por el return.
+const S = {
+  eye: new THREE.Vector3(),    // ojo del bot (LOS)
+  chest: new THREE.Vector3(),  // pecho del candidato
+  dir: new THREE.Vector3(),    // dirección LOS / puntería
+  move: new THREE.Vector3(),   // vector de movimiento del frame
+  wish: new THREE.Vector3(),   // velocidad deseada
+  next: new THREE.Vector3(),   // posición candidata
+  axis: new THREE.Vector3(),   // sondeo por eje (X y luego Z)
+  toA: new THREE.Vector3(),    // hacia el ancla (aliados)
+  toT: new THREE.Vector3(),    // hacia el objetivo
+  strafe: new THREE.Vector3(), // strafe perpendicular
+  fwd: new THREE.Vector3(),    // frente del bot
+};
+const UP = new THREE.Vector3(0, 1, 0);
+const CANDIDATES = []; // objetivos enemigos del frame (reutilizado)
+
 export class Bot {
   constructor(id, scene, map, position) {
     this.id = id;
@@ -273,8 +292,8 @@ export class Bot {
     return false;
   }
 
-  // Driven by Game._updateVFX-like flow from update(): animates the death
-  // tumble. Returns false when the death animation is over.
+  // Animación de la caída — la maneja Game desde su loop (así no hay un
+  // sistema de timers nuevo). Devuelve false cuando la animación terminó.
   _updateDying(dt) {
     if (this._dyingT <= 0) return false;
     this._dyingT -= dt;
@@ -331,19 +350,20 @@ export class Bot {
     // Find nearest target — SOLO el equipo contrario (Duelo de Escuadras)
     let nearest = null;
     let nearestDist = Infinity;
-    const myTeam = this.team || 'enemy';
     const myTag = (t) => (t.team || (t === player ? 'ally' : 'enemy'));
-    const candidates = [player, ...bots].filter(t => t !== this && t.isAlive && myTag(t) !== this.team);
-    for (const c of candidates) {
+    CANDIDATES.length = 0;
+    for (const t of bots) if (t !== this && t.isAlive && myTag(t) !== this.team) CANDIDATES.push(t);
+    if (player !== this && player.isAlive && myTag(player) !== this.team) CANDIDATES.push(player);
+    for (const c of CANDIDATES) {
       const d = this.position.distanceTo(c.position);
       // Check line of sight (simple: no wall between)
       if (d < nearestDist && d < 28) {
         // Ray from bot eyes (head) to target chest
-        const eye = this.position.clone(); eye.y -= 0.12;
-        const targetChest = c.position.clone(); targetChest.y -= 0.35;
-        const dir = new THREE.Vector3().subVectors(targetChest, eye).normalize();
-        const dist = eye.distanceTo(targetChest);
-        const hit = map.raycast(eye, dir, dist);
+        S.eye.copy(this.position); S.eye.y -= 0.12;
+        S.chest.copy(c.position); S.chest.y -= 0.35;
+        S.dir.subVectors(S.chest, S.eye).normalize();
+        const dist = S.eye.distanceTo(S.chest);
+        const hit = map.raycast(S.eye, S.dir, dist);
         if (!hit) {
           nearest = c;
           nearestDist = d;
@@ -370,7 +390,7 @@ export class Bot {
       }
     }
 
-    let move = new THREE.Vector3();
+    const move = S.move;
     let wantShoot = false;
     let lookAtTarget = false;
 
@@ -380,7 +400,7 @@ export class Bot {
       // (idle) en vez de dar vueltas como peonzas por todo el mapa.
       const anchor = (this.team === 'ally' && player && player.isAlive) ? player.position : null;
       if (anchor) {
-        const toA = new THREE.Vector3().subVectors(anchor, this.position);
+        const toA = S.toA.subVectors(anchor, this.position);
         toA.y = 0;
         const distA = toA.length();
         if (distA > 6) {
@@ -393,7 +413,7 @@ export class Bot {
       } else {
         move.copy(this.wanderDir);
         // Avoid walls: if blocked, pick new dir
-        const nextPos = this.position.clone().addScaledVector(move, this.speed * dt * 2);
+        const nextPos = S.next.copy(this.position).addScaledVector(move, this.speed * dt * 2);
         if (map.checkCollision(nextPos, this.radius, this.height)) {
           this.wanderDir.set((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
           move.copy(this.wanderDir);
@@ -403,7 +423,7 @@ export class Bot {
       }
 
     } else if (this.state === 'chase' && nearest) {
-      const toTarget = new THREE.Vector3().subVectors(nearest.position, this.position);
+      const toTarget = S.toT.subVectors(nearest.position, this.position);
       toTarget.y = 0; toTarget.normalize();
       move.copy(toTarget);
       lookAtTarget = true;
@@ -413,7 +433,7 @@ export class Bot {
           this.strafeDir = Math.random() > 0.5 ? 1 : -1;
           this.strafeTimer = 0.6 + Math.random()*0.8;
         }
-        const strafe = new THREE.Vector3().crossVectors(toTarget, new THREE.Vector3(0,1,0)).multiplyScalar(this.strafeDir * 0.7);
+        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir * 0.7);
         move.add(strafe);
         move.normalize();
       }
@@ -422,7 +442,7 @@ export class Bot {
       lookAtTarget = true;
       wantShoot = nearestDist < 22;
       // Strafe heavily when attacking
-      const toTarget = new THREE.Vector3().subVectors(nearest.position, this.position);
+      const toTarget = S.toT.subVectors(nearest.position, this.position);
       toTarget.y = 0; const dist = toTarget.length();
       toTarget.normalize();
       if (dist > 8) {
@@ -434,11 +454,11 @@ export class Bot {
           this.strafeDir = Math.random() > 0.5 ? 1 : -1;
           this.strafeTimer = 0.4 + Math.random()*0.6;
         }
-        const strafe = new THREE.Vector3().crossVectors(toTarget, new THREE.Vector3(0,1,0)).multiplyScalar(this.strafeDir);
+        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir);
         move.copy(strafe);
       }
       if (this.strafeTimer > 0) {
-        const strafe = new THREE.Vector3().crossVectors(toTarget, new THREE.Vector3(0,1,0)).multiplyScalar(this.strafeDir * 0.6);
+        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir * 0.6);
         move.add(strafe);
       }
       move.normalize();
@@ -448,12 +468,13 @@ export class Bot {
     // Apply movement with SMOOTH ACCELERATION — bots ease into their stride
     // instead of snapping to full speed (kills the "ghost sliding" look).
     // velocity lerps toward the wish velocity; position integrates velocity.
-    const wish = move.lengthSq() > 0.01 ? move.clone().multiplyScalar(this.speed) : new THREE.Vector3();
+    const wish = S.wish;
+    if (move.lengthSq() > 0.01) wish.copy(move).multiplyScalar(this.speed); else wish.set(0, 0, 0);
     const accelT = Math.min(1, (move.lengthSq() > 0.01 ? 6.5 : 9) * dt);
     this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, wish.x, accelT);
     this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, wish.z, accelT);
     if (Math.hypot(this.velocity.x, this.velocity.z) > 0.02) {
-      const nextPos = this.position.clone().addScaledVector(this.velocity, dt);
+      const nextPos = S.next.copy(this.position).addScaledVector(this.velocity, dt);
       // Ground: only platforms reachable from current feet height
       const groundY = map.getGroundY(nextPos.x, nextPos.z, this.position.y - this.height);
       nextPos.y = groundY + this.height;
@@ -461,9 +482,9 @@ export class Bot {
         this.position.copy(nextPos);
       } else {
         // Try slide axis-separated (same contract as the player)
-        const tryX = this.position.clone(); tryX.x = nextPos.x; tryX.y = nextPos.y;
+        const tryX = S.axis.copy(this.position); tryX.x = nextPos.x; tryX.y = nextPos.y;
         if (!map.checkCollision(tryX, this.radius, this.height)) this.position.x = tryX.x;
-        const tryZ = this.position.clone(); tryZ.z = nextPos.z; tryZ.y = nextPos.y;
+        const tryZ = S.axis.copy(this.position); tryZ.z = nextPos.z; tryZ.y = nextPos.y;
         if (!map.checkCollision(tryZ, this.radius, this.height)) this.position.z = tryZ.z;
         // Blocked head-on: cut velocity so the bot doesn't push into walls
         this.velocity.multiplyScalar(0.4);
@@ -476,7 +497,7 @@ export class Bot {
 
     // Look at target
     if (lookAtTarget && nearest) {
-      const toTarget = new THREE.Vector3().subVectors(nearest.position, this.position);
+      const toTarget = S.toT.subVectors(nearest.position, this.position);
       this.targetYaw = Math.atan2(toTarget.x, toTarget.z);
       // Add slight spread inaccuracy for bots (worse at distance)
       const inaccuracy = THREE.MathUtils.clamp(nearestDist * 0.012, 0.02, 0.12);
@@ -541,8 +562,8 @@ export class Bot {
     let shoot = false;
     if (wantShoot && this.shootCooldown <= 0 && nearest) {
       // Check if facing target within ~35 degrees
-      const toTarget = new THREE.Vector3().subVectors(nearest.position, this.position).normalize();
-      const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+      const toTarget = S.toT.subVectors(nearest.position, this.position).normalize();
+      const forward = S.fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       const dot = forward.dot(toTarget);
       if (dot > 0.72) {
         shoot = true;
@@ -553,9 +574,9 @@ export class Bot {
       }
     }
 
+    // Contrato del action: SOLO datos planos (shoot/target). Los vectores de
+    // trabajo son scratch del módulo y NO salen por aquí (cero escapes).
     return {
-      move,
-      look: { yaw: this.yaw, pitch: this.pitch },
       shoot,
       target: nearest
     };

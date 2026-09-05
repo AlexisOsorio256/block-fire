@@ -125,16 +125,22 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
 Arquitectura (una responsabilidad por sistema):
 
 ```
-src/main.js                    arranque, landscape gate y smoke tests
-src/core/Settings.js           preferencias del jugador (localStorage)
-src/core/Game.js               escena, ciclo, partida, daño y VFX
+src/main.js                    arranque puro: gates (landscape / tests / capturas)
+src/core/Game.js               orquestador: loop, daño central y estado de partida
+src/core/MatchSquad.js         flujo de rondas del Duelo de Escuadras (BO7)
 src/core/Input.js              teclado/mouse/pointer táctil → acciones neutrales
+src/core/Settings.js           preferencias del jugador (localStorage)
 src/player/PlayerController.js movimiento, cámara, gravedad y respawn humano
 src/combat/WeaponSystem.js     armas, hitscan, oclusión, aim assist y feedback
+src/economy/Shop.js            tienda del Clash Squad (comprar/equipar)
+src/fx/VfxSystem.js            efectos de combate (flash/impacto/trazadora/sangre)
 src/bots/Bot.js                IA: wander → chase → attack + walk cycle
 src/world/Map.js               geometría, spawns validados, colisión y raycast
 src/ui/HUD.js                  HUD, kill feed, banners y daño direccional
+src/ui/Lobby.js                escena 3D del lobby (héroe, pedestal, skins)
 src/audio/AudioManager.js      samples (CC0/CC-BY) + fallback procedural
+src/testing/suite.js           suite ?runTests=1 (25/25 obligatorio en headless)
+src/testing/capture.js         harness ?capture= (auditoría visual)
 ```
 
 ### Cómo ejecutar y probar

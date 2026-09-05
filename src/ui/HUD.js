@@ -129,23 +129,9 @@ export class HUD {
     if (this._shopCallbacks) this._renderShop();
   }
 
-  refreshCoins(coins) {
-    this.refreshShop(coins, null);
-  }
-
   closeShop() {
     const panel = document.getElementById('buy-phase');
     if (panel && !panel.classList.contains('buy-locked')) panel.classList.remove('show');
-  }
-
-  lockBuyPhase() {
-    const panel = document.getElementById('buy-phase');
-    if (panel) { panel.classList.add('buy-locked'); panel.classList.add('show'); }
-  }
-
-  unlockBuyPhase() {
-    const panel = document.getElementById('buy-phase');
-    if (panel) panel.classList.remove('buy-locked');
   }
 
   // tickSquad maneja el ESCUDO de inmunidad: cuenta atrás visible y desaparece.
