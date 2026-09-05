@@ -459,17 +459,16 @@ export class WeaponSystem {
       direction.addScaledVector(camRight, spreadX).addScaledVector(camUp, spreadY);
       direction.normalize();
 
-      // AIM ASSIST (player only): if the raw shot would pass near a visible
-      // enemy's chest, bend the ray onto the chest. Mobile (coarse pointer)
-      // gets a wider assist cone; PC gets a subtle one. Bots never assist.
-      // Occlusion is still checked afterwards — assist never shoots walls.
+      // AIM ASSIST (player only, PC = móvil por decisión de producto): cono
+      // ancho (0.16) + snap completo al pecho en TODAS las plataformas.
+      // Bots never assist. Occlusion is still checked afterwards — assist
+      // never shoots walls.
       if (usesPlayerAmmo) {
         // AGRESIVO (filosofía Free Fire): cono ancho + snap completo al pecho.
         // "Levantar la mira": si la puntería ya pasa por encima del pecho,
         // el snap va a la CABEZA (la maestría se premia). Solo enemigos
         // (escuadras: los aliados no reciben asistencia). Nunca atraviesa muros.
-        const coarse = this._isTouch || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-        const assistAngle = coarse ? 0.16 : 0.028;
+        const assistAngle = 0.16;
         let bestDot = Math.cos(assistAngle);
         let assistDir = null;
         for (const target of targets) {
@@ -494,8 +493,7 @@ export class WeaponSystem {
           }
         }
         if (assistDir) {
-          if (coarse) direction.copy(assistDir); // snap completo en móvil
-          else direction.lerp(assistDir, 0.7).normalize(); // PC: sutil
+          direction.copy(assistDir); // snap completo en PC y móvil
         }
       }
 

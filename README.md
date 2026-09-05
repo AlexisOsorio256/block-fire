@@ -112,7 +112,7 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
   fuego, agacharse, sprint fijo; sin estados táctiles pegados
 - Landscape obligatorio en móvil con instrucción ANTES del gameplay
 - Screen shake, vignette de daño, **indicador direccional de daño**, respawn en 2s
-- Mapa 96×96 con texturas CC0, cobertura y plataformas; spawns validados
+- Mapa 120×120 con texturas CC0, 6 casas con puerta, cobertura y plataformas; spawns validados
 - 60 FPS de presupuesto en PC y móviles modestos (resolución adaptativa)
 - Lobby con selector de arma, estadísticas locales y panel de configuración
 

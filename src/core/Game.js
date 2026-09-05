@@ -45,7 +45,7 @@ export class Game {
         }`
     });
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
-    this.scene.fog = new THREE.Fog(0x87b5e8, 34, 90);
+    this.scene.fog = new THREE.Fog(0x87b5e8, 45, 125); // mapa 120x120
 
     // Renderer — mobile renders sharper than before (DPR cap 1.75, was 1.5:
     // the "Android looks degraded" note) with the dynamic downscaler
@@ -102,6 +102,7 @@ export class Game {
       if (!WeaponSkins[this.globalSkin]) this.globalSkin = 'none';
       for (const wKey of this.weaponSystem.weapons) this.weaponSystem.applySkin(wKey, this.globalSkin);
       this._renderLobbySkins();
+      this._paintHeroGun(); // por si el héroe ya estaba construido
     });
 
     // Bots — Duelo de Escuadras: 4v4 (jugador + 3 aliados vs 4 enemigos)
@@ -146,13 +147,13 @@ export class Game {
     // Cada ronda: fase de COMPRA (tienda animada) → combate → eliminación.
     this.ROUND_TARGET = 4;      // rondas para ganar el duelo
     this.BUY_TIME = 15;         // segundos de fase de compra
-    this.ROUND_TIME = 75;       // segundos por ronda
+    this.ROUND_TIME = 90;       // segundos por ronda (mapa 120x120)
     this.round = 1;
     this.roundWins = { ally: 0, enemy: 0 };
     this.phase = 'buy';         // squad: 'buy' | 'combat' | 'roundEnd'
     this.phaseTime = this.BUY_TIME;
     this.teamScore = { ally: 0, enemy: 0 }; // kills de la ronda actual (HUD)
-    this.coins = 1000;
+    this.coins = 1300;
     this.immuneUntil = 0;
     this._roundEndTime = 0;
     this._combatStarted = false;
@@ -243,9 +244,35 @@ export class Game {
     const av = AvatarLib.create({ team: 'hero', weapon: gun });
     if (!av) { console.error('[Lobby] avatar no creado'); return; }
     this._lobbyHero = av;
-    av.root.scale.setScalar(1.08);
+    this._lobbyGun = gun;
+    av.root.scale.setScalar(1.22); // presencia: el héroe debe lucir tras el velo
     av.root.position.set(0, 0.22, 0);
     this._lobbyGroup.add(av.root);
+    // Foco dorado sobre el héroe (1 luz sin sombras: el velo del overlay lo
+    // apagaba y "no lucía").
+    if (!this._lobbySpot) {
+      this._lobbySpot = new THREE.PointLight(0xffd9a0, 12, 12, 1.6);
+      this._lobbySpot.position.set(2.6, 3.2, 6.4);
+      this.scene.add(this._lobbySpot);
+    }
+    this._paintHeroGun(); // skin global del lobby también en su arma
+  }
+
+  // El arma del héroe lleva la skin global elegida (las skins "ni se veían").
+  _paintHeroGun() {
+    if (!this._lobbyGun || !this.skinsFor) return;
+    const sk = this.skinsFor[this.globalSkin];
+    if (!sk) return;
+    const accent = new THREE.Color(sk.accent);
+    this._lobbyGun.traverse((o) => {
+      if (o.isMesh) {
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+          if (m.emissive && m.emissiveIntensity >= 0.2) {
+            m.color.copy(accent); m.emissive.copy(accent);
+          }
+        });
+      }
+    });
   }
 
   _setupLights() {
@@ -261,10 +288,10 @@ export class Game {
     dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 80;
-    dir.shadow.camera.left = -40;
-    dir.shadow.camera.right = 40;
-    dir.shadow.camera.top = 40;
-    dir.shadow.camera.bottom = -40;
+    dir.shadow.camera.left = -50;
+    dir.shadow.camera.right = 50;
+    dir.shadow.camera.top = 50;
+    dir.shadow.camera.bottom = -50;
     dir.shadow.bias = -0.0006;
     this.scene.add(dir);
 
@@ -427,18 +454,9 @@ export class Game {
       resultBlock.classList.add('hidden');
       // First-match onboarding for touch players: one compact card, closes on
       // tap or after 9s. Stored locally — shown exactly once per device.
-      if ((window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900)
-          && !localStorage.getItem('bf_onboarded')) {
-        try { localStorage.setItem('bf_onboarded', '1'); } catch (e) {}
-        const hint = document.getElementById('touch-hint');
-        if (hint) {
-          hint.classList.remove('hidden');
-          const close = () => hint.classList.add('hidden');
-          const btn = document.getElementById('th-close');
-          if (btn) btn.addEventListener('click', close, { once: true });
-          setTimeout(close, 9000);
-        }
-      }
+      // En escuadras se difiere al primer combate: la tarjeta tapaba la
+      // tienda de compra y no dejaba comprar (captura móvil).
+      if (this.gameMode !== 'squad') this._maybeTouchHint();
       // Lock pointer for PC
       if(window.innerWidth > 900){
         this.renderer.domElement.requestPointerLock();
@@ -522,7 +540,9 @@ export class Game {
       this.round = 1;
       this.player.team = 'ally'; // sin esto el fuego amigo no aplica al jugador
       this.roundWins = { ally: 0, enemy: 0 };
-      this.coins = 1000;               // oro inicial (arrastra entre rondas)
+      // Oro inicial 1300: en R1 siempre hay algo comprable (escopeta 1200).
+      // Con 1000 la tienda de R1 era un escaparate intocable ("no deja comprar").
+      this.coins = 1300;               // oro inicial (arrastra entre rondas)
       this.weaponSystem.owned = new Set(['pistol']);
       this.weaponSystem.switchWeapon(2); // Pistola (índice 2)
       this.hud.updateTeamScore(0, 0, 1, this.ROUND_TARGET);
@@ -638,6 +658,22 @@ export class Game {
     return 'pistol';
   }
 
+  // Onboarding táctil bajo demanda (ver startGame: diferido al combate).
+  _maybeTouchHint() {
+    if ((window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900)
+        && !localStorage.getItem('bf_onboarded')) {
+      try { localStorage.setItem('bf_onboarded', '1'); } catch (e) {}
+      const hint = document.getElementById('touch-hint');
+      if (hint) {
+        hint.classList.remove('hidden');
+        const close = () => hint.classList.add('hidden');
+        const btn = document.getElementById('th-close');
+        if (btn) btn.addEventListener('click', close, { once: true });
+        setTimeout(close, 9000);
+      }
+    }
+  }
+
   // Fin de la fase de compra → ¡A LUCHAR!
   _startCombat() {
     this.phase = 'combat';
@@ -646,8 +682,9 @@ export class Game {
     this.hud.closeShop();
     this.shopOpenFlag = false;
     // Defensa en profundidad (B5): si la fase de compra dejó un equipo a cero,
-    // cerrar la ronda de inmediato en vez de jugar 75s contra un mapa vacío.
+    // cerrar la ronda de inmediato en vez de jugar 90s contra un mapa vacío.
     this.hud.showRoundBanner('¡A LUCHAR!', `RONDA ${this.round}`, '#ffd23f');
+    this._maybeTouchHint(); // onboarding diferido: la tienda ya cerró
     // Inmunidad corta al chocar (3s), y DISPARAR la rompe (regla Free Fire)
     this.immuneUntil = this.matchTime + 3.0;
     for (const b of this.bots) b.immuneUntil = this.matchTime + 3.0;
@@ -781,6 +818,7 @@ export class Game {
     for (const wKey of this.weaponSystem.weapons) this.weaponSystem.applySkin(wKey, skinKey);
     if (this.audio) this.audio.play('ui');
     this._renderLobbySkins();
+    this._paintHeroGun();
   }
 
   // Chips de skins del lobby (se construyen al cargar WeaponSkins).
@@ -1223,8 +1261,35 @@ export class Game {
     if(reload) this.weaponSystem.reload();
     if(switchW) this.weaponSystem.switchWeapon(switchW);
 
+    // FREEZE de compra (regla Free Fire: nadie se mueve hasta que empieza la
+    // ronda, cada uno en su lugar). La cámara sigue mirando y la tienda sigue
+    // clicable — solo el desplazamiento queda anulado este frame.
+    const frozen = this.gameMode === 'squad' && this.phase === 'buy';
+    let savedMove = null;
+    if (frozen && this.input) {
+      savedMove = { m: this.input.move, j: this.input.jump, s: this.input.sprint, c: this.input.crouch };
+      this.input.move = { x: 0, y: 0 };
+      this.input.jump = false; this.input.sprint = false; this.input.crouch = false;
+    }
     // Player
     this.playerController.update(dt);
+    // Muerto en escuadras: espectar al primer aliado vivo (estilo Free Fire)
+    // en vez de mirar al punto de muerte hasta el fin de ronda.
+    if (!this.player.isAlive && this.gameMode === 'squad' && this.phase === 'combat') {
+      const mate = this.bots.find(b => b.team === 'ally' && b.isAlive);
+      if (mate) {
+        this.camera.position.copy(mate.position);
+        this.camera.position.y += 0.15;
+        this.camera.rotation.order = 'YXZ';
+        this.camera.rotation.y = mate.yaw;
+        this.camera.rotation.x = 0;
+        this.camera.rotation.z = 0;
+      }
+    }
+    if (savedMove && this.input) {
+      this.input.move = savedMove.m; this.input.jump = savedMove.j;
+      this.input.sprint = savedMove.s; this.input.crouch = savedMove.c;
+    }
 
     // ADS is a camera zoom + weapon centering: one aim input, one feel.
     // Speed FOV: moving fast widens the view slightly (+7° at full run) —
@@ -1252,9 +1317,15 @@ export class Game {
 
     // Bots: dying bots animate their tumble (they no longer run AI); alive
     // bots run full behavior. Same loop, same contract as before.
+    // En freeze de compra la IA no corre: firmes en su lugar (idle asentado).
     for(const bot of this.bots){
       if (!bot.isAlive) {
         if (bot._dyingT > 0) bot._updateDying(dt);
+        continue;
+      }
+      if (frozen) {
+        bot.velocity.set(0, 0, 0);
+        if (bot._avatar) { bot._avatar.setLocomotion('idle'); bot._avatar.update(dt); }
         continue;
       }
       const action = bot.update(dt, this.player, this.bots, this.map);

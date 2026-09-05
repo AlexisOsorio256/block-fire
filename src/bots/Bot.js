@@ -375,15 +375,32 @@ export class Bot {
     let lookAtTarget = false;
 
     if (this.state === 'wander') {
-      move.copy(this.wanderDir);
-      // Avoid walls: if blocked, pick new dir
-      const nextPos = this.position.clone().addScaledVector(move, this.speed * dt * 2);
-      if (map.checkCollision(nextPos, this.radius, this.height)) {
-        this.wanderDir.set((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
+      // ALIADOS con ancla (estilo Free Fire: el equipo se mantiene unido):
+      // sin enemigo a la vista se repliegan junto al jugador y AHÍ SE QUEDAN
+      // (idle) en vez de dar vueltas como peonzas por todo el mapa.
+      const anchor = (this.team === 'ally' && player && player.isAlive) ? player.position : null;
+      if (anchor) {
+        const toA = new THREE.Vector3().subVectors(anchor, this.position);
+        toA.y = 0;
+        const distA = toA.length();
+        if (distA > 6) {
+          move.copy(toA.normalize()).multiplyScalar(0.7);
+          this.targetYaw = Math.atan2(move.x, move.z);
+        } else {
+          move.set(0, 0, 0); // en su lugar: quieto, cubriendo hacia fuera
+          this.targetYaw = Math.atan2(-toA.x, -toA.z);
+        }
+      } else {
         move.copy(this.wanderDir);
+        // Avoid walls: if blocked, pick new dir
+        const nextPos = this.position.clone().addScaledVector(move, this.speed * dt * 2);
+        if (map.checkCollision(nextPos, this.radius, this.height)) {
+          this.wanderDir.set((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
+          move.copy(this.wanderDir);
+        }
+        // Slow wander
+        move.multiplyScalar(0.6);
       }
-      // Slow wander
-      move.multiplyScalar(0.6);
 
     } else if (this.state === 'chase' && nearest) {
       const toTarget = new THREE.Vector3().subVectors(nearest.position, this.position);
@@ -466,12 +483,14 @@ export class Bot {
       this.targetYaw += (Math.random()-0.5) * inaccuracy;
     }
 
-    // Smooth yaw
+    // Smooth yaw: rápido fijando al enemigo, lento paseando (el giro brusco
+    // en wander + strafe corto era el "efecto peonza" del gameplay grabado).
     let yawDiff = this.targetYaw - this.yaw;
     // Normalize to -PI to PI
     while (yawDiff > Math.PI) yawDiff -= Math.PI*2;
     while (yawDiff < -Math.PI) yawDiff += Math.PI*2;
-    this.yaw += yawDiff * Math.min(1, dt * 6);
+    const yawRate = lookAtTarget ? 6 : 3;
+    this.yaw += yawDiff * Math.min(1, dt * yawRate);
 
     // Update mesh: feet stay on groundY
     this.mesh.position.copy(this.position);
@@ -530,6 +549,7 @@ export class Bot {
         this.shootCooldown = 0.22 + Math.random()*0.35; // fire rate variation
         // Add recoil to yaw
         this.yaw += (Math.random()-0.5) * 0.06;
+        if (this._avatar) this._avatar.pulse(); // culatazo visible
       }
     }
 

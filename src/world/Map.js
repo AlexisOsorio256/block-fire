@@ -6,7 +6,7 @@ export class Map {
     this.scene = scene;
     this.boxes = []; // For collision: { min: Vector3, max: Vector3, mesh }
     this.spawns = [];
-    this.size = 48; // Half size
+    this.size = 60; // Half size (120x120: sitio para casas y escondites)
     this.wallHeight = 5;
 
     // Real CC0 textures (Kenney, see CREDITS.md). If a file fails to load the
@@ -170,14 +170,21 @@ export class Map {
     const spawnBlocked = (x, z) => this.spawns.some(s => Math.hypot(s.x - x, s.z - z) < 2.6);
     for(let i=0;i<6;i++){
       for (let attempt = 0; attempt < 20; attempt++) {
-        const x = (Math.random()-0.5)*36;
-        const z = (Math.random()-0.5)*36;
+        const x = (Math.random()-0.5)*44;
+        const z = (Math.random()-0.5)*44;
         if(Math.hypot(x,z) < 8) continue;
         if (spawnBlocked(x, z)) continue;
         this._createBox(x, 0, z, 1.6, 1.0, 1.6, 'cover');
         break;
       }
     }
+    // Esquinas con cobertura alta + 2 casas (el mapa creció a 120x120)
+    this._createBox(34, 0, 34, 3, 2.2, 3, 'cover');
+    this._createBox(-34, 0, -34, 3, 2.2, 3, 'cover');
+    this._createBox(34, 0, -34, 3, 2.2, 3, 'cover');
+    this._createBox(-34, 0, 34, 3, 2.2, 3, 'cover');
+    this._house(32, 0, 'W', 'wall');
+    this._house(-32, 0, 'E', 'wall');
   }
 
   _createSpawns() {
@@ -348,21 +355,31 @@ export class Map {
     const s = this.size;
     const add = (x, z, w, h, d, mat) => this._createBox(x, 0, z, w, h, d, mat);
 
-    // BASE ALIADA (Sur, z>0): suelo pintado, casas refugio, muros bajos
-    add(0, s*0.40, 12, 0.12, s*0.34, 'allyFloor');
-    add(-s*0.24, s*0.30, 6, 2.6, 4, 'allyWall');
-    add(s*0.24, s*0.30, 6, 2.6, 4, 'allyWall');
+    // BASE ALIADA (Sur, z>0): suelo pintado, casas refugio, muros bajos.
+    // El muro central va a s*0.27 (no 0.30): a 0.30 mordía el spawn (-1, .36).
+    add(0, s*0.40, 14, 0.12, s*0.34, 'allyFloor');
+    add(-s*0.24, s*0.30, 7, 2.6, 5, 'allyWall');
+    add(s*0.24, s*0.30, 7, 2.6, 5, 'allyWall');
     add(-s*0.13, this.size*0.36, 5, 1.2, 1.4, 'wood');
     add(s*0.13, this.size*0.36, 5, 1.2, 1.4, 'wood');
-    add(0, s*0.30, 1.4, 1.1, 6, 'allyWall');
+    add(0, s*0.27, 1.6, 1.1, 7, 'allyWall');
 
     // BASE ENEMIGA (Norte) — espejo exacto
-    add(0, -s*0.40, 12, 0.12, s*0.34, 'enemyFloor');
-    add(-s*0.24, -s*0.30, 6, 2.6, 4, 'enemyWall');
-    add(s*0.24, -s*0.30, 6, 2.6, 4, 'enemyWall');
+    add(0, -s*0.40, 14, 0.12, s*0.34, 'enemyFloor');
+    add(-s*0.24, -s*0.30, 7, 2.6, 5, 'enemyWall');
+    add(s*0.24, -s*0.30, 7, 2.6, 5, 'enemyWall');
     add(-s*0.12, -this.size*0.36, 5, 1.2, 1.4, 'wood');
     add(s*0.12, -this.size*0.36, 5, 1.2, 1.4, 'wood');
-    add(0, -s*0.30, 1.4, 1.1, 6, 'enemyWall');
+    add(0, -s*0.27, 1.6, 1.1, 7, 'enemyWall');
+
+    // CASAS (escondite real: 4 muros h2.6 sin techo + puerta de 2.4).
+    // Puerta hacia el centro en cada base; laterales enfrentados.
+    this._house(-s*0.38, s*0.235, 'N', 'wall');
+    this._house(s*0.38, s*0.235, 'N', 'wall');
+    this._house(-s*0.38, -s*0.235, 'S', 'wall');
+    this._house(s*0.38, -s*0.235, 'S', 'wall');
+    this._house(-s*0.44, 0, 'E', 'cover');
+    this._house(s*0.44, 0, 'W', 'cover');
 
     // CENTRO: casa con dos paredes + coberturas cruzadas
     add(-4, 0, 1.2, 2.6, 7, 'wall');
@@ -370,6 +387,8 @@ export class Map {
     add(0, -3.2, 9, 2.6, 1.2, 'wall');
     add(-6.5, 0, 3.2, 1.2, 1.2, 'wood');
     add(6.5, 0, -3.2, 1.2, 1.2, 'wood');
+    add(-11, 0, 3, 2.2, 1.2, 'cover');
+    add(11, 0, 3, 2.2, 1.2, 'cover');
 
     // LANES laterales (flanqueo) con coberturas alternadas
     for (const side of [-1, 1]) {
@@ -382,5 +401,24 @@ export class Map {
     // PROPS: contenedores industriales (identidad, no graybox)
     add(-s*0.16, -s*0.2, 2.6, 2.2, 2.6, 'cover');
     add(s*0.16, s*0.2, 2.6, 1.4, 2.6, 'enemyWall');
+    add(-s*0.30, -s*0.34, 3, 1.8, 3, 'cover');
+    add(s*0.30, s*0.34, 3, 1.8, 3, 'cover');
+  }
+
+  // Casa refugio axis-aligned (el contrato de colisión/raycast es AABB):
+  // 8x8, muros h2.6 (el salto de 1.29 no los corona), puerta de 2.4 en `door`
+  // y un cajón dentro como mueble/escondite. Sin techo (luz natural).
+  _house(cx, cz, door, mat) {
+    const W = 8, T = 0.7, H = 2.6, G = 2.4, seg = (W - G) / 2, off = G / 2 + seg / 2;
+    const box = (x, z, w, d, m) => this._createBox(x, 0, z, w, H, d, m || mat);
+    if (door === 'N') { box(cx - off, cz - W / 2, seg, T); box(cx + off, cz - W / 2, seg, T); }
+    else box(cx, cz - W / 2, W, T);
+    if (door === 'S') { box(cx - off, cz + W / 2, seg, T); box(cx + off, cz + W / 2, seg, T); }
+    else box(cx, cz + W / 2, W, T);
+    if (door === 'E') { box(cx + W / 2, cz - off, T, seg); box(cx + W / 2, cz + off, T, seg); }
+    else box(cx + W / 2, cz, T, W);
+    if (door === 'W') { box(cx - W / 2, cz - off, T, seg); box(cx - W / 2, cz + off, T, seg); }
+    else box(cx - W / 2, cz, T, W);
+    this._createBox(cx, 0, cz, 1.6, 1.0, 1.6, 'wood'); // mueble interior
   }
 }

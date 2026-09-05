@@ -140,6 +140,10 @@ export const AvatarLib = {
       },
       // Compat: el Bot llamaba setMoving(bool). walk genérico en movimiento.
       setMoving(moving) { this.setLocomotion(moving ? 'walk' : 'idle'); },
+      // Culatazo al disparar: el GLB no trae clip de tiro; un dip corto del
+      // torso vende cada disparo sin tocar el esqueleto (root, no huesos).
+      _pulse: 0,
+      pulse() { this._pulse = 1; },
       update(dt) {
         // Funde cada peso hacia su objetivo: transición legible sin pops y
         // sin depender de que el llamador acierte el momento exacto.
@@ -149,6 +153,8 @@ export const AvatarLib = {
           const next = THREE.MathUtils.lerp(cur, target, Math.min(1, dt * 8));
           actions[k].setEffectiveWeight(Math.abs(next - target) < 0.01 ? target : next);
         }
+        if (this._pulse > 0) this._pulse = Math.max(0, this._pulse - dt * 5);
+        clone.rotation.x = -0.13 * this._pulse;
         mixer.update(dt);
       },
     };
