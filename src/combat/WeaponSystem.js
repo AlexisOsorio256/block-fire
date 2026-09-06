@@ -1,12 +1,13 @@
 import * as THREE from '../lib/three.module.js';
+import { assets, WEAPON_MODELS } from '../core/AssetRegistry.js';
 
 export const WeaponData = {
   rifle: {
     name: 'Rifle',
     price: 1500,
-    damage: 24,
+    damage: 17, // TTK body 0.81s a distancia óptima (medido): reacción posible
     headshotMul: 2.0,
-    fireRate: 0.11, // seconds between shots
+    fireRate: 0.115,
     magazineSize: 30,
     reloadTime: 1.6,
     spread: 0.012,
@@ -15,15 +16,15 @@ export const WeaponData = {
     pellets: 1,
     automatic: true,
     bulletSpeed: 0, // hitscan
-    falloffStart: 40, // full damage to 40u, then decays to 75% at 90u
-    falloffMin: 0.75,
+    falloffStart: 35,
+    falloffMin: 0.7,
   },
   pistol: {
     name: 'Pistol',
     price: 0, // arma inicial: gratis, siempre en el inventario
-    damage: 18, // 18x7=126 > 125HP: 7 al cuerpo, 4 a la cabeza (2x) — secundaria digna
+    damage: 25, // TTK body ~1.04s / head 0.52s: secundaria digna que premia puntería
     headshotMul: 2.0,
-    fireRate: 0.32,
+    fireRate: 0.26,
     magazineSize: 12,
     reloadTime: 1.1,
     spread: 0.006,
@@ -32,41 +33,41 @@ export const WeaponData = {
     pellets: 1,
     automatic: false,
     bulletSpeed: 0,
-    falloffStart: 30, // full damage to 30u, then decays to 80% at 70u
-    falloffMin: 0.8,
+    falloffStart: 25,
+    falloffMin: 0.75,
   },
   shotgun: {
     name: 'Shotgun',
     price: 1200,
-    damage: 21, // 21x6=126 > 125HP: a bocajarro (todas las postas) es kill de 1 disparo
+    damage: 26, // 26x6=156: one-shot SOLO dentro de ~7m; a 10m quedan 114 (seguimiento)
     headshotMul: 1.5,
-    fireRate: 0.72,
+    fireRate: 0.75,
     magazineSize: 6,
     reloadTime: 1.9,
     spread: 0.082,
     recoil: 1.1,
-    range: 22,
+    range: 16,
     pellets: 6,
     automatic: false,
     bulletSpeed: 0,
-    falloffStart: 6, // full damage to 6u, then falls hard to 35% at 22u
-    falloffMin: 0.35,
+    falloffStart: 7,
+    falloffMin: 0.2,
   },
   smg: {
     name: 'SMG',
-    damage: 16,
-    headshotMul: 2.0,
-    fireRate: 0.075,
+    damage: 13,
+    headshotMul: 1.9,
+    fireRate: 0.085,
     magazineSize: 36,
     reloadTime: 1.8,
     spread: 0.018,
     recoil: 0.4,
-    range: 60,
+    range: 55,
     pellets: 1,
     automatic: true,
     bulletSpeed: 0,
-    falloffStart: 25,
-    falloffMin: 0.7,
+    falloffStart: 20,
+    falloffMin: 0.65,
     price: 1800,
   }
 };
@@ -110,14 +111,108 @@ export class WeaponSystem {
     this.crosshair = document.getElementById('crosshair');
     this.hitmarker = document.getElementById('hitmarker');
 
-    // Weapon meshes (simple blocky) — THREE distinct models so the player
-    // always recognizes what is in their hands (silhouette, not just stats).
+    // Weapon meshes (blocky) — fallback técnico. La RUTA NORMAL carga GLB
+    // reales (Kenney Blaster Kit CC0): este blocky solo se ve mientras carga
+    // o si el asset falla (offline/APK vieja). Silueta reconocible siempre.
     this._weaponModels = this._createWeaponMeshes();
     for (const key of Object.keys(this._weaponModels)) {
       this.scene.add(this._weaponModels[key]);
       this._weaponModels[key].visible = key === this.weapons[this.currentIndex];
     }
     this.weaponMesh = this._weaponModels.rifle; // alias for the current model
+
+    // ── GLB reales (ruta principal): sustituyen al blocky por arma cuando
+    // llegan. ORIENTACIÓN MEDIDA (análisis de vértices/Box3 por malla +
+    // silueta proyectada, ver .tmp/glb-slabs.mjs): TODOS los GLB de Kenney
+    // aquí usados crecen hacia +Z (pistola: empuñadura z+ / cañón z-;
+    // rifle: empuñadura z+ / cargador y cañón z-; escopeta: culata z=+1.39 /
+    // cañón z=0; SMG: empuñadura z+). El cañón del viewmodel apunta a -Z,
+    // así que SIN rotación (rotY: Math.PI los ponía AL REVÉS — bug visual
+    // "arma sostenida al revés"). Escopeta además nace con zmin=0 (origen
+    // en la boca): se recentra por Box3 para que el pivote sea el centro.
+    this._glbModels = {};
+    for (const key of Object.keys(WEAPON_MODELS)) {
+      assets.instantiate(WEAPON_MODELS[key]).then((obj) => {
+        if (!obj) return; // fallback blocky permanece
+        // Normalización: Kenney ~0.6-1.4u de largo; el viewmodel vive a
+        // ~0.4m de la cámara y espera armas de 0.35–0.62u. Cañón = -Z.
+        const NORM = {
+          rifle:   { scale: 0.42 },
+          pistol:  { scale: 0.30 },
+          shotgun: { scale: 0.26 },  // modelo 1.39u de largo
+          smg:     { scale: 0.30 },
+        };
+        const n = NORM[key] || { scale: 1 };
+        const wrap = new THREE.Group();
+        obj.rotation.y = 0; // Kenney ya apunta el cañón a -Z: no tocar
+        obj.scale.setScalar(n.scale);
+        // Recentrado por Box3 real: el origen del asset rara vez es su centro
+        // (la escopeta nace con zmin=0). Así el preset del viewmodel controla
+        // la posición con un invariante, no con offsets por arma.
+        obj.updateMatrixWorld(true);
+        const bb = new THREE.Box3().setFromObject(obj);
+        const c = bb.getCenter(new THREE.Vector3());
+        obj.position.sub(c); // centro geométrico al origen del wrap
+        // Elevar la LÍNEA DEL CAÑÓN hacia el eje del wrap (la mira visual del
+        // arma debe quedar cerca del centro, no el centro de la bbox): la
+        // mitad superior de la bbox ≈ cota del cañón en estos modelos.
+        obj.position.y += bb.getSize(new THREE.Vector3()).y * 0.25;
+        wrap.add(obj);
+        // Brazos/manos low-poly del jugador agarrando el arma (paleta del
+        // soldado). Viven DENTRO del wrap: heredan bob/recoil/ADS/recarga.
+        this._attachArms(wrap, key);
+        wrap.visible = false;
+        this.scene.add(wrap);
+        this._glbModels[key] = wrap;
+        // Si es el arma activa, cambiar visibilidad ya
+        this._updateWeaponMesh();
+      });
+    }
+  }
+
+  // ── Brazos del viewmodel: par de brazos low-poly (manga + guante) que
+  // agarran el arma. Construidos UNA vez por arma, sin allocs por frame:
+  // el wrap completo (arma+brazos) se mueve con la animación existente.
+  // Escala: el diseño de brazo asume un arma de ~0.55u; se escala por el
+  // Box3 REAL del arma normalizada para que las manos caigan sobre grip y
+  // guardamanos en las 4 armas (pistola 0.19u … escopeta 0.36u).
+  _attachArms(wrap, weaponKey) {
+    // Paleta del soldado (OPERATORS/DAV): manga azul-gris, guante oscuro,
+    // piel cartoon visible en la mano.
+    // Emissive sutil del propio tono: el viewmodel vive en el encuadre SIEMPRE
+    // (bajo el arma mirando arriba, contra el cielo, de espaldas al sol); sin
+    // él los brazos caen a silueta negra y el agarre se vuelve ilegible.
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x39445c, roughness: 0.8, metalness: 0.05, emissive: 0x39445c, emissiveIntensity: 0.30 });
+    const skinMat   = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.7, metalness: 0.0, emissive: 0xd9a066, emissiveIntensity: 0.28 });
+    const gloveMat  = new THREE.MeshStandardMaterial({ color: 0x9fb0d8, roughness: 0.75, metalness: 0.1, emissive: 0x9fb0d8, emissiveIntensity: 0.38 });
+    const mk = (w, h, d, mat, x, y, z, rx = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      if (rx) m.rotation.x = rx;
+      return m;
+    };
+    // hombro→codo→mano: dos segmentos por brazo (silueta doblada natural).
+    // Diseño base (arma de 0.55u): mano derecha en la empuñadura (z+ del
+    // arma), mano izquierda en el guardamanos (z-).
+    const armR = new THREE.Group();
+    armR.add(mk(0.085, 0.085, 0.30, sleeveMat, 0.05, -0.045, 0.16, 0.22)); // manga sup
+    armR.add(mk(0.075, 0.075, 0.16, gloveMat,  0.02, -0.075, 0.02, -0.10)); // guante/puño
+    armR.add(mk(0.06, 0.07, 0.09,  skinMat,    0.015, -0.10, -0.03));       // mano en grip
+    const armL = new THREE.Group();
+    armL.add(mk(0.08, 0.08, 0.26, sleeveMat, -0.05, -0.06, -0.05, -0.28));  // manga bajo el guardamanos
+    armL.add(mk(0.07, 0.07, 0.14, gloveMat,  -0.02, -0.045, -0.14, 0.12));  // guante en guardamanos
+    armL.add(mk(0.058, 0.065, 0.08, skinMat, -0.015, -0.03, -0.19));        // mano al frente
+    // Ajuste por arma real: largo visible = Box3 del hijo (ya escalado/centrado)
+    wrap.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(wrap);
+    const size = bb.getSize(new THREE.Vector3());
+    const L = size.z;
+    const k = THREE.MathUtils.clamp(L / 0.55, 0.34, 0.85);
+    armR.scale.setScalar(k);
+    armL.scale.setScalar(k);
+    armR.position.set(0.012 * k, -0.015 * k, L * 0.18);  // mano derecha sobre la empuñadura
+    armL.position.set(-0.010 * k, -0.005 * k, -L * 0.26); // mano izquierda al guardamanos
+    wrap.add(armR, armL);
   }
 
   _createWeaponMeshes() {
@@ -223,6 +318,58 @@ export class WeaponSystem {
     return { rifle, pistol, shotgun, smg };
   }
 
+  // ── Brazos para el FALLBACK blocky: mismo diseño que los del GLB. Se crean
+  // UNA vez y se cuelgan de la escena; update() los sincroniza con el arma
+  // activa (position/quaternion/scale + offset local). Sin allocs por frame.
+  _ensureFallbackArms() {
+    if (this._fallbackArms) return;
+    // Emissive sutil del propio tono: el viewmodel vive en el encuadre SIEMPRE
+    // (bajo el arma mirando arriba, contra el cielo, de espaldas al sol); sin
+    // él los brazos caen a silueta negra y el agarre se vuelve ilegible.
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x39445c, roughness: 0.8, metalness: 0.05, emissive: 0x39445c, emissiveIntensity: 0.30 });
+    const skinMat   = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.7, metalness: 0.0, emissive: 0xd9a066, emissiveIntensity: 0.28 });
+    const gloveMat  = new THREE.MeshStandardMaterial({ color: 0x9fb0d8, roughness: 0.75, metalness: 0.1, emissive: 0x9fb0d8, emissiveIntensity: 0.38 });
+    const mk = (w, h, d, mat, x, y, z, rx = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      if (rx) m.rotation.x = rx;
+      return m;
+    };
+    const armR = new THREE.Group();
+    armR.add(mk(0.085, 0.085, 0.30, sleeveMat, 0.05, -0.045, 0.16, 0.22));
+    armR.add(mk(0.075, 0.075, 0.16, gloveMat,  0.02, -0.075, 0.02, -0.10));
+    armR.add(mk(0.06, 0.07, 0.09,  skinMat,    0.015, -0.10, -0.03));
+    const armL = new THREE.Group();
+    armL.add(mk(0.08, 0.08, 0.26, sleeveMat, -0.05, -0.06, -0.05, -0.28));
+    armL.add(mk(0.07, 0.07, 0.14, gloveMat,  -0.02, -0.045, -0.14, 0.12));
+    armL.add(mk(0.058, 0.065, 0.08, skinMat, -0.015, -0.03, -0.19));
+    const g = new THREE.Group();
+    g.add(armR, armL);
+    g.visible = false;
+    this.scene.add(g);
+    this._fallbackArms = g;
+  }
+
+  // Sincroniza los brazos del fallback con el viewmodel blocky activo.
+  // Offset local fijo (reciclado): los brazos nacen un poco más abajo/lado
+  // que el arma para que las manos caigan sobre grip y guardamanos.
+  _syncFallbackArms(bobX, bobY) {
+    this._ensureFallbackArms();
+    const arms = this._fallbackArms;
+    const mesh = this.weaponMesh;
+    const isBlocky = mesh && this._weaponModels[this.weapons[this.currentIndex]] === mesh;
+    // Solo visibles si el JUEGO considera al blocky el viewmodel activo
+    // (glb ausente u oculto por debug). El update() de Game ya apagó el
+    // blocky fuera de partida: ese flag basta, no hace falta duplicarlo.
+    arms.visible = !!(isBlocky && this.weaponMesh.visible);
+    if (!arms.visible) return;
+    if (!this._armOffset) this._armOffset = new THREE.Vector3();
+    this._armOffset.set(0.01, -0.03, 0.02).applyQuaternion(mesh.quaternion);
+    arms.position.copy(mesh.position).add(this._armOffset);
+    arms.quaternion.copy(mesh.quaternion);
+    arms.scale.copy(mesh.scale);
+  }
+
   // ── SKINS: aplica los colores de la skin al modelo del arma ──
   // 'none'/Estándar restaura los colores originales (cacheados la 1ª vez).
   applySkin(weaponKey, skinKey) {
@@ -242,10 +389,14 @@ export class WeaponSystem {
   // Built ONCE: update() ran this every frame (3 Vector3 + object per frame → GC churn).
   _viewPresets() {
     if (!this._presetsCache) this._presetsCache = {
+      // muzzle = punta del cañón en espacio de cámara. Modelos RECENTRADOS por
+      // Box3 (el wrap tiene el centro geométrico en su origen), así que la
+      // punta ≈ -(largo_final/2) por arma: rifle 0.34, pistol 0.10, shotgun
+      // 0.36 (1.39u*0.26/2), smg 0.18.
       rifle:   { pos: new THREE.Vector3(0.26, -0.22, -0.45), scale: 1.0,  muzzle: -0.48 },
-      pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9,  muzzle: -0.30 },
+      pistol:  { pos: new THREE.Vector3(0.22, -0.20, -0.38), scale: 0.9,  muzzle: -0.26 },
       shotgun: { pos: new THREE.Vector3(0.28, -0.24, -0.42), scale: 1.15, muzzle: -0.60 },
-      smg:     { pos: new THREE.Vector3(0.24, -0.21, -0.40), scale: 1.0,  muzzle: -0.34 },
+      smg:     { pos: new THREE.Vector3(0.24, -0.21, -0.40), scale: 1.0,  muzzle: -0.35 },
     };
     return this._presetsCache;
   }
@@ -327,6 +478,8 @@ export class WeaponSystem {
       this.weaponMesh.rotation.z = this.camera.rotation.z + bobX * 1.2;
       const s = preset.scale * (1 - ads * 0.12);
       this.weaponMesh.scale.setScalar(s);
+      // Brazos del fallback (blocky): siguen al arma con el mismo bob/recoil.
+      this._syncFallbackArms(bobX, bobY);
     }
   }
 
@@ -478,41 +631,52 @@ export class WeaponSystem {
       direction.addScaledVector(camRight, spreadX).addScaledVector(camUp, spreadY);
       direction.normalize();
 
-      // AIM ASSIST (player only, PC = móvil por decisión de producto): cono
-      // ancho (0.16) + snap completo al pecho en TODAS las plataformas.
-      // Bots never assist. Occlusion is still checked afterwards — assist
-      // never shoots walls.
+      // ── AIM ASSIST (solo jugador): fricción + magnetismo SUAVE, sin snap ──
+      // Filosofía: la asistencia acerca el rayo al torso cuando pasa cerca,
+      // pero la CABEZA es recompensa del input vertical REAL del jugador
+      // (levantar la mira), jamás de un snap automático. La asistencia decae
+      // con la distancia angular, cae a cero si el objetivo está tras
+      // cobertura, nunca actúa sobre aliados y es menor en PC que en touch.
       if (usesPlayerAmmo) {
-        // AGRESIVO (filosofía Free Fire): cono ancho + snap completo al pecho.
-        // "Levantar la mira": si la puntería ya pasa por encima del pecho,
-        // el snap va a la CABEZA (la maestría se premia). Solo enemigos
-        // (escuadras: los aliados no reciben asistencia). Nunca atraviesa muros.
-        const assistAngle = 0.16;
-        let bestDot = Math.cos(assistAngle);
-        let assistDir = null;
+        const touch = this.game && this.game._isTouchPlatform;
+        const assistCone = (touch ? 0.11 : 0.07);      // mitad de cono (rad)
+        const maxPull = (touch ? 0.055 : 0.035);        // rotación máxima (rad)
+        let bestDev = Infinity;
+        let pullDir = null;
+        let pullStrength = 0;
         for (const target of targets) {
           if (target === shooter || !target.isAlive) continue;
-          // escuadras: no asistir sobre ALIADOS (target.team === 'ally' = tu escuadra)
+          // escuadras: jamás asistencia sobre ALIADOS
           if (target.isBot && (target.team || 'enemy') === 'ally') continue;
           if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
           const th = target.height || 1.65;
           const chest = target.position.clone(); chest.y -= th * 0.38;
-          const head = target.position.clone(); head.y -= th * 0.82;
           const toChest = chest.clone().sub(origin);
           const dist = toChest.length();
           if (dist > weapon.range) continue;
           toChest.normalize();
           const dot = toChest.dot(direction);
-          if (dot > bestDot) {
-            bestDot = dot;
-            // "Levantar la mira": si el rayo crudo pasa por encima del pecho,
-            // el jugador apunta arriba → el snap sube a la CABEZA (red numbers)
-            const toHead = head.clone().sub(origin).normalize();
-            assistDir = (direction.dot(toHead) > direction.dot(toChest)) ? toHead : toChest;
+          if (dot <= Math.cos(assistCone)) continue;      // fuera del cono
+          // Oclusión: la asistencia muere si el torso está tras un muro
+          if (map) {
+            const mapBlock = map.raycast(origin, toChest, dist - 0.4);
+            if (mapBlock) continue;
+          }
+          // desviación angular del rayo crudo respecto al pecho
+          const dev = Math.acos(Math.min(1, dot));
+          if (dev < bestDev) {
+            bestDev = dev;
+            // dirección de jalado: del rayo crudo HACIA el pecho, escalada
+            // por cercanía al centro del cono (magnetismo progresivo)
+            pullStrength = maxPull * (1 - dev / assistCone);
+            pullDir = toChest;
           }
         }
-        if (assistDir) {
-          direction.copy(assistDir); // snap completo en PC y móvil
+        if (pullDir) {
+          // Fricción: acerca UNA FRACCIÓN del hueco, nunca fija el objetivo.
+          // El rayo resultante se re-normaliza; spread se aplica después de
+          // esto, así la explosión de postas no se beneficia del pull.
+          direction.lerp(pullDir, Math.min(0.85, pullStrength / Math.max(0.02, bestDev))).normalize();
         }
       }
 
@@ -611,6 +775,11 @@ export class WeaponSystem {
           this.vfx.blood(hitPoint);
           if (!tracerTo) tracerTo = hitPoint;
         }
+        // Número de daño: UNO por víctima y disparo con el daño REAL acumulado
+        // (post-falloff, postas de escopeta sumadas). Solo para el jugador.
+        if (usesPlayerAmmo && this.game && this.game.damageNumbers) {
+          this.game.damageNumbers.show(damage, targetHits[0].point, isHeadshot, died);
+        }
       }
     }
 
@@ -700,16 +869,49 @@ export class WeaponSystem {
 
   _updateWeaponMesh() {
     if (!this._weaponModels) return;
-    // Model swap: hide every model, show the current one. Silhouettes differ
-    // (rifle long + angled mag, pistol compact slide, shotgun long barrel +
-    // pump + wood) — recognition without reading the HUD label.
+    const current = this.weapons[this.currentIndex];
+    // GLB real disponible → oculta TODOS (blocky y GLB) salvo el GLB actual.
+    // Si no llegó aún, el blocky de la misma arma es el visible (fallback).
+    const glb = this._glbModels && this._glbModels[current];
     for (const key of Object.keys(this._weaponModels)) {
-      this._weaponModels[key].visible = key === this.weapons[this.currentIndex];
+      this._weaponModels[key].visible = !glb && key === current;
     }
-    this.weaponMesh = this._weaponModels[this.weapons[this.currentIndex]];
+    for (const key of Object.keys(this._glbModels || {})) {
+      this._glbModels[key].visible = key === current;
+    }
+    this.weaponMesh = glb || this._weaponModels[current];
+    // El viewmodel activo escala/bobea vía preset; el GLB hereda transform
+    // del wrap — aplicar la skin del arsenal también tiñe el GLB (accent).
+    if (glb) this._applySkinToGlb(current);
+  }
+
+  // Skins sobre GLB: tiñe la malla (colormap de Kenney) con el accent global.
+  _applySkinToGlb(weaponKey) {
+    const wrap = this._glbModels && this._glbModels[weaponKey];
+    if (!wrap) return;
+    const skin = (this.game && WeaponSkins[this.game.globalSkin]) || WeaponSkins.none;
+    // Los brazos del jugador NO se tiñen: su paleta (manga/guante/piel) es
+    // la del operador. Marcamos los materiales de brazo para excluirlos.
+    const ARM_COLORS = new Set(['39445c', '9fb0d8', 'd9a066']);
+    wrap.traverse((o) => {
+      if (o.isMesh && o.material) {
+        if (!o.userData._origMat) o.userData._origMat = Array.isArray(o.material) ? o.material[0] : o.material;
+        if (o.userData._origMat && o.userData._origMat.color && ARM_COLORS.has(o.userData._origMat.color.getHexString())) return; // brazo
+        const m = o.userData._origMat.clone();
+        if (skin.accent !== null && skin.accent !== undefined) {
+          m.color = new THREE.Color(skin.accent);
+        }
+        o.material = m;
+      }
+    });
   }
 
   getAmmoText() {
     return `${this.ammoInMag}/${this.reserveAmmo}`;
+  }
+
+  // URL del GLB fuente de un arma (iconos de tienda). Fallback: null → glifo.
+  _iconSourceUrl(key) {
+    return WEAPON_MODELS[key] || null;
   }
 }

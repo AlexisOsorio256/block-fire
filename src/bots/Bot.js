@@ -16,17 +16,32 @@ const S = {
   toT: new THREE.Vector3(),    // hacia el objetivo
   strafe: new THREE.Vector3(), // strafe perpendicular
   fwd: new THREE.Vector3(),    // frente del bot
+  wp: new THREE.Vector3(),     // waypoint actual de navegación
 };
 const UP = new THREE.Vector3(0, 1, 0);
 const CANDIDATES = []; // objetivos enemigos del frame (reutilizado)
 
+// ROLES EMERGENTES por parámetros (no clases): variaciones de distancia
+// preferida, agresividad, reacción y lane. El id del bot fija el rol:
+// 0/3 → entry (agresivo), 1/4 → support, 2/5 → anchor, 6 → support.
+const ROLE_PARAMS = [
+  { prefDist: 7,  aggro: 1.25, react: 0.16, laneBias: 0.7  }, // entry
+  { prefDist: 11, aggro: 0.95, react: 0.28, laneBias: 0.0  }, // support
+  { prefDist: 14, aggro: 0.7,  react: 0.38, laneBias: -0.7 }, // anchor
+  { prefDist: 7,  aggro: 1.25, react: 0.18, laneBias: -0.7 }, // entry
+  { prefDist: 11, aggro: 0.95, react: 0.25, laneBias: 0.7  }, // support
+  { prefDist: 14, aggro: 0.75, react: 0.35, laneBias: 0.0  }, // anchor
+  { prefDist: 9,  aggro: 1.0,  react: 0.22, laneBias: 0.0  }, // support
+];
+
 export class Bot {
-  constructor(id, scene, map, position) {
+  constructor(id, scene, map, position, navigation = null) {
     this.id = id;
     this.isBot = true;
     this.isAlive = true;
     this.map = map;
     this.scene = scene;
+    this.navigation = navigation; // dueño de rutas (inyectado por Game; null → steering puro)
     // Snap spawn Y to actual ground (covers platforms correctly)
     const gy = map ? map.getGroundY(position.x, position.z) : 0;
     this.position = new THREE.Vector3(position.x, gy + 1.65, position.z);
@@ -62,6 +77,13 @@ export class Bot {
     this.strafeDir = Math.random() > 0.5 ? 1 : -1;
     this.strafeTimer = 0;
 
+    // Memoria CORTA del último enemigo visto (reacciona como humano, no como radar):
+    // recordar posición ~1.5s tras perder LOS; prescinde del target luego.
+    this._lastSeen = null;       // {x,z,ttl}
+    this._reactWait = 0;         // tiempo de reacción restante al adquirir objetivo
+    this._noShootTime = 0;       // tiempo sin poder disparar con LOS → reubicarse
+    this._laneSeed = (id % 2 === 0) ? 1 : -1; // flanco preferido coherente por bot
+
     // CLASH SQUAD: arma comprada por ronda (la IA "compra" en la fase de compra)
     this.weaponKey = 'pistol';
 
@@ -73,22 +95,31 @@ export class Bot {
 
   // Reemplaza el cuerpo blocky por el soldado GLB animado (mismo group:
   // posición/rotación/muerte/respawn siguen operando igual).
-  // Compra en la fase de compra: cambia el arma VISIBLE en la mano
+  // Compra en la fase de compra: cambia el arma VISIBLE en la mano.
+  // Ruta principal: GLB real; el blocky solo vive si el asset falla.
   setWeapon(key) {
     this.weaponKey = key;
     if (!this._avatar || !AvatarLib.ready) return;
     // localizar el gunPivot (hijo de la mano derecha) y swap el modelo
     const oldGun = this._gunPivot && this._gunPivot.children[0];
-    const gun = AvatarLib.makeHeldWeapon(key, this.team === 'ally' ? 0x2ee86e : 0xff5a4a);
-    if (oldGun) this._gunPivot.remove(oldGun);
-    if (this._gunPivot) this._gunPivot.add(gun);
+    const teamColor = this.team === 'ally' ? 0x2ee86e : 0xff5a4a;
+    const mount = (gun) => {
+      if (!this._gunPivot) return;
+      const prev = this._gunPivot.children[0];
+      if (prev) this._gunPivot.remove(prev);
+      this._gunPivot.add(gun);
+    };
+    // blocky inmediato (feedback de compra sin esperar red/disco)…
+    mount(AvatarLib.makeHeldWeapon(key, teamColor));
+    // …y GLB real cuando llegue (reemplaza al blocky en el mismo pivote)
+    AvatarLib.makeHeldWeaponGlb(key).then((glb) => { if (glb) mount(glb); });
   }
 
   attachAvatar() {
     if (!AvatarLib.ready || this._avatar) return;
     const gun = AvatarLib.makeHeldWeapon(this.weaponKey,
       this.team === 'ally' ? 0x2ee86e : 0xff5a4a);
-    const av = AvatarLib.create({ team: this.team || 'enemy', weapon: gun });
+    const av = AvatarLib.create({ team: this.team || 'enemy', weapon: gun, operator: this.id });
     if (!av) return;
     this._avatar = av;
     av.root.scale.setScalar(1.15); // presencia: personajes más grandes (pedido del usuario)
@@ -337,6 +368,11 @@ export class Bot {
     this.targetYaw = this.yaw;
     this.state = 'wander';
     this.stateTimer = 0;
+    // Memoria táctica muere con el respawn (regla §4: reset a limpio)
+    this._lastSeen = null;
+    this._reactWait = 0;
+    this._noShootTime = 0;
+    if (this.navigation) this.navigation.reset(this.id);
     if (this._avatar) { this._avatar.setMoving(false); }
   }
 
@@ -346,8 +382,13 @@ export class Bot {
     this.stateTimer += dt;
     this.shootCooldown = Math.max(0, this.shootCooldown - dt);
     this.strafeTimer -= dt;
+    const role = ROLE_PARAMS[this.id % ROLE_PARAMS.length];
 
-    // Find nearest target — SOLO el equipo contrario (Duelo de Escuadras)
+    // ── ADQUISICIÓN DE OBJETIVO (con memoria corta y reacción) ──
+    // SOLO el equipo contrario (Duelo de Escuadras). Búsqueda por LOS como
+    // antes, pero el objetivo VISTO necesita this._reactWait (tiempo de
+    // reacción del rol) antes de dispararse; al perder LOS, la posición se
+    // recuerda ~1.5s (memoria corta) y luego decae — nada de radar eterno.
     let nearest = null;
     let nearestDist = Infinity;
     const myTag = (t) => (t.team || (t === player ? 'ally' : 'enemy'));
@@ -356,33 +397,36 @@ export class Bot {
     if (player !== this && player.isAlive && myTag(player) !== this.team) CANDIDATES.push(player);
     for (const c of CANDIDATES) {
       const d = this.position.distanceTo(c.position);
-      // Check line of sight (simple: no wall between)
       if (d < nearestDist && d < 28) {
-        // Ray from bot eyes (head) to target chest
         S.eye.copy(this.position); S.eye.y -= 0.12;
         S.chest.copy(c.position); S.chest.y -= 0.35;
         S.dir.subVectors(S.chest, S.eye).normalize();
         const dist = S.eye.distanceTo(S.chest);
         const hit = map.raycast(S.eye, S.dir, dist);
-        if (!hit) {
-          nearest = c;
-          nearestDist = d;
-        } else if (d < 8) {
-          // If very close, still chase even if behind cover
-          nearest = c;
-          nearestDist = d;
-        }
+        if (!hit || d < 8) { nearest = c; nearestDist = d; }
       }
+    }
+    if (nearest) {
+      // Objetivo NUEVO → arrancar tiempo de reacción; el mismo → mantener
+      if (this.target !== nearest) this._reactWait = role.react;
+      this._lastSeen = { x: nearest.position.x, z: nearest.position.z, ttl: 1.5 };
+    } else if (this._lastSeen) {
+      this._lastSeen.ttl -= dt;
+      if (this._lastSeen.ttl <= 0) this._lastSeen = null;
     }
     this.target = nearest;
 
-    // State machine
-    if (nearest && nearestDist < 18) {
+    // ── State machine (con memoria: chase a la ÚLTIMA POSICIÓN VISTA) ──
+    if (nearest && nearestDist < role.prefDist + 8) {
       this.state = 'attack';
-    } else if (nearest && nearestDist < 30) {
+    } else if (nearest) {
       this.state = 'chase';
+    } else if (this._lastSeen && this.state !== 'idle') {
+      // perdió LOS: perseguir la última posición vista (investigar) mientras
+      // la memoria viva — se comporta como jugador, no como radar
+      this.state = this.state === 'wander' ? 'wander' : 'chase';
     } else {
-      if (this.state === 'attack' && !nearest) this.state = 'wander';
+      if (this.state === 'attack' || this.state === 'chase') { this.state = 'wander'; this.stateTimer = 0; }
       if (this.stateTimer > 3 + Math.random()*2) {
         this.state = 'wander';
         this.stateTimer = 0;
@@ -393,61 +437,101 @@ export class Bot {
     const move = S.move;
     let wantShoot = false;
     let lookAtTarget = false;
+    const nav = this.navigation;
+    let wp = null; // waypoint activo de navegación (solo si nav disponible)
+
+    // ── Utilidad de ruta: destino según estado ──
+    let goalX = null, goalZ = null;
+    if (this.state === 'chase') {
+      const g = nearest ? nearest.position : this._lastSeen;
+      if (g) { goalX = g.x; goalZ = g.z; }
+    } else if (this.state === 'wander') {
+      // ALIADOS con ancla: reagruparse cerca del jugador pero en POSICIÓN
+      // PROPIA (offset por rol/lane: no patitos, ocupan puntos distintos)
+      if (this.team === 'ally' && player && player.isAlive) {
+        const spread = (this.id - 1) * 2.2; // aliado 0..2 → -2.2, 0, +2.2
+        const side = this._laneSeed;
+        goalX = player.position.x + side * (3 + Math.abs(spread)) + spread * 0.3;
+        goalZ = player.position.z + this._laneSeed * 2.5;
+      } else if (this.stateTimer > 3 + Math.random()*2) {
+        this.stateTimer = 0;
+        // ENEMIGOS en wander: presionar por LANE (no wander aleatorio eterno):
+        // cruzar hacia la base contraria por el flanco de su laneSeed
+        goalX = this._laneSeed * this.map.size * 0.3 + role.laneBias * 4;
+        goalZ = (this.team === 'enemy' ? 1 : -1) * this.map.size * 0.35;
+      }
+    }
+
+    // Consulta de waypoint (barata: cache 0.9s por bot en Navigation)
+    if (nav && goalX !== null) {
+      const w = nav.nextWaypoint(this, goalX, goalZ);
+      if (w) { wp = w; }
+    }
 
     if (this.state === 'wander') {
-      // ALIADOS con ancla (estilo Free Fire: el equipo se mantiene unido):
-      // sin enemigo a la vista se repliegan junto al jugador y AHÍ SE QUEDAN
-      // (idle) en vez de dar vueltas como peonzas por todo el mapa.
-      const anchor = (this.team === 'ally' && player && player.isAlive) ? player.position : null;
-      if (anchor) {
-        const toA = S.toA.subVectors(anchor, this.position);
-        toA.y = 0;
-        const distA = toA.length();
-        if (distA > 6) {
-          move.copy(toA.normalize()).multiplyScalar(0.7);
+      if (wp) {
+        // seguir el camino de Navigation (con falla local si un frame no hay)
+        S.wp.set(wp.x, 0, wp.z).sub(this.position); S.wp.y = 0;
+        if (S.wp.lengthSq() > 0.001) {
+          move.copy(S.wp).normalize().multiplyScalar(0.8);
+          this.targetYaw = Math.atan2(move.x, move.z);
+        } else move.set(0, 0, 0);
+      } else if (goalX !== null) {
+        // sin nav: steering directo al ancla (comportamiento previo)
+        S.toA.set(goalX - this.position.x, 0, goalZ - this.position.z);
+        const distA = S.toA.length();
+        if (distA > 3) {
+          move.copy(S.toA.normalize()).multiplyScalar(0.7);
           this.targetYaw = Math.atan2(move.x, move.z);
         } else {
-          move.set(0, 0, 0); // en su lugar: quieto, cubriendo hacia fuera
-          this.targetYaw = Math.atan2(-toA.x, -toA.z);
+          move.set(0, 0, 0);
+          this.targetYaw = Math.atan2(-S.toA.x, -S.toA.z);
         }
       } else {
         move.copy(this.wanderDir);
-        // Avoid walls: if blocked, pick new dir
         const nextPos = S.next.copy(this.position).addScaledVector(move, this.speed * dt * 2);
         if (map.checkCollision(nextPos, this.radius, this.height)) {
           this.wanderDir.set((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
           move.copy(this.wanderDir);
         }
-        // Slow wander
         move.multiplyScalar(0.6);
       }
 
-    } else if (this.state === 'chase' && nearest) {
-      const toTarget = S.toT.subVectors(nearest.position, this.position);
-      toTarget.y = 0; toTarget.normalize();
-      move.copy(toTarget);
-      lookAtTarget = true;
-      if (nearestDist < 6) {
-        // Strafe
+    } else if (this.state === 'chase' && (nearest || this._lastSeen)) {
+      lookAtTarget = !!nearest;
+      if (wp) {
+        S.wp.set(wp.x, 0, wp.z).sub(this.position); S.wp.y = 0;
+        if (S.wp.lengthSq() > 0.001) { move.copy(S.wp).normalize(); }
+        else move.set(0, 0, 0);
+      } else if (nearest) {
+        const toTarget = S.toT.subVectors(nearest.position, this.position);
+        toTarget.y = 0; toTarget.normalize();
+        move.copy(toTarget);
+      } else move.set(0, 0, 0);
+      if (nearest && nearestDist < 6) {
         if (this.strafeTimer <= 0) {
           this.strafeDir = Math.random() > 0.5 ? 1 : -1;
           this.strafeTimer = 0.6 + Math.random()*0.8;
         }
-        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir * 0.7);
+        const strafe = S.strafe.crossVectors(S.toT.subVectors(nearest.position, this.position).normalize(), UP).multiplyScalar(this.strafeDir * 0.7);
         move.add(strafe);
         move.normalize();
       }
 
     } else if (this.state === 'attack' && nearest) {
       lookAtTarget = true;
-      wantShoot = nearestDist < 22;
-      // Strafe heavily when attacking
+      // Mantener la DISTANCIA PREFERIDA del rol (arma en la mano): shotgun
+      // cierra, rifle/SMG media, anchor respira. Reacción del rol antes del
+      // primer disparo; aggro escala la agresividad del avance.
+      wantShoot = nearestDist < 24 && this._reactWait <= 0;
+      if (this._reactWait > 0) this._reactWait -= dt;
       const toTarget = S.toT.subVectors(nearest.position, this.position);
       toTarget.y = 0; const dist = toTarget.length();
       toTarget.normalize();
-      if (dist > 8) {
-        move.copy(toTarget).multiplyScalar(0.7);
-      } else if (dist < 4) {
+      const pref = role.prefDist;
+      if (dist > pref + 3) {
+        move.copy(toTarget).multiplyScalar(0.7 * role.aggro);
+      } else if (dist < pref - 3) {
         move.copy(toTarget).multiplyScalar(-0.5);
       } else {
         if (this.strafeTimer <= 0) {
@@ -463,6 +547,18 @@ export class Bot {
       }
       move.normalize();
       move.multiplyScalar(0.85);
+      // Reubicarse si lleva demasiado sin poder disparar (cubierto/trabado):
+      // 2.5s con target a la vista sin abrir fuego → goal lateral nuevo
+      if (wantShoot) {
+        this._noShootTime += dt;
+      } else {
+        this._noShootTime = 0;
+      }
+      if (this._noShootTime > 2.5 && nav) {
+        nav.reset(this.id);
+        this.strafeDir = -this.strafeDir;
+        this._noShootTime = 0;
+      }
     }
 
     // Apply movement with SMOOTH ACCELERATION — bots ease into their stride
@@ -568,6 +664,7 @@ export class Bot {
       if (dot > 0.72) {
         shoot = true;
         this.shootCooldown = 0.22 + Math.random()*0.35; // fire rate variation
+        this._noShootTime = 0; // disparó: el timer de reubicación vuelve a cero
         // Add recoil to yaw
         this.yaw += (Math.random()-0.5) * 0.06;
         if (this._avatar) this._avatar.pulse(); // culatazo visible

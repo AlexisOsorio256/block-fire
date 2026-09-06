@@ -34,6 +34,16 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
   original: si BLOCKFIRE llega a distribución comercial, verificar y
   registrar aquí el origen preciso (o reemplazarlo por un modelo propio/CC0).
 
+## Modelos de armas — Kenney (CC0)
+
+`assets/models/weapons/rifle.glb`, `pistol.glb`, `shotgun.glb`, `smg.glb`,
+`rifle-alt.glb` + `assets/models/weapons/Textures/`
+
+- **Fuente**: Kenney (kenney.nl), pack de armas low-poly
+- **Licencia**: CC0 1.0 (dominio público, sin atribución requerida —
+  registrada como cortesía; ver `assets/models/weapons/LICENSE-kenney.txt`)
+- Se usan en viewmodel en primera persona, manos de bots e iconos de tienda.
+
 ## Audio restante — CC0
 
 `assets/sfx/` (hit, headshot, kill, hurt, death, impact, ui, steps, reload,

@@ -130,31 +130,36 @@
     <p>BLOCKFIRE se juega en horizontal</p>
   </div>
 
-  <!-- Lobby / Overlay -->
+  <!-- Lobby / Overlay — JERARQUÍA: héroe 3D protagonista (columna derecha)
+       + JUGAR como CTA dominante. Modo/skins/stats = fila inferior secundaria. -->
   <div id="overlay">
     <div id="title-block">
       <h1>BLOCK<span>FIRE</span></h1>
       <p class="tagline">FPS ARCADE · DUELO DE ESCUADRAS 4v4 · TODOS CONTRA TODOS</p>
-      <div id="lobby-modes">
-        <button class="lobby-mode selected" data-mode="squad">
-          <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="6" width="10" height="12" rx="1.5"/><rect x="17" y="6" width="10" height="12" rx="1.5"/><rect x="30" y="6" width="10" height="12" rx="1.5" stroke-dasharray="3 2"/></svg>
-          <b>DUELO DE ESCUADRAS</b>
-          <label>4v4 · RONDAS · TIENDA</label>
-        </button>
-        <button class="lobby-mode" data-mode="ffa">
-          <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="10" cy="12" r="4"/><circle cx="24" cy="12" r="4"/><circle cx="38" cy="12" r="4"/><path d="M14 12h6M28 12h6" stroke-dasharray="2 2"/></svg>
-          <b>TODOS CONTRA TODOS</b>
-          <label>8 JUGADORES · 20 KILLS</label>
-        </button>
-      </div>
-      <div id="lobby-skins-wrap">
-        <span class="ls-label">SKINS DE ARMAS</span>
-        <div id="lobby-skins"></div>
-      </div>
-      <div id="lobby-stats"></div>
       <button id="playBtn">JUGAR</button>
-      <div id="lobby-menu">
-        <button id="btn-config" class="menu-chip">CONFIGURACIÓN</button>
+      <div id="lobby-secondary">
+        <div id="lobby-modes">
+          <button class="lobby-mode selected" data-mode="squad">
+            <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="6" width="10" height="12" rx="1.5"/><rect x="17" y="6" width="10" height="12" rx="1.5"/><rect x="30" y="6" width="10" height="12" rx="1.5" stroke-dasharray="3 2"/></svg>
+            <b>DUELO DE ESCUADRAS</b>
+            <label>4v4 · RONDAS · TIENDA</label>
+          </button>
+          <button class="lobby-mode" data-mode="ffa">
+            <svg viewBox="0 0 48 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="10" cy="12" r="4"/><circle cx="24" cy="12" r="4"/><circle cx="38" cy="12" r="4"/><path d="M14 12h6M28 12h6" stroke-dasharray="2 2"/></svg>
+            <b>TODOS CONTRA TODOS</b>
+            <label>8 JUGADORES · 20 KILLS</label>
+          </button>
+        </div>
+        <div id="lobby-skins-wrap">
+          <span class="ls-label">SKINS DE ARMAS</span>
+          <div id="lobby-skins"></div>
+        </div>
+        <div id="lobby-meta">
+          <div id="lobby-stats"></div>
+          <div id="lobby-menu">
+            <button id="btn-config" class="menu-chip">CONFIGURACIÓN</button>
+          </div>
+        </div>
       </div>
       <p class="hint" id="hint">PC: WASD + RATÓN · MÓVIL: JOYSTICK</p>
       <p class="credits">Audio: Kenney (CC0) · Disparos: Jesús Lastra (CC-BY 3.0)</p>

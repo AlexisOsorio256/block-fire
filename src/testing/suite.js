@@ -364,28 +364,158 @@ export function runTestSuite(game) {
       log('24 ROUND START SURVIVES BLOCKED SPAWNS', roundOpenSurvived,
         roundOpenSurvived ? 'startRound completó con mapa 100% obstruido' : 'startRound lanzó excepción');
 
+      // ── Test 25: GUNPLAY — aim assist fricción (NO snap) + levantar mira ──
+      // Setup determinista: cámara a 12u del bot enemigo, spread 0.
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.phase = 'combat';
+      game.player.team = 'ally';
+      const bot25 = game.bots.find(b => b.team === 'enemy');
+      bot25.isAlive = true; bot25.health = bot25.maxHealth;
+      bot25.immuneUntil = 0;
+      const start25 = bot25.position.clone();
+      game.immuneUntil = 0;
+      const camSave25 = game.camera.position.clone();
+      const rotSave25 = { x: game.camera.rotation.x, y: game.camera.rotation.y };
+      game.weaponSystem.owned.add('rifle');
+      game.weaponSystem.switchWeapon(1);
+      const savedSpread25 = game.weaponSystem.currentWeapon.spread;
+      game.weaponSystem.currentWeapon.spread = 0;
+      // Punto de tiro despejado (diagonal del mapa, como test 7): x=z=size*0.7
+      const eye25 = new THREE.Vector3(game.map.size * 0.7, 1.65, game.map.size * 0.7);
+      bot25.position.set(eye25.x, 1.65, eye25.z - 12);
+      game.player.position.set(eye25.x, 1.65, eye25.z);
+      const fireAt = (pitch) => {
+        game.camera.position.set(eye25.x, 1.65, eye25.z);
+        game.camera.rotation.order = 'YXZ';
+        game.camera.rotation.set(pitch, 0, 0);
+        game.camera.updateMatrixWorld();
+        game.weaponSystem.fireCooldown = 0;
+        return game.weaponSystem.fire(game.player, [bot25], game.map);
+      };
+      // 25a: mira AL PECHO (pitch que apunta al torso y=-0.62 desde ojo 1.65 → ángulo abajo)
+      const chestY = 1.65 - 0.62;
+      const resBody = fireAt(Math.atan2(chestY - 1.65, 12));
+      const bodyHit = resBody && resBody.hits.some(h => h.target === bot25 && !h.headshot);
+      // 25b: LEVANTAR MIRA — mismo punto, pitch subido a la cabeza: headshot REAL
+      // (la cabeza está en eye-0.10 → y=1.55; el pitch positivo mira ARRIBA)
+      const headY = 1.55;
+      const resHead = fireAt(Math.atan2(headY - 1.65, 12));
+      const headHit = resHead && resHead.hits.some(h => h.headshot);
+      // 25c: mira ligeramente ARRIBA de la cabeza — la fricción NO debe
+      // secuestrar el rayo hacia el torso (sin snap-up automático)
+      const resOver = fireAt(Math.atan2(headY - 1.65, 12) + 0.09); // por encima de la cabeza
+      const overChest = !(resOver && resOver.hits.some(h => h.target === bot25));
+      // 25d: objetivo TRAS MURO → la fricción no ayuda ni impacta
+      game.weaponSystem.fireCooldown = 0;
+      // muro entre jugador y bot: reusar _createBox es invasivo; usar raycast directo:
+      bot25.position.set(0, 1.65, -12);
+      const wallCheck = game.map.raycast(
+        new THREE.Vector3(0, 1.65, 0),
+        new THREE.Vector3(0, 0, -1).normalize(),
+        12
+      );
+      // Sin muro real en esa línea por defecto — el gate de oclusión interna
+      // ya se cubre con pullDir solo si !mapBlock; aquí validamos el camino:
+      // insertar caja temporal delante del bot y verificar NO-hit asistido
+      const min0 = new THREE.Vector3(eye25.x - 1, 0, eye25.z - 7), max0 = new THREE.Vector3(eye25.x + 1, 3, eye25.z - 6);
+      game.map.boxes.push({ min: min0, max: max0, mesh: null, x: eye25.x, y: 0, z: eye25.z - 6.5, w: 2, h: 2.2, d: 1 });
+      const resWall = fireAt(Math.atan2(chestY - 1.65, 12)); // apuntando "al pecho" tras el muro
+      const wallBlocked = !(resWall && resWall.hits.some(h => h.target === bot25));
+      game.map.boxes.pop(); // restaurar mapa
+      // 25e: ALIADO no recibe asistencia ni daño (fuego amigo OFF)
+      const ally25 = game.bots.find(b => b.team === 'ally');
+      ally25.isAlive = true; ally25.health = ally25.maxHealth;
+      const allyStart25 = ally25.position.clone();
+      // enemigo y aliado en la MISMA línea: el rayo al pecho del aliado no debe dañarlo
+      ally25.position.set(eye25.x, 1.65, eye25.z - 6);
+      const resAlly = fireAt(Math.atan2(chestY - 1.65, 12));
+      const allySafe = ally25.health === ally25.maxHealth;
+      bot25.respawn(start25); ally25.respawn(allyStart25);
+      game.camera.position.copy(camSave25);
+      game.camera.rotation.set(rotSave25.x, rotSave25.y, 0);
+      game.camera.updateMatrixWorld();
+      game.weaponSystem.currentWeapon.spread = savedSpread25;
+      game.matchState = 'LOADING';
+      const aimOk = bodyHit && headHit && overChest && wallBlocked && allySafe;
+      log('25 AIM ASSIST FRICTION (no snap, occlusion, no-ally)', aimOk,
+        `body:${bodyHit} headDrag:${headHit} noSnapUp:${overChest} wallBlocked:${wallBlocked} allySafe:${allySafe}`);
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);
     }
 
-    // Test 13 (async — needs the real 1.8s respawn window): a pending respawn
+    // Test 29: DECOR DEL MAPA DESACOPLADO DE LA COLISIÓN (slice visual).
+    // Protege el contrato de la capa MapDecor: existe en ambos modos, NO añade
+    // colliders (gameplay/navegación de bots intactos), es ESCASO en draw
+    // calls (horneado por material) y sus landmarks altos quedan SIN oclusión
+    // por colliders desde la base (legibilidad "¿dónde estoy?").
+    try {
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.startRound(1);
+      const m29 = game.map, d29 = m29.decor;
+      const nBoxes29 = m29.boxes.length;
+      const decoMeshes29 = [];
+      m29.scene.traverse(o => { if (o.isMesh && o.userData.deco) decoMeshes29.push(o); });
+      // 1) decor construida y horneada: POCOS meshes (bake por material) con
+      //    muchos draw-units de geometría (los merged tienen cientos de verts)
+      const hasDecor = !!d29 && decoMeshes29.length >= 15 && decoMeshes29.length < 120;
+      // 2) la decoración NO toca la colisión: los boxes del mapa son los mismos
+      //    que en una construcción sin decor (71 en squad, 55 en ffa) y NINGÚN
+      //    mesh decorativo es un collider.
+      const boxesStable = nBoxes29 === (m29.mode === 'squad' ? 71 : 55)
+        && decoMeshes29.every(mesh => !m29.boxes.some(b => b.mesh === mesh));
+      // 3) spawns intactos: los puntos de escuadra siguen libres (snapClear
+      //    del flujo real ya pasó en startRound sin correcciones de emergencia)
+      const spawnClear29 = m29.squadSpawns.ally.every(p => m29.isSpawnClear(p.x, p.z))
+        && m29.squadSpawns.enemy.every(p => m29.isSpawnClear(p.x, p.z));
+      // 4) landmarks con clímax ALTO sin oclusión de colliders (raycast del
+      //    mapa desde la base aliada): faros + grúa + contenedor apilado
+      const eye29 = new THREE.Vector3(-4, 1.65, m29.size * 0.42);
+      const lmOk = [['beaconAlly', -m29.size * 0.36, 7.4, m29.size * 0.40],
+                    ['gruaW', -m29.size * 0.54, 8.5, 0],
+                    ['contE', m29.size * 0.665, 5.2, 0]].every(([, lx, ly, lz]) => {
+        const dir = new THREE.Vector3(lx - eye29.x, ly - eye29.y, lz - eye29.z);
+        const dist = dir.length(); dir.normalize();
+        return !m29.raycast(eye29, dir, dist);
+      });
+      log('29 MAP DECOR NO-COLLIDER', hasDecor && boxesStable && spawnClear29 && lmOk,
+        `decor ${decoMeshes29.length} meshes · boxes ${nBoxes29} (sin cambios) · spawns libres ${spawnClear29} · landmarks visibles ${lmOk}`);
+      game.matchState = 'LOADING';
+    } catch(e){
+      log('TEST ERROR 29', false, String(e).slice(0,120));
+      console.error(e);
+    }
     // timer from the previous match must NOT teleport the player after
     // OTRA PARTIDA (rule §4: restart resets all temporal state).
+    // AISLAMIENTO: los timers de respawn SOLO existen en FFA (en escuadras
+    // nadie reaparece y startRound recoloca al jugador con snapClear — un
+    // squad heredado de los tests 24/25 producía "teleport" falso). Además se
+    // congela el reloj PASADA la inmunidad de spawn: con matchTime real la
+    // inmunidad podía tragar el applyDamage(999) y la muerte (y su timer)
+    // nunca ocurría. Los bots se re-congelan tras cada startMatch porque el
+    // FFA los respawnea.
     setTimeout(() => {
       try {
         let spawnIdx = 0;
         const realSpawn = game.map.getRandomSpawn.bind(game.map);
         game.map.getRandomSpawn = () => new THREE.Vector3(spawnIdx++ * 10, 1.65, 18);
         game.matchState = 'PLAYING';
+        game.gameMode = 'ffa';
+        game.player.team = 'ffa_player';
         game._resultShown = false;
-        // Freeze bots so nothing can legitimately kill/move the player during
-        // the wait window (deterministic, not fighting the live AI).
         const botsAlive = game.bots.map(b => b.isAlive);
-        game.bots.forEach(b => b.isAlive = false);
         game.startMatch(); // spawn A
+        game.matchTime = 100; // reloj congelado: inmunidad de spawn caducada
+        game.bots.forEach(b => b.isAlive = false);
         game.applyDamage(game.player, 999, 'body', game.bots[0]); // die → stale timer +1800ms
-        game.startMatch(); // immediate retry → spawn B
+        game.startMatch(); // immediate retry → spawn B (cancela el timer, regla §4)
+        game.bots.forEach(b => b.isAlive = false);
         const posB = game.player.position.clone();
         setTimeout(() => {
           let teleported = true;
@@ -397,15 +527,91 @@ export function runTestSuite(game) {
             game.map.getRandomSpawn = realSpawn;
             game.bots.forEach((b, i) => b.isAlive = botsAlive[i]);
             game.matchState = 'LOADING';
-            renderTests();
+            runTest26();
           }
         }, 2100);
       } catch(e){
         log('TEST ERROR 13', false, String(e).slice(0,120));
         console.error(e);
-        renderTests();
+        runTest26();
       }
     }, 2200);
+
+    // Test 13 (async — needs the real 1.8s respawn window): a pending respawn
+
+    // ── Test 26: LOBBY — ENCUADRE DEL HÉROE POR INVARIANTES (async) ──
+    // El héroe GLB se construye cuando el asset termina de cargar (variable:
+    // 0.5–4s), así que el test SONDEA en lugar de correr a +200ms. La pose la
+    // deriva Lobby.applyCameraPose() del Box3 REAL del héroe; los invariantes
+    // de producto se verifican en NDC/píxeles con la cámara viva (sin
+    // capturas ni timings frágiles):
+    //   a) héroe COMPLETO con aire ≥3% de pantalla arriba/abajo (≥2% lados)
+    //   b) PROTAGONISTA: ocupa 60–85% de la altura de pantalla (NDC del Box3;
+    //      el parallax del Box3 infla la medida — lo medido manda, no el
+    //      objetivo nominal de applyCameraPose)
+    //   c) compuesto en el tercio DERECHO y sin invadir la columna de UI
+    //   d) JUGAR = CTA dominante (área > 1.5× el mayor botón secundario)
+    //   e) FOV de retrato del lobby activo (34)
+    function runTest26(attempt = 0) {
+      try {
+        const L26 = game.lobby;
+        if (!L26 || !L26.hero || !L26._heroBox) {
+          if (attempt < 24) return setTimeout(() => runTest26(attempt + 1), 500);
+          log('26 LOBBY HERO FRAMING', false, 'héroe GLB no construido tras 12s (¿falló la carga del asset?)');
+          renderTests();
+          return;
+        }
+        // El héroe quedó oculto por startMatch/setVisible(false) de tests
+        // previos: el encuadre se mide con el set montado, como en el lobby.
+        if (!L26.heroVisible) L26.setVisible(true);
+        // showResult (tests 18/22) dejó title-block oculto y result-block
+        // visible: medir la JERARQUÍA exige el estado de lobby real. Se
+        // guarda y se restaura para no contaminar otros tests.
+        const tbEl26 = document.getElementById('title-block');
+        const rbEl26 = document.getElementById('result-block');
+        const tbWas26 = tbEl26.classList.contains('hidden');
+        const rbWas26 = rbEl26.classList.contains('hidden');
+        tbEl26.classList.remove('hidden');
+        rbEl26.classList.add('hidden');
+        const cam26 = game.camera;
+        cam26.aspect = innerWidth / Math.max(1, innerHeight);
+        L26.applyCameraPose(cam26);
+        cam26.updateMatrixWorld();
+        const ndc26 = L26.heroNdcBox(cam26);
+        const W26 = innerWidth, H26 = innerHeight;
+        const m26 = {
+          left: (ndc26.minX + 1) / 2 * W26,
+          right: (1 - ndc26.maxX) / 2 * W26,
+          top: (1 - ndc26.maxY) / 2 * H26,
+          bottom: (ndc26.minY + 1) / 2 * H26,
+        };
+        // El span NDC va de -1..1 (rango 2): la fracción de PANTALLA es span/2
+        const fill26 = (ndc26.maxY - ndc26.minY) / 2;
+        const center26 = (ndc26.minX + ndc26.maxX) / 2; // >0 = mitad derecha
+        const tb26 = tbEl26.getBoundingClientRect();
+        const uiRight26 = tb26.right; // borde derecho de la columna de UI
+        const a26 = m26.top >= 0.03 * H26 && m26.bottom >= 0.03 * H26
+          && m26.right >= 0.02 * W26 && m26.left >= 0.02 * W26;
+        const b26 = fill26 >= 0.60 && fill26 <= 0.85;
+        const c26 = center26 > 0.10 && m26.left >= uiRight26 + 8;
+        const btns26 = [...document.querySelectorAll('#overlay button')]
+          .filter(el => el.id !== 'playBtn' && el.id !== 'retryBtn' && !el.closest('#result-block'))
+          .map(el => { const r = el.getBoundingClientRect(); return r.width * r.height; });
+        const maxSec26 = Math.max(0, ...btns26);
+        const rp26 = document.getElementById('playBtn').getBoundingClientRect();
+        const d26 = rp26.width * rp26.height > maxSec26 * 1.5;
+        const e26 = cam26.fov === 34;
+        log('26 LOBBY HERO FRAMING', a26 && b26 && c26 && d26 && e26,
+          `margins t/b/l/r ${m26.top.toFixed(0)}/${m26.bottom.toFixed(0)}/${m26.left.toFixed(0)}/${m26.right.toFixed(0)}px · fill ${(fill26 * 100).toFixed(0)}% · uiClear ${m26.left.toFixed(0)}≥${uiRight26.toFixed(0)}:${m26.left >= uiRight26 + 8} · play${(rp26.width * rp26.height).toFixed(0)}>1.5×${maxSec26.toFixed(0)}:${d26} · fov ${cam26.fov}`);
+        // restaurar el estado DOM que tocamos
+        tbEl26.classList.toggle('hidden', tbWas26);
+        rbEl26.classList.toggle('hidden', rbWas26);
+      } catch(e){
+        log('TEST ERROR 26', false, String(e).slice(0,120));
+        console.error(e);
+      }
+      renderTests();
+    }
 
     // Show overlay (re-rendered after the async test 13 finishes)
     function renderTests(){

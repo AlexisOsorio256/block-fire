@@ -17,6 +17,16 @@ Hechos: `README.md` · Atribuciones: `CREDITS.md`.
   REFACTOR CAUSAL (solo si elimina causas o simplifica mantenimiento
   comprobable). Regla base: el cambio causal mínimo que cierra el problema
   COMPLETO — ver reglas §2.
+- Trabaja por VERTICAL SLICES cerradas; delega slices en subagentes con
+  contexto completo y autocontenido (reglas §10): el subagente edita, captura
+  e itera; reporta archivos/pruebas/evidencia/riesgos. El orquestador integra
+  y mantiene la suite en verde.
+- Verificación visual de estados COMPLETOS (lobby → compra → combate → fin →
+  retry), PC y móvil landscape: los bugs viven en transiciones, no solo en la
+  pantalla tocada.
+- Destino ANDROID siempre presente: se itera en web por velocidad, pero cada
+  decisión de rendimiento/DPR/touch/peso se toma como WebView móvil (reglas
+  §10).
 - Cero scope creep fuera del slice autorizado. No optimices código que
   funciona mientras quede un problema visible o jugable importante.
 - Herramientas en batch por mensaje; cero polling; cada llamada cuesta.

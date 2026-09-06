@@ -1,4 +1,5 @@
 import * as THREE from '../lib/three.module.js';
+import { MapDecor } from './MapDecor.js';
 
 export class Map {
   constructor(scene, mode = 'squad') {
@@ -54,13 +55,22 @@ export class Map {
       // spawns genéricos (respawns FFA usan _createSpawns; aquí alimenta
       // getRandomSpawn del lobby/respawn con los puntos de las bases)
       this.spawns = [...this.squadSpawns.ally, ...this.squadSpawns.enemy].map(v => v.clone());
+      // Capa VISUAL desacoplada de la colisión (zoning, landmarks, props):
+      // MapDecor no toca this.boxes — el gameplay/navegación no cambian.
+      this.decor = new MapDecor(this);
+      this.decor.buildClashSquad();
     } else {
       // FFA clásico: arena original
       this._createGround();
       this._createWalls();
       this._createCover();
       this._createSpawns();
+      // Mismo lenguaje visual con zoning DISTINTO (no es el squad recoloreado)
+      this.decor = new MapDecor(this);
+      this.decor.buildFFA();
     }
+    // Pintura de suelo fusionada por material (1 draw call por color)
+    if (this.decor) this.decor._flushPaint();
   }
 
   _createGround() {
@@ -397,6 +407,73 @@ export class Map {
     add(s*0.16, s*0.2, 2.6, 1.4, 2.6, 'enemyWall');
     add(-s*0.30, -s*0.34, 3, 1.8, 3, 'cover');
     add(s*0.30, s*0.34, 3, 1.8, 3, 'cover');
+
+    // ── LANDMARKS + DRESSING VISUAL (colliders intactos) ──
+    // Lectura de "¿dónde estoy?" sin minimapa: cada base tiene una TORRE FARO
+    // de color propio (verde aliado / rojo enemigo) — visible desde cualquier
+    // lane, orienta norte/sur de un vistazo. Los props finos (barriles, jardineras)
+    // NO llevan collider: no cambian gameplay, rompen la repetición AABB.
+    this._beacon(-s*0.36, s*0.40, 0x2ee86e);   // base aliada
+    this._beacon(s*0.36, -s*0.40, 0xff5a4a);   // base enemiga
+    this._dressClashSquad(s);
+  }
+
+  // Torre faro de base: mástil + cabeza luminosa del color del equipo.
+  // Sin collider a propósito (decoración detrás de la línea de spawn) — no
+  // bloquea movimiento/balas y no puede alterar el gameplay.
+  _beacon(x, z, color) {
+    const mast = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.26, 7.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x22293a, roughness: 0.7, metalness: 0.4 })
+    );
+    mast.position.set(x, 3.6, z);
+    mast.castShadow = true;
+    this.scene.add(mast);
+    const headMat = new THREE.MeshStandardMaterial({
+      color, roughness: 0.35, emissive: color, emissiveIntensity: 1.5,
+    });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), headMat);
+    head.position.set(x, 7.4, z);
+    this.scene.add(head);
+    // luz real barata: 2 faros de punto por mapa (presupuesto §7)
+    const lamp = new THREE.PointLight(color, 6, 16, 1.8);
+    lamp.position.set(x, 7.2, z);
+    this.scene.add(lamp);
+  }
+
+  // Dressing sin collider del mapa Clash Squad: barriles junto a contenedores,
+  // jardineras junto a casas, marcas de suelo en el centro. Solo visual.
+  _dressClashSquad(s) {
+    const scatter = (x, z, kind, col) => {
+      let m;
+      if (kind === 'barrel') {
+        m = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.0, 10),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.6, metalness: 0.25 }));
+        m.position.set(x, 0.5, z);
+      } else { // jardinera: caja baja con verde encima
+        m = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 0.7),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 }));
+        m.position.set(x, 0.25, z);
+        const plant = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6),
+          new THREE.MeshStandardMaterial({ color: 0x3e7a3a, roughness: 0.9 }));
+        plant.position.set(x, 0.75, z);
+        plant.castShadow = true;
+        this.scene.add(plant);
+      }
+      m.castShadow = true;
+      this.scene.add(m);
+    };
+    // Barriles escoltando los contenedores (paleta industrial)
+    const rust = 0x7a4a30, teal = 0x2e5a5a, sand = 0xa08a54;
+    scatter(-s*0.16 + 2.0, -s*0.2 + 1.2, 'barrel', rust);
+    scatter(-s*0.16 - 1.6, -s*0.2 - 0.6, 'barrel', teal);
+    scatter(s*0.16 - 2.0, s*0.2 - 1.2, 'barrel', rust);
+    scatter(s*0.16 + 1.6, s*0.2 + 0.8, 'barrel', sand);
+    // Jardineras junto a las casas de las bases (vida sin gameplay)
+    scatter(-s*0.30, s*0.16, 'planter', 0x4a3a2a);
+    scatter(s*0.30, -s*0.16, 'barrel', teal);
+    scatter(s*0.30, s*0.05, 'planter', 0x4a3a2a);
+    scatter(-s*0.30, -s*0.05, 'planter', 0x4a3a2a);
   }
 
   // Casa refugio axis-aligned (el contrato de colisión/raycast es AABB):

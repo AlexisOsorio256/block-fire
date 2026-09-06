@@ -96,13 +96,9 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
 
 ## 🖼️ Así se ve
 
-| Lobby | Partida |
-|---|---|
-| ![Lobby](capturas/01-lobby.png) | ![Partida](capturas/05-gameplay-post-polish.png) |
-
-| Móvil horizontal |
-|---|
-| ![Landscape](capturas/06-mobile-landscape.png) |
+*(Las capturas viven en el directorio de trabajo de la IA (`.tmp/`); no se
+versionan — regla §3. Para capturar estados: puppeteer headless con
+`?runTests=1` o los scripts de `.tmp/*.mjs`.)*
 
 ## ✨ Qué tiene (estado actual)
 
@@ -110,11 +106,22 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
   de COMPRA antes de cada ronda con oro ficticio, inmunidad de spawn que se
   rompe al disparar, sin respawn en ronda (estilo Free Fire)
 - **TODOS CONTRA TODOS (FFA)**: 8 jugadores, respawns, 20 kills gana
-- 7 bots con outfits blocky propios (7 skins/siluetas distintas) que usan el
-  GLB de soldado animado si carga (fallback blocky automático)
-- 4 armas (rifle, pistola, escopeta, SMG) con modelos blocky, siluetas y
-  sonidos propios (rifle mecánico, pistola seca, escopeta pesada, SMG rápida),
-  retroceso, recarga y cambio animados
+- **7 bots** con outfit blocky propio (7 skins/siluetas) que usan el GLB de
+  soldado animado si carga (fallback blocky automático), navegación con
+  occupancy grid + A* (`src/bots/Navigation.js`): rodean obstáculos, memoria
+  corta del último enemigo, separación, distancia por arma, roles por
+  parámetros (entry/support/anchor) — sin trampas
+- **4 armas (rifle, pistola, escopeta, SMG) con modelos GLB de Kenney (CC0,
+  ver `assets/models/weapons/LICENSE-kenney.txt`)**, viewmodel en primera
+  persona con brazos agarrando el arma, siluetas y sonidos propios, retroceso,
+  recarga y cambio animados; fallback blocky si el GLB falla
+- **Aim assist tipo levantar-mira**: fricción moderada cerca del torso (sin
+  snap), la cabeza es recompensa del drag vertical real; no asiste tras muros
+  ni sobre aliados; menor en PC que en touch
+- **Números de daño flotantes** (pool DOM, body/headshot/kill diferenciados,
+  postas de escopeta acumuladas) + hitmarker + trazadoras + sangre
+- **Iconos de armas de la tienda renderizados desde el GLB real** (perfil
+  lateral, fit al Box3, un render por arma por partida)
 - **Trazadoras** en cada disparo (los tuyos y los de los bots) + impactos
   diferenciados pared/enemigo + sangre
 - Disparos reales grabados (Jesús Lastra CC-BY 3.0, ver `CREDITS.md`) +
@@ -123,11 +130,14 @@ pantalla completa + bloqueo landscape (cuando el navegador lo permite).
   fuego, agacharse, sprint fijo; sin estados táctiles pegados
 - Landscape obligatorio en móvil con instrucción ANTES del gameplay
 - Screen shake, vignette de daño, **indicador direccional de daño**, respawn en 2s
-- Mapa 120×120 con texturas CC0: FFA con 6 casas; arena Clash Squad con bases
-  espejo tintadas, centro y lanes
+- Mapa 120×120 con **capa decorativa separada de los colliders**:
+  color zoning por zonas, landmarks por lane (grúa, contenedores, arcos,
+  torre de agua), props horneados en 1 mesh por material (`src/world/MapDecor.js`)
+  — arena Clash Squad con bases espejo y centro; FFA con 6 casas y landmarks propios
 - 60 FPS de presupuesto en PC y móviles modestos (resolución adaptativa)
-- Lobby con héroe 3D en pedestal, selector de modo y de skin de armas,
-  estadísticas locales y panel de configuración
+- **Lobby de estudio**: héroe 3D encuadrado por Box3 (completo, ~68% de altura,
+  testeado), pedestal, luces de estudio, CTA JUGAR dominante, selector de modo
+  y de skin de armas, estadísticas locales y panel de configuración
 
 ---
 
@@ -140,6 +150,7 @@ Arquitectura (una responsabilidad por sistema):
 ```
 src/main.js                    arranque puro: gates (landscape / tests / capturas)
 src/core/Game.js               orquestador: loop, daño central y estado de partida
+src/core/AssetRegistry.js      dueño único de carga GLB (instantiate, errores, fallback)
 src/core/MatchSquad.js         flujo de rondas del Duelo de Escuadras (BO7)
 src/core/Input.js              teclado/mouse/pointer táctil → acciones neutrales
 src/core/Settings.js           preferencias del jugador (localStorage)
@@ -147,10 +158,14 @@ src/player/PlayerController.js movimiento, cámara, gravedad y respawn humano
 src/combat/WeaponSystem.js     armas, hitscan, oclusión, aim assist y feedback
 src/economy/Shop.js            tienda del Clash Squad (comprar/equipar)
 src/fx/VfxSystem.js            efectos de combate (flash/impacto/trazadora/sangre)
-src/bots/Bot.js                IA: wander → chase → attack + walk cycle
-src/world/Map.js               geometría, spawns validados, colisión y raycast
+src/fx/DamageNumbers.js        números de daño flotantes (pool DOM reutilizable)
+src/bots/Bot.js                IA: navegación, memoria de objetivo, roles por parámetros
+src/bots/Navigation.js         occupancy grid + A* + consultas de ruta/cobertura
+src/world/Map.js               colliders AABB, spawns validados, colisión y raycast
+src/world/MapDecor.js          capa visual del mapa (zoning, landmarks, props horneados)
 src/ui/HUD.js                  HUD, kill feed, banners y daño direccional
-src/ui/Lobby.js                escena 3D del lobby (héroe, pedestal, skins)
+src/ui/Lobby.js                escena 3D del lobby (héroe, pedestal, luces)
+src/ui/WeaponIcons.js          iconos de armas de la tienda (render GLB offscreen)
 src/audio/AudioManager.js      samples (CC0/CC-BY) + fallback procedural
 src/characters/SoldierAvatar.js  soldado GLB animado + fallback blocky
 src/testing/suite.js           suite ?runTests=1 (todos en verde, obligatorio)

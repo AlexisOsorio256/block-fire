@@ -3,12 +3,14 @@ import { Input } from './Input.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { WeaponSystem } from '../combat/WeaponSystem.js';
 import { Bot } from '../bots/Bot.js';
+import { Navigation } from '../bots/Navigation.js';
 import { Map } from '../world/Map.js';
 import { HUD } from '../ui/HUD.js';
 import { AudioManager } from '../audio/AudioManager.js';
 import { settings } from './Settings.js';
 import { AvatarLib } from '../characters/SoldierAvatar.js';
 import { VfxSystem } from '../fx/VfxSystem.js';
+import { DamageNumbers } from '../fx/DamageNumbers.js';
 import { MatchSquad } from './MatchSquad.js';
 import { Shop } from '../economy/Shop.js';
 import { Lobby } from '../ui/Lobby.js';
@@ -19,6 +21,9 @@ const _sepRadii = [];
 const _sepProbe = new THREE.Vector3();
 // Payload de HUD reutilizado (HUD.update solo lo lee)
 const _hudPayload = {};
+// Identidades de operador (deben coincidir con SoldierAvatar.OPERATORS):
+// el nombre corto vive en el killfeed y ancla la lectura del personaje.
+const OPERATOR_NAMES = ['BRAVO', 'VULTURE', 'TALON', 'DUNE', 'HAVOC', 'ROOK', 'GHOST'];
 
 export class Game {
   constructor() {
@@ -71,6 +76,8 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
     this._isMobile = isMobile;
+    // Plataforma táctil (para el aim assist: asistencia mayor en touch que PC)
+    this._isTouchPlatform = isMobile || window.matchMedia('(pointer: coarse)').matches;
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 200);
@@ -84,10 +91,13 @@ export class Game {
     this.gameMode = localStorage.getItem('bf_mode') || 'squad';
     this.map = new Map(this.scene, this.gameMode);
     this.hud = new HUD();
+    this.hud._gameRef = this; // iconos de tienda: HUD consulta WeaponSystem vía esta ref
     this.audio = new AudioManager();
     // Efectos de combate: dueño único (VfxSystem). Game solo conserva el
     // feedback de CÁMARA (hitFlash/hitstop/shake).
     this.vfx = new VfxSystem(this.scene, this.camera);
+    // Números de daño flotantes: feedback de daño infligido (pool DOM fijo)
+    this.damageNumbers = new DamageNumbers(this.camera);
 
     // Player
     this.player = {
@@ -121,9 +131,11 @@ export class Game {
 
     // Bots — Duelo de Escuadras: 4v4 (jugador + 3 aliados vs 4 enemigos)
     this.bots = [];
+    // Navigation: dueño único de rutas (grid+A* generado desde este mapa)
+    this.navigation = new Navigation(this.map);
     for(let i=0;i<7;i++){
       const pos = this.map.getRandomSpawn(this.player.position);
-      const bot = new Bot(i, this.scene, this.map, pos);
+      const bot = new Bot(i, this.scene, this.map, pos, this.navigation);
       if (this.gameMode === 'squad') {
         bot.name = (i < 3 ? `ALIADO_${i+1}` : `ENEMIGO_${i-2}`);
         bot.team = (i < 3 ? 'ally' : 'enemy');
@@ -133,6 +145,7 @@ export class Game {
         bot.team = `ffa_${i}`; // todos contra todos
         bot.colorStripe = 0xffd23f;
       }
+      bot.operatorName = OPERATOR_NAMES[i % OPERATOR_NAMES.length]; // identidad visible
       this.bots.push(bot);
     }
     // Avatares GLB reales: cargar y aplicarlo a los 7 bots (fallback blocky
@@ -233,6 +246,7 @@ export class Game {
 
     const ambient = new THREE.HemisphereLight(0xbfd9ff, 0x3d4a5f, 1.15);
     this.scene.add(ambient);
+    this._hemiLight = ambient; // el lobby la atenúa (estudio de retrato)
 
     const dir = new THREE.DirectionalLight(0xfff2d4, 1.35);
     dir.position.set(18, 28, 12);
@@ -246,6 +260,7 @@ export class Game {
     dir.shadow.camera.bottom = -50;
     dir.shadow.bias = -0.0006;
     this.scene.add(dir);
+    this._sunLight = dir; // el lobby la atenúa (estudio de retrato)
 
     // Cool fill from opposite side — separates bots from walls
     const fill = new THREE.DirectionalLight(0x7db4ff, 0.45);
@@ -301,9 +316,9 @@ export class Game {
         const last = JSON.parse(localStorage.getItem('bf_last_match') || 'null');
         const wins = parseInt(localStorage.getItem('bf_wins') || '0', 10);
         if (last) {
-          statsEl.innerHTML = `ÚLTIMA PARTIDA: <b>${last.kills}</b> KILLS · <b>${last.deaths}</b> MUERTES${wins ? ` · VICTORIAS: <b>${wins}</b>` : ''}`;
+          statsEl.innerHTML = `ÚLTIMA: <b>${last.kills}</b> KILLS · <b>${last.deaths}</b> MUERTES${wins ? ` · VICTORIAS: <b>${wins}</b>` : ''}`;
         } else {
-          statsEl.textContent = 'PRIMERA PARTIDA — DUELO DE ESCUADRAS: GANA EL PRIMERO EN LLEGAR A 4 RONDAS';
+          statsEl.textContent = 'GANA EL PRIMERO EN LLEGAR A 4 RONDAS';
         }
       } catch(e){ statsEl.textContent = ''; }
     };
@@ -469,6 +484,12 @@ export class Game {
   }
 
   startMatch() {
+    // El lobby dispara con FOV de retrato y luces atenuadas: restaurar la
+    // iluminación de arena (sol + hemi) y el FOV de gameplay (78) ya.
+    this.camera.fov = 78;
+    this.camera.updateProjectionMatrix();
+    if (this._hemiLight) this._hemiLight.intensity = this._arenaLights.hemi;
+    if (this._sunLight) this._sunLight.intensity = this._arenaLights.dir;
     // The gameplay HUD + touch controls only exist DURING a match: without
     // this, mobile controls and health/ammo chips bleed through the lobby.
     document.body.classList.add('playing');
@@ -535,6 +556,7 @@ export class Game {
     this._hitstop = 0;
     this._shake = 0;
     this.hitFlash = 0;
+    if (this.damageNumbers) this.damageNumbers.reset();
   }
 
   // ═══ Delegados del Duelo de Escuadras — el FLUJO vive en MatchSquad ═══
@@ -666,7 +688,7 @@ export class Game {
       this.teamScore[killerTeam] = (this.teamScore[killerTeam] || 0) + 1;
       if(attacker && !attacker.isBot){
         this.playerKills++;
-        this.hud.showKill(attacker.name || 'YOU', target.name || 'BOT', hitType==='head');
+        this.hud.showKill(attacker.name || 'YOU', this._displayName(target), hitType==='head');
         // Player kill streak: consecutive kills within 3.5s escalate the banner
         const now = performance.now();
         this._streakCount = (now - (this._lastKillAt || 0) < 3500) ? (this._streakCount || 0) + 1 : 1;
@@ -702,7 +724,7 @@ export class Game {
         attacker.kills++;
         // Bots killing each other (or the player) belong in the feed: in an
         // FFA the leaderboard race must stay legible, not only your own kills.
-        this.hud.showKill(attacker.name || 'BOT', target.isBot ? (target.name || 'BOT') : 'YOU', hitType==='head');
+        this.hud.showKill(this._displayName(attacker), target.isBot ? this._displayName(target) : 'YOU', hitType==='head');
       }
       // FFA: 20 kills gana la partida (legacy)
       if (this.gameMode === 'ffa' && (this.playerKills >= this.killTarget || this._maxBotKills() >= this.killTarget)) {
@@ -768,6 +790,13 @@ export class Game {
 
   _maxBotKills() {
     return Math.max(...this.bots.map(b=>b.kills), 0);
+  }
+
+  // Nombre de killfeed: ALIADO_2 es quien ES (equipo+posición); el operador
+  // (BRAVO, VULTURE…) es el personaje que se ve — ambos, separados por punto.
+  _displayName(ent) {
+    if (!ent) return 'BOT';
+    return ent.isBot ? `${ent.name || 'BOT'}·${ent.operatorName || 'OP'}` : (ent.name || 'YOU');
   }
 
   // Lista de objetivos válidos para un disparo (todos los combatientes).
@@ -867,31 +896,32 @@ export class Game {
     }
 
     if(this.matchState !== 'PLAYING'){
-      // LOBBY 3D: cámara cinematográfica orbitando AL HÉROE animado.
-      // El héroe se encuadra a la DERECHA (la UI del lobby ocupa el centro):
-      // la cámara mira 1.5m a la izquierda del pedestal. La escena la anima
-      // Lobby (dueño del lobby); los bots pasean (dueño: Game).
+      // LOBBY 3D: ESTUDIO DE PERSONAJE — la pose de cámara la calcula Lobby
+      // (dueño de la puesta en escena) por invariantes numéricos del Box3 del
+      // héroe (applyCameraPose): héroe completo y protagonista en el tercio
+      // derecho, UI a la izquierda, en cualquier aspecto. La anima Lobby.tick.
+      // Los bots NO se renderizan aquí: el estudio tiene profundidad propia
+      // (pedestal → columnas → muro → bóveda) y un bot vagando detrás leía
+      // como "mapa de combate al fondo". Se reactivan al iniciar la partida.
       const t = this.clock.elapsedTime;
-      const r = 3.2, h = 1.7;
-      this.camera.position.set(2.6 + Math.sin(t * 0.13) * r, h, Math.cos(t * 0.13) * r + 5.2);
-      this.camera.lookAt(1.1, 1.2, 5.2);
+      this.lobby.applyCameraPose(this.camera);
+      // Estudio de retrato: el sol de la arena lava el set — la key cálida y
+      // el rim frío del lobby mandan aquí. Game restaura los suyos al jugar.
+      this._arenaLights = this._arenaLights || { hemi: 1.15, dir: 1.35 };
+      if (this._hemiLight) this._hemiLight.intensity = 0.5;
+      if (this._sunLight) this._sunLight.intensity = 0.35;
       this.lobby.tick(Math.min(dt, 0.033), t);
-      // Bots wander during lobby so the arena feels alive (no shooting: the
-      // player ghost is hidden from targeting while in menu)
+      // Congelar bots SIN IA: en el lobby el héroe es el único actor. Su
+      // update() sin dt no integra velocidad ni dispara (equivalente a la
+      // fase de compra, donde los bots quedan firmes). Sus meshes van
+      // OCULTOS: quedan detrás del muro del set (oclusión) pero no deben
+      // asomar jamás en el frustum del estudio ("mapa de combate detrás").
       const playerWasTargetable = this.player.isAlive;
       this.player.isAlive = false;
       for (const bot of this.bots) {
+        if (bot.mesh) bot.mesh.visible = false;
         if (!bot.isAlive) { if (bot._dyingT > 0) bot._updateDying(Math.min(dt, 0.033)); continue; }
-        // En el lobby los bots pasean LEJOS del héroe: uno parado junto a la
-        // cámara tapaba el encuadre con un pilar negro.
-        const dx = bot.position.x - 2.6, dz = bot.position.z - 5.2;
-        if (dx * dx + dz * dz < 4.5 * 4.5) {
-          bot.state = 'wander';
-          bot.stateTimer = 0;
-          if (dx * dx + dz * dz > 0.001) bot.wanderDir.set(dx, 0, dz).normalize();
-          else bot.wanderDir.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
-        }
-        bot.update(Math.min(dt, 0.033), this.player, this.bots, this.map);
+        bot.update(0, this.player, this.bots, this.map);
       }
       this.player.isAlive = playerWasTargetable;
       this.vfx.update(Math.min(dt, 0.033));
@@ -908,6 +938,9 @@ export class Game {
     }
 
     this.matchTime += dt;
+
+    // Navigation: reloj interno de repaths (barato: solo acumula tiempo)
+    if (this.navigation) this.navigation.tick(dt);
 
     // ── CLASH SQUAD: máquina de fases (dueño: MatchSquad) ──
     if (this.gameMode === 'squad') this.squad.tickPhase(dt);
@@ -1066,6 +1099,7 @@ export class Game {
     }
 
     this.vfx.update(dt);
+    this.damageNumbers.update(dt);
 
     this.renderer.render(this.scene, this.camera);
 

@@ -21,6 +21,33 @@ export class HUD {
     this._buyCountAt = -1;
     this._shopData = null;
     // La tienda in-match es SOLO armas (las skins viven en el lobby).
+    // Iconos de arma: data-URL renderizada UNA VEZ desde el GLB real
+    // (hud.weaponIcon(key)) — la tarjeta nunca muestra ASCII si hay modelo.
+    this._iconCache = {};
+    this._iconRequests = {};
+  }
+
+  // ── Icono de arma para la tienda: render offscreen del GLB (Kenney) ──
+  // Devuelve data-URL cacheada o null mientras renderiza (la tarjeta muestra
+  // el fallback tipográfico y se actualiza solo cuando el icono está listo).
+  weaponIcon(key) {
+    if (this._iconCache[key]) return this._iconCache[key];
+    if (this._iconRequests[key]) return null;
+    const g = this._gameRef;
+    const url = g && g.weaponSystem && g.weaponSystem._iconSourceUrl
+      ? g.weaponSystem._iconSourceUrl(key) : null;
+    if (!url) return null;
+    this._iconRequests[key] = true;
+    // Render fuera de banda: import diferido para no acoplar HUD a three
+    import('./WeaponIcons.js').then(({ renderWeaponIcon }) => {
+      renderWeaponIcon(url).then((dataUrl) => {
+        if (dataUrl) {
+          this._iconCache[key] = dataUrl;
+          if (this._shopData) this._renderShop(); // re-pinta con iconos reales
+        }
+      });
+    }).catch((e) => { console.warn('[HUD] icon render:', e && e.message); });
+    return null;
   }
 
   // ── Duelo de Escuadras ──
@@ -112,10 +139,23 @@ export class HUD {
     grid.innerHTML = '';
     const data = this._shopData || { weapons: [] };
     const icons = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
+    // Máximos para las barras relativas (daño por disparo global, no por posta)
+    const MAX = { dmg: 30, rate: 10, range: 90 };
     data.weapons.forEach((w, i) => {
       const card = document.createElement('button');
       card.className = 'bp-item' + (w.owned ? ' owned' : '') + (!w.owned && coins >= w.price ? ' affordable' : '');
-      card.innerHTML = `<span class="bp-ico">${icons[w.key] || '⌗'}</span><b>${w.name}</b><span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
+      // Icono: data-URL del GLB real si ya está renderizada; glifo mientras.
+      const iconUrl = this.weaponIcon(w.key);
+      const icoHtml = iconUrl
+        ? `<img class="bp-img" src="${iconUrl}" alt="">`
+        : `<span class="bp-ico">${icons[w.key] || '⌗'}</span>`;
+      // Stats relativas (si el arma aportó datos): 3 barras compactas
+      const wd = w.data;
+      const bars = wd ? `
+        <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, (wd.damage * (wd.pellets || 1)) / MAX.dmg))}%"></i></span>
+        <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, (1 / wd.fireRate) / MAX.rate))}%"></i></span>
+        <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, wd.range / MAX.range))}%"></i></span>` : '';
+      card.innerHTML = `${icoHtml}<b>${w.name}</b>${bars}<span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
       card.onclick = () => { onBuyWeapon(i); };
       grid.appendChild(card);
     });

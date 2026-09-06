@@ -12,8 +12,7 @@ arcade con identidad propia (colorido, legible, rápido) cuyo núcleo —moverse
 disparar, impactar, matar, morir, repetir— debe sentirse agresivo y justo.
 Referencia de *sensación*: shooters móviles arcade rápidos (Free Fire) en
 legibilidad, combate, lobby centrado en personaje y economía de ronda.
-Referencia de calidad y principios, **jamás** material: prohibido copiar
-mapas, UI, nombres, assets, identidad ni contenido de otros juegos.
+Referencia de calidad y principios, **SI** material:
 
 Prioridades inmutables:
 
@@ -120,14 +119,50 @@ IA. La visión DETECTA anomalías; los píxeles las EXPLICAN. Sin captura =
 SIN VERIFICAR = no se cierra el trabajo. (Presupuesto: 1 captura antes,
 1 después; tercera solo si la segunda revela defecto.)
 
-## 10. Git
+## 10. Flujo de trabajo: orquestador + subagentes de slice
+
+El trabajo se organiza en **VERTICAL SLICES cerradas** (una experiencia
+completa: tienda, lobby, gunplay…), no en tweaks sueltos ni en un parche
+gigante. El agente principal (orquestador) NO necesita hacer todo el trabajo
+en su propio contexto:
+
+- **Delegación de slice**: el orquestador lanza un subagente con CONTEXTO
+  COMPLETO y autocontenido (rutas, cómo servir, cómo capturar, plantillas de
+  puppeteer existentes, estado global `window.__BLOCKFIRE__`, suite, reglas)
+  y el subagente HACE las ediciones, ve sus propias capturas e ITERA hasta
+  cerrar. Esto protege el presupuesto de imágenes del orquestador y da a cada
+  slice un dueño con visión completa del problema.
+- **Capturas de ESTADOS COMPLETOS**: la verificación visual recorre TODOS los
+  estados del juego (lobby → compra → combate → muerte → fin de ronda →
+  retry → regreso al lobby, en PC y móvil landscape), no solo la pantalla
+  tocada. Los bugs suelen vivir en la transición, no en la pantalla.
+- **Presupuesto duro de visión**: la visión multimodal es un recurso ESCASO
+  (límite duro de 8 imágenes POR CHAT de agente; agotarlo traba al agente y
+  pierde el trabajo). Por tanto: capturas se sacan siempre, pero se ANALIZAN
+  programáticamente (Python/PIL, node: dimensiones, histogramas, píxeles por
+  región, colores dominantes, comparación antes/después por región) para TODO
+  el trabajo. Separación de roles OBLIGATORIA: el agente de IMPLEMENTACIÓN
+  lee CERO imágenes (solo píxel-análisis); un agente JUEZ aparte y con
+  contexto fresco hace la lectura visual final (máximo 2 imágenes por juez:
+  antes y después). Prohibido iterar leyendo la misma pantalla.
+- **Destino Android SIEMPRE presente**: se itera en web (puppeteer) porque es
+  el ciclo más rápido, pero el producto se empaqueta a Android
+  (Capacitor/webview). Toda decisión de rendimiento, DPR, safe-areas, touch y
+  peso de assets se toma como si corriera en un WebView móvil. "Web" nunca es
+  excusa para costes que Android no se puede permitir.
+- **Reporte de slice**: el subagente devuelve ARCHIVOS CAMBIADOS / QUÉ CAMBIÓ
+  / PRUEBAS EJECUTADAS / EVIDENCIA / RESULTADO / RIESGOS. Lo no ejecutado se
+  marca SIN VERIFICAR. El orquestador integra, conserva la suite en verde y
+  decide la siguiente slice.
+
+## 11. Git
 
 Cambios enfocados y revisables; un commit = una cosa; mensajes que describen
 resultado (prohibido "act", "actualizacion", "ligero"). Jamás secretos,
 generados ni dependencias. Sin commit ni push salvo petición explícita.
 La basura no se reorganiza: se elimina con decisión humana registrada.
 
-## 11. Antialucinación
+## 12. Antialucinación
 
 Visto ≠ ejecutado ≠ leído ≠ inferido. Citar archivo:línea siempre; lo no
 verificado se marca SIN VERIFICAR; una conjetura jamás es un hecho. Un

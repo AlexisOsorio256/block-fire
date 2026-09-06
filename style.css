@@ -114,6 +114,13 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #hitbanner.show{ animation: hbPop 0.6s ease-out forwards; }
 @keyframes hbPop{ 0%{ opacity:0; transform:translate(-50%,-50%) scale(0.7);} 15%{ opacity:1; transform:translate(-50%,-50%) scale(1.1);} 30%{ transform:translate(-50%,-50%) scale(1);} 100%{ opacity:0; transform:translate(-50%,-54%);} }
 
+/* Números de daño flotantes — pool fijo, estilizados una vez */
+.dmg-num{ position:fixed; left:0; top:0; z-index:4; pointer-events:none; display:none;
+  font-size:19px; font-weight:900; color:#ffe9b0; font-variant-numeric:tabular-nums;
+  text-shadow:0 0 4px rgba(0,0,0,0.85), 0 2px 3px rgba(0,0,0,0.7); will-change:transform,opacity; }
+.dmg-num.head{ color:#ff6b4a; font-size:23px; text-shadow:0 0 8px rgba(255,80,40,0.8), 0 2px 3px rgba(0,0,0,0.7); }
+.dmg-num.kill{ color:#ff4444; font-size:23px; text-shadow:0 0 10px rgba(255,40,40,0.85), 0 2px 3px rgba(0,0,0,0.7); }
+
 /* Mobile controls */
 #mobile-controls{ position:fixed; inset:0; z-index:3; pointer-events:none; display:none;
   --btn-scale:1; --btn-opacity:1; }
@@ -181,33 +188,56 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #th-close{ margin-top:10px; width:100%; appearance:none; border:none; cursor:pointer; font-size:14px; font-weight:900; letter-spacing:0.16em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:12px 0; border-radius:10px; box-shadow: 0 4px 0 #8a5a00; }
 #th-close:active{ transform:translateY(3px); box-shadow:0 1px 0 #8a5a00; }
 
-/* Lobby / Overlay */
-#overlay{ position:fixed; inset:0; z-index:6; display:grid; place-items:center; background: linear-gradient(180deg, rgba(8,12,24,0.42) 0%, rgba(8,12,24,0.62) 55%, rgba(8,12,24,0.88) 100%); backdrop-filter: blur(2px); padding:20px; transition: opacity 0.3s, visibility 0.3s; }
+/* Lobby / Overlay — COMPOSICIÓN: la UI vive en la COLUMNA IZQUIERDA y el
+   héroe 3D es el protagonista en la derecha. JERARQUÍA: título → JUGAR (CTA
+   dominante, el elemento más visible) → secundarios compactos abajo. */
+#overlay{ position:fixed; inset:0; z-index:6; display:grid; align-items:center;
+  grid-template-columns: minmax(300px, 430px) 1fr;
+  padding:20px 24px 20px 4.5vw;
+  background: linear-gradient(90deg, rgba(8,12,24,0.80) 0%, rgba(8,12,24,0.55) 38%, rgba(8,12,24,0.10) 64%, rgba(8,12,24,0.04) 100%);
+  transition: opacity 0.3s, visibility 0.3s; }
 #overlay.hidden{ opacity:0; visibility:hidden; pointer-events:none; }
-#title-block, #result-block{ text-align:center; max-width:520px; width:100%; }
-#title-block h1{ font-size: clamp(56px, 13vw, 96px); font-weight:900; letter-spacing:-0.03em; line-height:0.95; color:#fff; text-shadow: 0 0 30px rgba(255,180,40,0.35), 0 4px 0 rgba(0,0,0,0.55); }
+#title-block, #result-block{ text-align:left; max-width:460px; width:100%; grid-column:1; }
+#title-block h1{ font-size: clamp(44px, 7.6vw, 68px); font-weight:900; letter-spacing:-0.03em; line-height:0.95; color:#fff; text-shadow: 0 0 30px rgba(255,180,40,0.35), 0 4px 0 rgba(0,0,0,0.55); }
 #title-block h1 span{ color:#ffb400; }
-.tagline{ font-size:13px; letter-spacing:0.34em; font-weight:800; color:#9fb6e0; margin-top:10px; }
+/* JUGAR = CTA DOMINANTE: ancho completo de la columna (el elemento de UI
+   más grande y brillante de la pantalla; los secundarios no compiten). */
+#playBtn, #retryBtn{ display:block; width:100%; margin-top:14px; appearance:none; border:none; cursor:pointer; font-size:26px; font-weight:900; letter-spacing:0.30em; text-indent:0.30em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:20px 24px; border-radius:14px; box-shadow: 0 6px 0 #8a5a00, 0 14px 34px rgba(0,0,0,0.5), 0 0 54px rgba(255,180,40,0.5); pointer-events:auto; transition: transform 0.06s; }
+#playBtn:active, #retryBtn:active{ transform:translateY(4px); box-shadow: 0 2px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
+.tagline{ font-size:12px; letter-spacing:0.30em; font-weight:800; color:#9fb6e0; margin-top:14px; }
 #hint{ font-size:11px; color:rgba(160,180,220,0.65); margin-top:14px; letter-spacing:0.08em; }
-#title-block .credits{ font-size:9px; color:rgba(140,160,200,0.45); margin-top:10px; letter-spacing:0.04em; }
+#title-block .credits{ font-size:9px; color:rgba(140,160,200,0.45); margin-top:6px; letter-spacing:0.04em; }
 #title-block .credits a{ color:rgba(160,180,220,0.6); text-decoration:underline; }
 
-/* Lobby: selector de MODO (escuadras / todos contra todos) */
-#lobby-modes{ display:flex; gap:12px; justify-content:center; margin-top:18px; }
-.lobby-mode{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 22px; border-radius:14px; border:2px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#b8c8e2; transition:all 0.15s; }
-.lobby-mode svg{ width:52px; height:26px; margin-bottom:4px; }
-.lobby-mode b{ font-size:12px; font-weight:900; letter-spacing:0.12em; }
-.lobby-mode label{ font-size:9px; font-weight:800; letter-spacing:0.14em; opacity:0.75; pointer-events:none; }
+/* Secundarios bajo el CTA: modos + skins + stats/config, sin competir */
+#lobby-secondary{ margin-top:16px; display:flex; flex-direction:column; gap:12px; }
+#lobby-modes{ display:flex; gap:10px; justify-content:flex-start; }
+.lobby-mode{ appearance:none; cursor:pointer; pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:3px; padding:10px 16px; border-radius:12px; border:2px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#b8c8e2; transition:all 0.15s; }
+.lobby-mode svg{ width:44px; height:22px; margin-bottom:2px; }
+.lobby-mode b{ font-size:11px; font-weight:900; letter-spacing:0.12em; }
+.lobby-mode label{ font-size:8.5px; font-weight:800; letter-spacing:0.14em; opacity:0.75; pointer-events:none; }
 .lobby-mode:hover{ background:rgba(255,255,255,0.1); }
-.lobby-mode.selected{ border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,0.1); box-shadow:0 0 22px rgba(255,210,63,0.2); transform:translateY(-2px); }
+.lobby-mode.selected{ border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,0.1); box-shadow:0 0 22px rgba(255,210,63,0.2); }
 
-/* Lobby last-match stats */
-#lobby-stats{ margin-top:14px; min-height:18px; font-size:12px; font-weight:700; letter-spacing:0.08em; color:#8fa4c8; }
+/* Skins: fila compacta de swatches (el nombre completo era ruido) */
+#lobby-skins-wrap{ display:flex; flex-direction:column; gap:5px; align-items:flex-start; }
+.ls-label{ font-size:9px; font-weight:900; letter-spacing:0.2em; color:#7c92b8; }
+#lobby-skins{ display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-start; }
+.lobby-skin{ appearance:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:6px 8px; border-radius:9px; border:2px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04);
+  color:#cdd8ee; font-size:9px; font-weight:900; letter-spacing:0.08em; }
+.lobby-skin.on{ border-color:#ffd23f; background:rgba(255,210,63,0.12); color:#ffd23f;
+  box-shadow:0 0 14px rgba(255,210,63,0.35); }
+.lobby-skin:active{ transform:scale(0.95); }
+.ls-swatch{ width:34px; height:18px; border-radius:5px; background:#5a6a8a;
+  border:1px solid rgba(255,255,255,0.25); }
+
+/* Stats + config en una línea, al pie del panel */
+#lobby-meta{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+#lobby-stats{ min-height:16px; font-size:11px; font-weight:700; letter-spacing:0.06em; color:#7c92b8; }
 #lobby-stats b{ color:#ffd23f; }
-
-/* Lobby menu chips — growth space: configuración activa, armería/tienda futuras */
-#lobby-menu{ display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap:wrap; }
-.menu-chip{ appearance:none; cursor:pointer; pointer-events:auto; font-size:10px; font-weight:800; letter-spacing:0.14em; color:#b8c8e2; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14); padding:9px 14px; border-radius:10px; transition:all 0.15s; }
+#lobby-menu{ display:flex; gap:8px; flex-wrap:wrap; }
+.menu-chip{ appearance:none; cursor:pointer; pointer-events:auto; font-size:10px; font-weight:800; letter-spacing:0.14em; color:#b8c8e2; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14); padding:8px 13px; border-radius:10px; transition:all 0.15s; }
 .menu-chip:hover{ background:rgba(255,255,255,0.11); color:#fff; }
 .menu-chip.locked{ opacity:0.45; cursor:default; }
 
@@ -227,8 +257,7 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #cfg-close{ color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); box-shadow:0 3px 0 #8a5a00; }
 #cfg-reset:active, #cfg-close:active{ transform:translateY(2px); }
 .cfg-note{ margin-top:10px; font-size:9.5px; color:rgba(140,160,200,0.5); letter-spacing:0.05em; }
-#playBtn, #retryBtn{ margin-top:26px; appearance:none; border:none; cursor:pointer; font-size:17px; font-weight:900; letter-spacing:0.18em; color:#06101e; background: linear-gradient(180deg, #ffd23f 0%, #ffab00 100%); padding:16px 64px; border-radius:14px; box-shadow: 0 6px 0 #8a5a00, 0 14px 30px rgba(0,0,0,0.45); pointer-events:auto; transition: transform 0.06s; }
-#playBtn:active, #retryBtn:active{ transform:translateY(4px); box-shadow: 0 2px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
+#cfg-note{ margin-top:10px; font-size:9.5px; color:rgba(140,160,200,0.5); letter-spacing:0.05em; }
 #result-block h2{ font-size: clamp(34px, 9vw, 56px); font-weight:900; color:#ffd23f; text-shadow:0 0 22px rgba(255,210,60,0.5); }
 #result-stats{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:18px; }
 #result-stats div{ background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.09); border-radius:12px; padding:12px 6px; }
@@ -239,22 +268,29 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 
 /* Lobby compacto en pantallas landscape bajas (móvil horizontal): toda la
    app es landscape; aquí el lobby debe caber SIN recortes ni scroll incluso
-   con ~300px de alto útil (Chrome landscape con barra de direcciones). */
+   con ~300px de alto útil (Chrome landscape con barra de direcciones).
+   El héroe sigue siendo el protagonista: la UI se comprime en filas finas. */
 @media (orientation: landscape) and (max-height: 500px){
-  #overlay{ padding:6px 16px; }
+  #overlay{ padding:6px 16px; grid-template-columns: minmax(250px, 360px) 1fr; }
   #title-block, #result-block{ max-height:100%; overflow:hidden; }
-  #title-block h1{ font-size: clamp(26px, 6.5vh, 42px); line-height:1; }
-  .tagline{ margin-top:2px; font-size:8.5px; letter-spacing:0.2em; }
-  #lobby-modes{ margin-top:5px; gap:8px; }
-  .lobby-mode{ padding:5px 10px; gap:1px; }
-  .lobby-mode svg{ width:30px; height:14px; }
-  .lobby-mode b{ font-size:9.5px; }
-  .lobby-mode label{ font-size:7.5px; }
+  #title-block h1{ font-size: clamp(22px, 6vh, 36px); line-height:1; }
+  #playBtn, #retryBtn{ margin-top:6px; padding:10px 16px; font-size:14px; letter-spacing:0.24em; text-indent:0.24em; border-radius:11px; box-shadow: 0 4px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45), 0 0 30px rgba(255,180,40,0.4); }
+  .tagline{ margin-top:4px; font-size:7.5px; letter-spacing:0.18em; }
+  #lobby-secondary{ margin-top:6px; gap:5px; }
+  #lobby-modes{ gap:6px; }
+  .lobby-mode{ padding:4px 8px; gap:0; border-radius:8px; }
+  .lobby-mode svg{ width:26px; height:12px; }
+  .lobby-mode b{ font-size:8.5px; }
+  .lobby-mode label{ font-size:7px; }
   .lobby-mode.selected{ transform:none; }
-  #lobby-stats{ margin-top:3px; font-size:9.5px; min-height:12px; }
-  #playBtn, #retryBtn{ margin-top:7px; padding:8px 40px; font-size:13px; box-shadow: 0 3px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
-  #lobby-menu{ margin-top:7px; gap:6px; }
-  .menu-chip{ padding:6px 9px; font-size:8.5px; }
+  .ls-label{ font-size:7px; }
+  #lobby-skins{ gap:5px; }
+  .lobby-skin{ padding:3px 5px; border-radius:7px; font-size:7px; gap:1px; }
+  .ls-swatch{ width:22px; height:11px; border-radius:3px; }
+  #lobby-stats{ font-size:8.5px; min-height:10px; }
+  #lobby-meta{ gap:8px; }
+  #lobby-menu{ gap:5px; }
+  .menu-chip{ padding:5px 8px; font-size:8px; border-radius:8px; }
   /* On short landscape the hint + credits are secondary: hide them instead of
      clipping the interactive menu chips at the screen edge. */
   #hint, #title-block .credits{ display:none; }
@@ -317,7 +353,11 @@ body:not(.playing) #squad-score{ display:none !important; }
   padding:10px 6px; border-radius:11px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.05);
   color:#cdd8ee; transition:all 0.12s; }
 .bp-item .bp-ico{ font-size:19px; line-height:1; }
+.bp-item .bp-img{ width:76px; height:48px; object-fit:contain; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5)); }
 .bp-item b{ font-size:11px; font-weight:900; letter-spacing:0.08em; }
+/* Stats relativas de la tarjeta: daño / cadencia / alcance (3 barras finas) */
+.bp-stat{ display:block; width:56px; height:4px; border-radius:2px; background:rgba(255,255,255,0.12); overflow:hidden; }
+.bp-stat i{ display:block; height:100%; border-radius:2px; background:linear-gradient(90deg,#ffd23f,#ffab00); }
 .bp-item .bp-price{ font-size:9.5px; font-weight:800; color:#8fa4c8; letter-spacing:0.06em; }
 .bp-item.affordable .bp-price{ color:#7dff9a; }
 .bp-item.owned{ border-color:rgba(125,255,154,0.4); background:rgba(125,255,154,0.06); }
@@ -372,18 +412,7 @@ body.playing #btn-pause{ display:block; }
 /* ═══ Botón abandonar ═══ */
 #btn-pause{ border-color:#ff5a4a; color:#ff8a7a; }
 
-/* ═══ Skins del lobby (loadout global, gratis) ═══ */
-#lobby-skins-wrap{ margin-top:10px; display:flex; flex-direction:column; gap:6px; align-items:center; }
-.ls-label{ font-size:10px; font-weight:900; letter-spacing:0.2em; color:#8fa4c8; }
-#lobby-skins{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-.lobby-skin{ appearance:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px;
-  padding:9px 14px; border-radius:10px; border:2px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05);
-  color:#cdd8ee; font-size:10px; font-weight:900; letter-spacing:0.08em; }
-.lobby-skin.on{ border-color:#ffd23f; background:rgba(255,210,63,0.12); color:#ffd23f;
-  box-shadow:0 0 14px rgba(255,210,63,0.35); }
-.lobby-skin:active{ transform:scale(0.95); }
-.ls-swatch{ width:44px; height:24px; border-radius:6px; background:#5a6a8a;
-  border:1px solid rgba(255,255,255,0.25); }
+/* ═══ Skins del lobby (loadout global, gratis) — coloreado de swatches ═══ */
 .ls-swatch[data-skin="oro"]{ background:linear-gradient(135deg,#ffe9a0,#c8952a); }
 .ls-swatch[data-skin="bosque"]{ background:linear-gradient(135deg,#5d9c48,#2f4a2c); }
 .ls-swatch[data-skin="hielo"]{ background:linear-gradient(135deg,#a8e4ff,#2f5a78); }

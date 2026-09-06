@@ -35,6 +35,8 @@ export class MatchSquad {
     g.matchTime = 0;
     g._combatStarted = false;
     g._resetTemporalState();
+    // Rutas de navegación de la ronda anterior mueren aquí (regla §4)
+    if (g.navigation) g.navigation.reset();
     // Reset por escuadra: cada equipo sale de SU base (jugador Sur, enemigos Norte)
     const squadSpawns = g.map.squadSpawns || { ally: [g.map.getRandomSpawn()], enemy: [g.map.getRandomSpawn()] };
     g.playerController.health = g.playerController.maxHealth;
