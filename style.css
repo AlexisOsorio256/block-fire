@@ -1,4 +1,4 @@
-/* BLOCKFIRE — FPS Blocky | PC + Mobile */
+/* BLOCKFIRE — FPS arcade estilizado | PC + Mobile */
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
 body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system, sans-serif; color:#e6eefc; touch-action:none; user-select:none; -webkit-user-select:none; }
@@ -512,3 +512,17 @@ body:not(.playing) #cfg-danger{ display:none; }
 .ls-swatch[data-skin="bosque"]{ background:linear-gradient(135deg,#5d9c48,#2f4a2c); }
 .ls-swatch[data-skin="hielo"]{ background:linear-gradient(135deg,#a8e4ff,#2f5a78); }
 .ls-swatch[data-skin="carbon"]{ background:linear-gradient(135deg,#3a4560,#10131f); }
+
+/* WebView móvil: el blur se ve caro y pierde contraste en GPUs modestas.
+   En PC se conserva; en touch se usa una superficie translúcida estable. */
+@media (pointer: coarse) and (orientation: landscape), (max-width: 900px) and (orientation: landscape){
+  #score-chip, #health-block, #ammo-block, #spectate-banner,
+  #joystick-base, .action-btn, #btn-fullscreen, #btn-settings{
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
+  }
+  #score-chip, #health-block, #ammo-block{ background:rgba(10,16,28,.78); }
+  #spectate-banner{ background:rgba(8,12,22,.84); }
+  #joystick-base{ background:rgba(255,255,255,.10); }
+  .action-btn, #btn-fullscreen, #btn-settings{ background:rgba(0,0,0,.58); }
+}

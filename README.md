@@ -2,196 +2,98 @@
 
 # 🔥 BLOCKFIRE
 
-**FPS arcade three.js — en PC (navegador) y Android (WebView nativa).**
+**FPS arcade Three.js — navegador y Android WebView.**
 
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
-Duelo de Escuadras 4v4 por rondas — o Todos contra Todos a 20 kills.
-
-## 🏗️ Arquitectura (una responsabilidad por sistema)
-
-| Capa | Qué es | Dueño |
-|---|---|---|
-| `src/` | **BLOCKFIRE RUNTIME** — mini-motor propio con contratos claros (una responsabilidad por sistema, una sola ruta de daño, sin magia) | IA |
-| `index.html` + `style.css` | Presentación y HUD | IA |
-| `tools/webview/` + `tools/build-web.sh` | Empaquetado Android (una de las DOS vías, ver §Android) | IA |
-| `android/` | Capacitor (la OTRA vía Android: plugins, storage persistente, ads futuros) | IA |
-| `assets/` | Samples de audio + texturas + modelos (licencias en [`CREDITS.md`](CREDITS.md)) | IA |
-| `docs/migration/` | ❌ NO EXISTE — mención retirada (fue de la era Godot, ya descartado) | — |
-
-**Decisión de motor** (probada en Galaxy S22 con capturas y logs): Three.js itera ~5×
-más rápido con IA y con 0 regresiones de escena vs. engine completo. Godot fue
-descartado y retirado del repo.
-
-### Comandos
-
-```bash
-# web en local
-python3 -m http.server 8931        # → http://localhost:8931  |  ?runTests=1 (tests)
-# empaquetar web
-bash tools/build-web.sh            # → www/ (generado, no se versiona)
-# APK vía 2 — webview mínima sin gradle (aapt2+d8+apksigner)
-cd tools/webview && bash build.sh  # → builds/blockfire-webview.apk (generado)
-# APK vía 1 — Capacitor (producción)
-bash tools/build-web.sh && npx cap sync android && cd android && ./gradlew assembleDebug
-```
-
-## 📱 Estrategia Android — Capacitor es la vía de PRODUCCIÓN
-
-1. **Capacitor** (`android/`, vía gradle): **canónica**. Plugins, storage
-   persistente, camino a ads/integraciones futuras. `tools/build-web.sh` →
-   `www/` → `npx cap sync` → gradle.
-2. **WebView mínima sin gradle** (`tools/webview/build.sh`): aapt2+d8+apksigner.
-   Sobrevive SOLO como smoke/debug rápido si aporta valor y no diverge.
-
-TWA/PWA: descartada, no implementada. La web runtime es única; Android es una
-cáscara delgada y nunca reescribe gameplay.
+Duelo de Escuadras 4v4 por rondas o Todos contra Todos a 20 kills.
 
 </div>
 
----
+## Estado y arquitectura
 
-## 📱 REGLA PERMANENTE: HORIZONTAL
+El runtime actual usa Three.js/WebGL y una sola ruta de juego para navegador y
+Android. Capacitor (android/) es el empaquetado Android canónico; la WebView
+mínima de tools/webview/ es una vía de smoke/debug. La dirección visual es
+estilizada, colorida, legible y rápida; la geometría primitiva solo es
+fallback técnico cuando un asset no está disponible.
 
-**BLOCKFIRE se juega EN HORIZONTAL — PC y Android, en TODAS las pantallas
-(lobby, partida, configuración, todo).** No existe una versión vertical y el
-gameplay no se adapta a portrait.
+| Área | Dueño |
+|---|---|
+| Arranque y gates | src/main.js |
+| Partida, rondas, daño y espectador | src/core/Game.js, src/core/MatchSquad.js |
+| Input y configuración táctil | src/core/Input.js, src/core/ControlLayout.js |
+| Movimiento y cámara | src/player/PlayerController.js |
+| Armas y hitscan | src/combat/WeaponSystem.js |
+| Bots y navegación | src/bots/Bot.js, src/bots/Navigation.js |
+| Mundo y decoración | src/world/Map.js, src/world/MapDecor.js |
+| HUD y lobby | src/ui/HUD.js, src/ui/Lobby.js |
+| Audio y VFX | src/audio/AudioManager.js, src/fx/ |
+| Personaje | src/characters/SoldierAvatar.js |
+| Suite DEV | src/testing/suite.js |
 
-En móvil: si abres en vertical, un aviso a pantalla completa te pide girar el
-dispositivo **antes** de tocar nada del juego. Al pulsar JUGAR, el juego pide
-pantalla completa + bloqueo landscape (cuando el navegador lo permite).
+## Comandos
 
-## 🎮 Cómo se juega
+~~~bash
+# servidor con lifecycle y PID controlado
+bash tools/start-server.sh
+# también: bash tools/start-server.sh --bg
+# detener una instancia propia: bash tools/start-server.sh --stop
+
+# build web de producción, con BUILD_ID y sin harness DEV
+bash tools/build-web.sh
+
+# Capacitor: vía Android canónica
+bash tools/build-web.sh
+npx cap sync android
+(cd android && ./gradlew assembleDebug)
+~~~
+
+La suite se abre en http://127.0.0.1:8931/?runTests=1. Para WebGL headless se
+requiere una implementación de software, por ejemplo
+--enable-unsafe-swiftshader --use-angle=swiftshader.
+
+## Plataforma y controles
+
+BLOCKFIRE es horizontal en todas las pantallas. En táctil, portrait muestra
+una compuerta de giro antes del flujo jugable; la actividad Android declara
+landscape y el navegador intenta bloquearlo al entrar en fullscreen.
 
 | Acción | PC | Móvil |
 |---|---|---|
-| Mover | WASD | Joystick izquierdo (curva precisa) |
-| Correr | Shift | Botón **CORRER** (fija) o joystick a tope |
-| Mirar | Ratón | Deslizar en la mitad derecha — o arrastrar **FUEGO** |
-| Disparar | Click izq | **FUEGO** (mantener) · arrástralo para apuntar mientras disparas |
-| Apuntar (ADS) | Click der | **MIRA** un toque = fija; aparece **2º FUEGO** a la izquierda |
-| Agacharse | C | Botón **COGER** (más preciso, más lento) |
-| Saltar / Recargar | Espacio / R | Botones |
-| Cambiar arma | 1-2-3-4 · Q/E cicla | Botón **ARMA** cicla |
-| Abrir tienda | B (solo en fase de compra) | **ARSENAL** |
-| Ajustes en partida | — | Botón ⚙ (arriba-izquierda) |
-| Abandonar partida | Botón **ABANDONAR** | Botón **ABANDONAR** |
+| Mover | WASD | Joystick izquierdo |
+| Correr | Shift | CORRER o joystick a tope |
+| Mirar | Ratón | Arrastre derecho o arrastre de FUEGO |
+| Disparar | Click izquierdo | FUEGO, mantenido y arrastrable |
+| Apuntar | Click derecho | MIRA, toque con segundo FUEGO |
+| Agacharse | C | AGACHAR |
+| Saltar / recargar | Espacio / R | Botones |
+| Cambiar arma | 1–4, Q/E | ARMA |
 
-- **Multitouch real**: mueve y mira a la vez; dispara con un dedo y mira con
-  otro; nada se pisa ni queda pegado.
-- **Asistencia de apuntado** activa en móvil: si apuntas cerca del pecho, la
-  bala ayuda — pero todavía tienes que rastrear al enemigo.
-- **125 de vida**: los duelos duran lo justo. La cobertura es real.
+El layout táctil se puede mover, redimensionar y hacer más transparente desde
+CONFIGURACIÓN → EDITAR CONTROLES. window.__BLOCKFIRE__.getDiagnostics() está
+disponible en DEV y devuelve el estado de render y plataforma.
 
-## ⚙️ Configuración (⚙ en partida, o CONFIGURACIÓN en el lobby)
+## Producto disponible
 
-- Sensibilidad de cámara (0.3×–2×) y sensibilidad ADS (0.3×–1×)
-- **EDITAR CONTROLES**: arrastra cada botón y suéltalo donde quieras
-- Tamaño y opacidad de los controles
-- RESTAURAR vuelve todo por defecto. Se guarda en el dispositivo (localStorage).
+- Duelo de Escuadras 4v4, primero a cuatro rondas, con fase de compra,
+  inmunidad de spawn y sin respawn durante la ronda.
+- FFA de ocho combatientes, respawn y objetivo de 20 kills.
+- Soldado GLB animado cuando carga, con siete operadores, colores de equipo,
+  equipo modular, locomoción y feedback de disparo/impacto/muerte.
+- Rifle, pistola, escopeta y SMG con modelos Kenney, fallback técnico,
+  retroceso, ADS, recarga, cambio de arma, trazadoras e impactos.
+- Audio con samples atribuidos y fallback procedural; el SMG tiene identidad
+  sonora separada.
+- Bots con percepción, navegación, roles y distancia táctica por arma.
+- Mapa 120×120 con colliders estructurales y decoración separadas.
+- Lobby de estudio, tienda de ronda, skins cosméticas locales, HUD, números de
+  daño, feedback direccional y espectador de aliados.
 
-## 🖼️ Así se ve
+La suite DEV protege contratos de juego; no se usa como sustituto de una
+comprobación física en Android.
 
-*(Las capturas viven en el directorio de trabajo de la IA (`.tmp/`); no se
-versionan — regla §3. Para capturar estados: puppeteer headless con
-`?runTests=1` o los scripts de `.tmp/*.mjs`.)*
+## Licencias
 
-## ✨ Qué tiene (estado actual)
-
-- **DUELO DE ESCUADRAS (Clash Squad)**: 4v4 por rondas BO7 (primero a 4), fase
-  de COMPRA antes de cada ronda con oro ficticio, inmunidad de spawn que se
-  rompe al disparar, sin respawn en ronda (estilo Free Fire)
-- **TODOS CONTRA TODOS (FFA)**: 8 jugadores, respawns, 20 kills gana
-- **7 bots con identidad de operador** (paleta de traje propia + 3 siluetas
-  modulares sobre el mismo rig: casco / hombreras / mochila en el color `gear`
-  del operador; equipo = visor + banda, nunca el traje teñido) que usan el GLB
-  de soldado animado si carga (PRIMITIVE FALLBACK automático con 7 outfits
-  propios), navegación con occupancy grid + A* (`src/bots/Navigation.js`):
-  rodean obstáculos, memoria corta del último enemigo, separación,
-  **distancia táctica según el arma en la mano** (tabla `WEAPON_RANGE` en
-  `src/bots/Bot.js`, modulada por el rol entry/support/anchor — sin
-  wallhack: la percepción respeta oclusión real a cualquier distancia),
-  flanqueo lateral cuando no consiguen línea de tiro, compra coherente con el
-  rol — sin trampas
-- **4 armas (rifle, pistola, escopeta, SMG) con modelos GLB de Kenney (CC0,
-  ver `assets/models/weapons/LICENSE-kenney.txt`)**, viewmodel en primera
-  persona con brazos agarrando el arma, siluetas y sonidos propios, retroceso,
-  recarga y cambio animados; PRIMITIVE FALLBACK si el GLB falla
-- **Aim assist tipo levantar-mira**: fricción moderada cerca del torso (sin
-  snap), aplicada UNA VEZ sobre la dirección base ANTES del spread — mueve el
-  centro del patrón y jamás comprime el de la escopeta; la cabeza es
-  recompensa del drag vertical real; no asiste tras muros ni sobre aliados;
-  menor en PC que en touch
-- **Números de daño flotantes** (pool DOM, body/headshot/kill diferenciados,
-  postas de escopeta acumuladas) + hitmarker + trazadoras + sangre
-- **Iconos de armas de la tienda renderizados desde el GLB real** (perfil
-  lateral, fit al Box3, un render por arma por partida)
-- **Trazadoras** en cada disparo (los tuyos y los de los bots) + impactos
-  diferenciados pared/enemigo + sangre
-- Disparos reales grabados (Jesús Lastra CC-BY 3.0, ver `CREDITS.md`) +
-  confirmaciones de combate diseñadas para el género
-- **Multitouch estilo FPS móvil**: fuego arrastrable, ADS por toque con segundo
-  fuego, agacharse, sprint fijo; sin estados táctiles pegados
-- Landscape obligatorio en móvil con instrucción ANTES del gameplay
-- Screen shake, vignette de daño, **indicador direccional de daño**, respawn en 2s
-- Mapa 120×120 con **capa decorativa separada de los colliders estructurales**:
-  color zoning por zonas, landmarks por lane (grúa, contenedores, arcos,
-  torre de agua), props horneados en 1 mesh por material
-  (`src/world/MapDecor.js`) — **los props sólidos a nivel de jugador (bidones,
-  cajas, contenedores, grúa) registran collider simple: lo que parece sólido
-  no es un fantasma**; el micro-dressing y los landmarks altos sí son
-  atravesables por diseño — arena Clash Squad con bases espejo y centro; FFA
-  con 6 casas y landmarks propios
-- 60 FPS de presupuesto en PC y móviles modestos (resolución adaptativa)
-- **Skins de armas cosméticas y GRATIS**: se eligen en el lobby (persistente
-  en localStorage); el oro del Clash Squad solo compra armas
-- **Lobby de estudio**: héroe 3D encuadrado por Box3 (completo, ~68% de altura,
-  testeado) **con arma GLB real** (el PRIMITIVE FALLBACK solo existe mientras carga o si
-  el asset falla), pedestal, luces de estudio, CTA JUGAR dominante, selector
-  de modo y de skin de armas, estadísticas locales y panel de configuración
-
----
-
-## 🛠️ Para desarrolladores / IAs
-
-> **Las reglas del proyecto están en [`PROJECT_RULES.md`](PROJECT_RULES.md) — léelas antes de tocar código.**
-
-Arquitectura (una responsabilidad por sistema):
-
-```
-src/main.js                    arranque puro: gates (landscape / tests / capturas)
-src/core/Game.js               orquestador: loop, daño central y estado de partida
-src/core/AssetRegistry.js      dueño único de carga GLB (instantiate, errores, fallback)
-src/core/MatchSquad.js         flujo de rondas del Duelo de Escuadras (BO7)
-src/core/Input.js              teclado/mouse/pointer táctil → acciones neutrales
-src/core/Settings.js           preferencias del jugador (localStorage)
-src/player/PlayerController.js movimiento, cámara, gravedad y respawn humano
-src/combat/WeaponSystem.js     armas, hitscan, oclusión, aim assist y feedback
-src/economy/Shop.js            tienda del Clash Squad (comprar/equipar)
-src/fx/VfxSystem.js            efectos de combate (flash/impacto/trazadora/sangre)
-src/fx/DamageNumbers.js        números de daño flotantes (pool DOM reutilizable)
-src/bots/Bot.js                IA: navegación, memoria de objetivo, roles por parámetros
-src/bots/Navigation.js         occupancy grid + A* + consultas de ruta/cobertura
-src/world/Map.js               colliders AABB, spawns validados, colisión y raycast
-src/world/MapDecor.js          capa visual del mapa (zoning, landmarks, props horneados)
-src/ui/HUD.js                  HUD, kill feed, banners y daño direccional
-src/ui/Lobby.js                escena 3D del lobby (héroe, pedestal, luces)
-src/ui/WeaponIcons.js          iconos de armas de la tienda (render GLB offscreen)
-src/audio/AudioManager.js      samples (CC0/CC-BY) + fallback procedural
-src/characters/SoldierAvatar.js  soldado GLB animado + PRIMITIVE FALLBACK
-src/testing/suite.js           suite ?runTests=1 (todos en verde, obligatorio)
-src/testing/capture.js         harness ?capture= (auditoría visual)
-```
-
-### Cómo ejecutar y probar
-
-```bash
-python3 -m http.server 8931        # desde la raíz del repo
-# → http://localhost:8931          (el juego)
-# → http://localhost:8931/?runTests=1   (suite de tests en pantalla)
-```
-
-En PC se puede probar el input táctil reduciendo la ventana a <900px de ancho.
-Los tests también corren en headless:
-`chromium --headless=new --enable-unsafe-swiftshader --dump-dom 'http://localhost:8931/?runTests=1'`
-(WebGL por software: sin GPU headless el primer intento puede morir con
-"Error creating WebGL context").
+Consulta CREDITS.md. Los disparos gshot_*.ogg son CC-BY 3.0 de Jesús Lastra y
+los modelos de armas Kenney están documentados junto a sus assets. Esta
+entrega no añade assets externos nuevos.

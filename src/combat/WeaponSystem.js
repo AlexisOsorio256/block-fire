@@ -87,6 +87,14 @@ export const WeaponSkins = {
 
 // Arriba mundial compartido (cero allocs; nunca se muta)
 const UP = new THREE.Vector3(0, 1, 0);
+const RELOAD_SEQUENCE = {
+  rifle:   { marks: [0.16, 0.42, 0.72, 0.90], sounds: ['reload_mag_out', 'reload_mag_in', 'reload_bolt', 'equip'] },
+  pistol:  { marks: [0.20, 0.52, 0.78, 0.92], sounds: ['reload_mag_out', 'reload_mag_in', 'reload_slide', 'equip'] },
+  smg:     { marks: [0.14, 0.40, 0.68, 0.88], sounds: ['reload_mag_out', 'reload_mag_in', 'reload_bolt', 'equip'] },
+  shotgun: { marks: [0.18, 0.45, 0.64, 0.86], sounds: ['reload_shell', 'reload_shell', 'reload_pump', 'equip'] },
+};
+const SWITCH_DURATIONS = { rifle: 0.42, pistol: 0.32, smg: 0.30, shotgun: 0.52 };
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 export class WeaponSystem {
   constructor(scene, camera, audio, vfx, applyDamage, game = null) {
@@ -114,22 +122,35 @@ export class WeaponSystem {
     this.reloadTimer = 0;
     this.fireCooldown = 0;
     this.recoilOffset = 0;
+    this._displayWeaponKey = this.weapons[this.currentIndex];
+    this._switchAnim = 0;
+    this._switchPending = false;
+    this._switchPreviousKey = null;
+    this._switchStage = -1;
+    this._actionStage = -1;
+    this._viewmodelVisible = false;
+    this._vmOffset = new THREE.Vector3();
+    this._actionPose = {
+      x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, scale: 1,
+      magY: 0, magZ: 0, slideZ: 0, boltZ: 0, pumpZ: 0, stockX: 0,
+    };
 
     this.raycaster = new THREE.Raycaster();
     this.crosshair = document.getElementById('crosshair');
     this.hitmarker = document.getElementById('hitmarker');
 
-    // Weapon meshes (blocky) — fallback técnico. La RUTA NORMAL carga GLB
-    // reales (Kenney Blaster Kit CC0): este blocky solo se ve mientras carga
-    // o si el asset falla (offline/APK vieja). Silueta reconocible siempre.
+    // Weapon meshes — fallback técnico. La ruta normal carga GLB reales
+    // (Kenney Blaster Kit CC0); la malla simple solo se ve mientras carga o si
+    // el asset falla (offline/APK vieja).
     this._weaponModels = this._createWeaponMeshes();
     for (const key of Object.keys(this._weaponModels)) {
+      this._indexAnimationParts(this._weaponModels[key]);
       this.scene.add(this._weaponModels[key]);
       this._weaponModels[key].visible = key === this.weapons[this.currentIndex];
     }
-    this.weaponMesh = this._weaponModels.rifle; // alias for the current model
+    this.weaponMesh = this._weaponModels[this._displayWeaponKey];
 
-    // ── GLB reales (ruta principal): sustituyen al blocky por arma cuando
+    // ── GLB reales (ruta principal): sustituyen al fallback por arma cuando
     // llegan. ORIENTACIÓN MEDIDA (análisis de vértices/Box3 por malla +
     // silueta proyectada, ver .tmp/glb-slabs.mjs): TODOS los GLB de Kenney
     // aquí usados crecen hacia +Z (pistola: empuñadura z+ / cañón z-;
@@ -141,7 +162,7 @@ export class WeaponSystem {
     this._glbModels = {};
     for (const key of Object.keys(WEAPON_MODELS)) {
       assets.instantiate(WEAPON_MODELS[key]).then((obj) => {
-        if (!obj) return; // fallback blocky permanece
+        if (!obj) return; // el fallback técnico permanece
         // Normalización: Kenney ~0.6-1.4u de largo; el viewmodel vive a
         // ~0.4m de la cámara y espera armas de 0.35–0.62u. Cañón = -Z.
         const NORM = {
@@ -169,6 +190,7 @@ export class WeaponSystem {
         // Brazos/manos low-poly del jugador agarrando el arma (paleta del
         // soldado). Viven DENTRO del wrap: heredan bob/recoil/ADS/recarga.
         this._attachArms(wrap, key);
+        this._indexAnimationParts(wrap);
         wrap.visible = false;
         this.scene.add(wrap);
         this._glbModels[key] = wrap;
@@ -223,6 +245,120 @@ export class WeaponSystem {
     wrap.add(armR, armL);
   }
 
+  // Indexa piezas animables una sola vez. GLB y fallback comparten el mismo
+  // contrato; si un asset no nombra una pieza, la pose general sigue siendo
+  // válida y no se inventa una jerarquía costosa.
+  _indexAnimationParts(model) {
+    if (!model) return;
+    const parts = model.userData.animParts || {};
+    model.traverse((o) => {
+      const name = o.name || '';
+      if (!parts.magazine && /magazine|mag|clip/i.test(name)) parts.magazine = o;
+      if (!parts.slide && /slide/i.test(name)) parts.slide = o;
+      if (!parts.bolt && /bolt|charging/i.test(name)) parts.bolt = o;
+      if (!parts.pump && /pump|fore.?end/i.test(name)) parts.pump = o;
+      if (!parts.stock && /stock/i.test(name)) parts.stock = o;
+    });
+    model.userData.animParts = parts;
+    model.userData.animBase = [];
+    for (const key of ['magazine', 'slide', 'bolt', 'pump', 'stock']) {
+      const node = parts[key];
+      if (!node) continue;
+      model.userData.animBase.push({
+        key,
+        node,
+        position: node.position.clone(),
+        quaternion: node.quaternion.clone(),
+      });
+    }
+  }
+
+  _resetActionPose() {
+    const p = this._actionPose;
+    p.x = 0; p.y = 0; p.z = 0;
+    p.rx = 0; p.ry = 0; p.rz = 0; p.scale = 1;
+    p.magY = 0; p.magZ = 0; p.slideZ = 0; p.boltZ = 0;
+    p.pumpZ = 0; p.stockX = 0;
+  }
+
+  _applyAnimationParts(model, pose) {
+    const data = model && model.userData;
+    if (!data || !data.animParts) return;
+    for (const base of data.animBase || []) {
+      base.node.position.copy(base.position);
+      base.node.quaternion.copy(base.quaternion);
+    }
+    const parts = data.animParts;
+    if (parts.magazine) {
+      parts.magazine.position.y += pose.magY;
+      parts.magazine.position.z += pose.magZ;
+    }
+    if (parts.slide) parts.slide.position.z += pose.slideZ;
+    if (parts.bolt) parts.bolt.position.z += pose.boltZ;
+    if (parts.pump) parts.pump.position.z += pose.pumpZ;
+    if (parts.stock) parts.stock.position.x += pose.stockX;
+  }
+
+  _advanceReloadStage(progress) {
+    const key = this.weapons[this.currentIndex];
+    const sequence = RELOAD_SEQUENCE[key] || RELOAD_SEQUENCE.rifle;
+    let stage = 0;
+    while (stage < sequence.marks.length && progress >= sequence.marks[stage]) stage++;
+    if (stage === this._actionStage) return;
+    this._actionStage = stage;
+    if (stage > 0 && this.audio) {
+      this.audio.play(sequence.sounds[stage - 1], this.currentWeapon.name, { throttleClass: 'weaponAction' });
+    }
+  }
+
+  _applyReloadPose(key, progress, pose) {
+    const wave = Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI);
+    pose.y = -0.075 * wave;
+    if (key === 'shotgun') {
+      const pumpP = clamp01((progress - 0.40) / 0.42);
+      const pull = pumpP < 0.5 ? pumpP * 2 : 2 - pumpP * 2;
+      pose.pumpZ = -0.14 * Math.min(1, pull);
+      pose.x = -0.025 * wave;
+      pose.rz = -0.035 * wave;
+      return;
+    }
+    const magOut = clamp01((progress - 0.08) / 0.14);
+    const magIn = clamp01((progress - 0.40) / 0.18);
+    pose.magY = -0.16 * magOut + 0.16 * magIn;
+    pose.magZ = key === 'smg' ? -0.025 * magOut : 0;
+    if (key === 'pistol') {
+      const slide = Math.sin(Math.min(1, Math.max(0, (progress - 0.66) / 0.18)) * Math.PI);
+      pose.slideZ = -0.085 * slide;
+    } else {
+      const bolt = Math.sin(Math.min(1, Math.max(0, (progress - 0.64) / 0.18)) * Math.PI);
+      pose.boltZ = -0.09 * bolt;
+      if (key === 'smg') pose.x = -0.018 * wave;
+    }
+  }
+
+  _applySwitchPose(progress, pose) {
+    const p = clamp01(progress);
+    this._resetActionPose();
+    if (p < 0.40) {
+      const t = p / 0.40;
+      pose.x = -0.20 * t;
+      pose.y = -0.18 * t;
+      pose.rz = -0.14 * t;
+      pose.scale = 1 - 0.08 * t;
+    } else if (p < 0.55) {
+      pose.x = -0.20;
+      pose.y = -0.18;
+      pose.rz = -0.14;
+      pose.scale = 0.92;
+    } else {
+      const t = (p - 0.55) / 0.45;
+      pose.x = 0.05 * (1 - t);
+      pose.y = -0.18 * (1 - t);
+      pose.rz = 0.04 * (1 - t);
+      pose.scale = 0.92 + 0.08 * t;
+    }
+  }
+
   _createWeaponMeshes() {
     // Materiales POR ARMA (no compartidos): applySkin tiñe dark/accent solo del
     // modelo comprado. Compartir una instancia hacía que la skin del rifle
@@ -253,7 +389,7 @@ export class WeaponSystem {
     const rM = Mats();
     const bodyM = rM.body, blackM = rM.black, gripM = rM.grip;
     add(rifle, new THREE.BoxGeometry(0.09, 0.11, 0.34), bodyM, 0, 0, 0);
-    add(rifle, new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
+    const rifleBolt = add(rifle, new THREE.BoxGeometry(0.055, 0.03, 0.30), blackM, 0, 0.075, -0.02);
     add(rifle, new THREE.BoxGeometry(0.058, 0.012, 0.28), accentM.rifle, 0, 0.062, -0.02); // identity line
     add(rifle, new THREE.BoxGeometry(0.045, 0.045, 0.30), blackM, 0, 0.01, -0.30);
     add(rifle, new THREE.BoxGeometry(0.07, 0.07, 0.16), bodyM, 0, 0.005, -0.24);
@@ -261,7 +397,7 @@ export class WeaponSystem {
     add(rifle, new THREE.BoxGeometry(0.074, 0.02, 0.04), accentM.rifle, 0, 0.045, -0.27);
     add(rifle, new THREE.BoxGeometry(0.075, 0.075, 0.06), blackM, 0, 0.01, -0.46);
     add(rifle, new THREE.BoxGeometry(0.082, 0.082, 0.012), accentM.rifle, 0, 0.01, -0.435);
-    add(rifle, new THREE.BoxGeometry(0.06, 0.16, 0.09), blackM, 0, -0.125, 0.04, 0.12); // angled mag
+    const rifleMag = add(rifle, new THREE.BoxGeometry(0.06, 0.16, 0.09), blackM, 0, -0.125, 0.04, 0.12); // angled mag
     add(rifle, new THREE.BoxGeometry(0.064, 0.02, 0.094), accentM.rifle, 0, -0.20, 0.052, 0.12);
     add(rifle, new THREE.BoxGeometry(0.06, 0.13, 0.07), gripM, 0, -0.11, 0.16, -0.25);
     add(rifle, new THREE.BoxGeometry(0.03, 0.02, 0.09), blackM, 0, -0.055, 0.10);
@@ -270,22 +406,24 @@ export class WeaponSystem {
     add(rifle, new THREE.BoxGeometry(0.025, 0.05, 0.04), accentM.rifle, 0, 0.115, -0.16); // front sight
     add(rifle, new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM, 0, 0.105, 0.10);
     rifle.userData.parts = { dark: bodyM, black: blackM, accent: accentM.rifle };
+    rifle.userData.animParts = { magazine: rifleMag, bolt: rifleBolt };
 
     // ---- PISTOL: compact slide + stubby barrel + big grip (the "sidearm") ----
     const pistol = new THREE.Group();
     const pM = Mats();
     const bodyM2 = pM.body, blackM2 = pM.black, gripM2 = pM.grip;
     const addP = (geo, mat, x, y, z, rotX = 0) => add(pistol, geo, mat, x, y, z, rotX);
-    addP(new THREE.BoxGeometry(0.075, 0.09, 0.22), blackM2, 0, 0, -0.02);        // slide
+    const pistolSlide = addP(new THREE.BoxGeometry(0.075, 0.09, 0.22), blackM2, 0, 0, -0.02);        // slide
     addP(new THREE.BoxGeometry(0.078, 0.02, 0.20), accentM.pistol, 0, 0.055, -0.02); // slide top stripe
     addP(new THREE.BoxGeometry(0.05, 0.05, 0.05), blackM2, 0, 0.005, -0.16);     // short barrel tip
     addP(new THREE.BoxGeometry(0.06, 0.05, 0.18), bodyM2, 0, -0.06, 0.02);       // frame
     addP(new THREE.BoxGeometry(0.06, 0.15, 0.07), gripM2, 0, -0.13, 0.10, -0.32); // grip
-    addP(new THREE.BoxGeometry(0.064, 0.02, 0.074), accentM.pistol, 0, -0.135, 0.115, -0.32); // mag base
+    const pistolMag = addP(new THREE.BoxGeometry(0.064, 0.02, 0.074), accentM.pistol, 0, -0.135, 0.115, -0.32); // mag base
     addP(new THREE.BoxGeometry(0.026, 0.045, 0.03), accentM.pistol, 0, 0.07, -0.12); // front sight
     addP(new THREE.BoxGeometry(0.03, 0.03, 0.03), blackM2, 0, 0.06, 0.08);       // rear sight
     addP(new THREE.BoxGeometry(0.02, 0.03, 0.06), blackM2, 0, -0.035, -0.045);   // trigger guard
     pistol.userData.parts = { dark: bodyM2, black: blackM2, accent: accentM.pistol };
+    pistol.userData.animParts = { magazine: pistolMag, slide: pistolSlide };
 
     // ---- SHOTGUN: long barrel + pump + wide stock (the "heavy") ----
     const shotgun = new THREE.Group();
@@ -296,12 +434,13 @@ export class WeaponSystem {
     addS(new THREE.BoxGeometry(0.055, 0.055, 0.46), sM.black, 0, 0.015, -0.34);  // LONG barrel
     addS(new THREE.BoxGeometry(0.085, 0.085, 0.035), sM.black, 0, 0.015, -0.56); // thick muzzle
     addS(new THREE.BoxGeometry(0.09, 0.022, 0.05), accentM.shotgun, 0, 0.015, -0.52); // muzzle ring
-    addS(new THREE.BoxGeometry(0.062, 0.062, 0.14), sM.wood, 0, -0.055, -0.22);  // pump handle
+    const shotgunPump = addS(new THREE.BoxGeometry(0.062, 0.062, 0.14), sM.wood, 0, -0.055, -0.22);  // pump handle
     addS(new THREE.BoxGeometry(0.066, 0.02, 0.15), accentM.shotgun, 0, -0.055, -0.22); // pump rails
     addS(new THREE.BoxGeometry(0.07, 0.13, 0.07), sM.wood, 0, -0.10, 0.18, -0.28); // wood grip
     addS(new THREE.BoxGeometry(0.08, 0.11, 0.20), sM.wood, 0, -0.015, 0.30);     // wood stock
     addS(new THREE.BoxGeometry(0.03, 0.05, 0.04), accentM.shotgun, 0, 0.09, -0.16); // bead sight
     shotgun.userData.parts = { dark: sM.body, black: sM.black, accent: accentM.shotgun };
+    shotgun.userData.animParts = { pump: shotgunPump };
 
     // ---- SMG: compacta, cargador largo, culata plegable (la "rápida") ----
     accents.smg = 0x39d7ff;
@@ -310,23 +449,24 @@ export class WeaponSystem {
     const gM = Mats();
     const addG = (geo, mat, x, y, z, rotX = 0) => add(smg, geo, mat, x, y, z, rotX);
     addG(new THREE.BoxGeometry(0.075, 0.10, 0.26), gM.body, 0, 0, -0.02);
-    addG(new THREE.BoxGeometry(0.05, 0.028, 0.22), gM.black, 0, 0.068, -0.04);
+    const smgBolt = addG(new THREE.BoxGeometry(0.05, 0.028, 0.22), gM.black, 0, 0.068, -0.04);
     addG(new THREE.BoxGeometry(0.052, 0.012, 0.20), accentM.smg, 0, 0.05, -0.04);
     addG(new THREE.BoxGeometry(0.042, 0.042, 0.14), gM.black, 0, 0.005, -0.24);
     addG(new THREE.BoxGeometry(0.062, 0.062, 0.045), gM.black, 0, 0.005, -0.325);
     addG(new THREE.BoxGeometry(0.078, 0.02, 0.035), accentM.smg, 0, 0.05, -0.30); // muzzle ring
-    addG(new THREE.BoxGeometry(0.055, 0.17, 0.075), gM.black, 0, -0.115, 0.02);     // long mag
+    const smgMag = addG(new THREE.BoxGeometry(0.055, 0.17, 0.075), gM.black, 0, -0.115, 0.02);     // long mag
     addG(new THREE.BoxGeometry(0.06, 0.02, 0.08), accentM.smg, 0, -0.205, 0.03);
     addG(new THREE.BoxGeometry(0.05, 0.12, 0.06), gM.grip, 0, -0.095, 0.12, -0.28);
     addG(new THREE.BoxGeometry(0.065, 0.075, 0.13), gM.body, 0, -0.005, 0.20);
     addG(new THREE.BoxGeometry(0.06, 0.05, 0.10), gM.black, 0, 0.02, 0.30);         // folded stock
     addG(new THREE.BoxGeometry(0.024, 0.04, 0.03), accentM.smg, 0, 0.095, -0.16);
     smg.userData.parts = { dark: gM.body, black: gM.black, accent: accentM.smg };
+    smg.userData.animParts = { magazine: smgMag, bolt: smgBolt };
 
     return { rifle, pistol, shotgun, smg };
   }
 
-  // ── Brazos para el FALLBACK blocky: mismo diseño que los del GLB. Se crean
+  // ── Brazos para el FALLBACK técnico: mismo diseño que los del GLB. Se crean
   // UNA vez y se cuelgan de la escena; update() los sincroniza con el arma
   // activa (position/quaternion/scale + offset local). Sin allocs por frame.
   _ensureFallbackArms() {
@@ -358,18 +498,19 @@ export class WeaponSystem {
     this._fallbackArms = g;
   }
 
-  // Sincroniza los brazos del fallback con el viewmodel blocky activo.
+  // Sincroniza los brazos del fallback con el viewmodel activo.
   // Offset local fijo (reciclado): los brazos nacen un poco más abajo/lado
   // que el arma para que las manos caigan sobre grip y guardamanos.
   _syncFallbackArms(bobX, bobY) {
     this._ensureFallbackArms();
     const arms = this._fallbackArms;
     const mesh = this.weaponMesh;
-    const isBlocky = mesh && this._weaponModels[this.weapons[this.currentIndex]] === mesh;
-    // Solo visibles si el JUEGO considera al blocky el viewmodel activo
+    const displayKey = this._displayWeaponKey || this.weapons[this.currentIndex];
+    const isFallback = mesh && this._weaponModels[displayKey] === mesh;
+    // Solo visibles si el JUEGO considera al fallback el viewmodel activo
     // (glb ausente u oculto por debug). El update() de Game ya apagó el
-    // blocky fuera de partida: ese flag basta, no hace falta duplicarlo.
-    arms.visible = !!(isBlocky && this.weaponMesh.visible);
+    // fuera de partida: ese flag basta, no hace falta duplicarlo.
+    arms.visible = !!(isFallback && this.weaponMesh.visible);
     if (!arms.visible) return;
     if (!this._armOffset) this._armOffset = new THREE.Vector3();
     this._armOffset.set(0.01, -0.03, 0.02).applyQuaternion(mesh.quaternion);
@@ -420,40 +561,60 @@ export class WeaponSystem {
         this.ammoInMag += toLoad;
         this.reserveAmmo -= toLoad;
         this.isReloading = false;
-        if (this.audio) this.audio.play('reloadEnd');
+        this._actionStage = -1;
+        if (this.audio) this.audio.play('reloadEnd', this.currentWeapon.name);
       }
     }
     // Recoil recovery (spring back)
     this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, Math.min(1, dt * 9));
     this.recoilKick = THREE.MathUtils.lerp(this.recoilKick || 0, 0, Math.min(1, dt * 10));
 
-    // Hide viewmodel outside a live match (lobby orbit shows the arena)
-    if (this.weaponMesh) this.weaponMesh.visible = canShoot !== false;
+    // Hide viewmodel outside a live match (lobby orbit shows the arena).
+    // _updateWeaponMesh also reads this flag so late GLB loads cannot resurrect
+    // a weapon over the lobby or death/spectator HUD.
+    this._viewmodelVisible = canShoot !== false;
+    if (this.weaponMesh) this.weaponMesh.visible = this._viewmodelVisible;
+    if (!this._viewmodelVisible && this._fallbackArms) this._fallbackArms.visible = false;
     if (canShoot === false) return;
 
-    // Reload/switch animation: weapon dips down and comes back up.
-    // reloadTimer counts DOWN to 0; dip peaks mid-reload. Same for switch
-    // (0.28s pull-down + rise with the new model).
-    let dipT = 0;
-    if (this.isReloading) {
-      const total = this.currentWeapon.reloadTime;
-      const elapsed = total - this.reloadTimer;
-      const k = Math.min(1, elapsed / total);        // 0..1 progress
-      dipT = Math.sin(k * Math.PI);                  // smooth dip curve
-    } else if (this._switchAnim > 0) {
+    let switchProgress = 0;
+    const wasSwitching = this._switchAnim > 0;
+    if (wasSwitching) {
       this._switchAnim = Math.max(0, this._switchAnim - dt);
-      const k = 1 - (this._switchAnim / 0.28);       // 0..1 progress
-      dipT = Math.sin((1 - k) * Math.PI) * (this._switchReady ? 1 : 1);
-      if (this._switchAnim === 0) this._switchReady = false;
+      switchProgress = 1 - (this._switchAnim / (this._switchDuration || 0.42));
+      if (this._switchPending && switchProgress >= 0.40) {
+        this._switchPending = false;
+        this._displayWeaponKey = this.weapons[this.currentIndex];
+        this._updateWeaponMesh();
+        this._switchStage = 1;
+        if (this.audio) this.audio.play('switch_swap', this.currentWeapon.name, { throttleClass: 'weaponAction' });
+      }
+      if (this._switchAnim === 0) {
+        if (this._switchStage < 2 && this.audio) {
+          this.audio.play('equip', this.currentWeapon.name, { throttleClass: 'weaponAction' });
+        }
+        this._switchStage = -1;
+        this._switchPreviousKey = null;
+        this._switchReady = false;
+      }
     }
-    const dip = dipT * 0.16; // meters the gun drops during reload/switch
 
     // Weapon viewmodel follows camera with ADS blend + recoil kickback
     // + walk bob/sway so the gun feels physically held, not glued to screen
     if (this.weaponMesh) {
-      const preset = this._viewPresets()[this.weapons[this.currentIndex]] || this._viewPresets().rifle;
+      const displayKey = this._displayWeaponKey || this.weapons[this.currentIndex];
+      const preset = this._viewPresets()[displayKey] || this._viewPresets().rifle;
       // ADS pulls the weapon to center
       const ads = this._adsBlend;
+      const pose = this._actionPose;
+      this._resetActionPose();
+      if (this.isReloading) {
+        const progress = clamp01((this.currentWeapon.reloadTime - this.reloadTimer) / this.currentWeapon.reloadTime);
+        this._advanceReloadStage(progress);
+        this._applyReloadPose(this.weapons[this.currentIndex], progress, pose);
+      } else if (wasSwitching) {
+        this._applySwitchPose(switchProgress, pose);
+      }
 
       // Walk bob driven by the player's horizontal speed (Game feeds it each
       // frame via setMoveSpeed). Bob is applied AFTER the smoothed base so the
@@ -464,9 +625,9 @@ export class WeaponSystem {
       const bobY = Math.sin(this._bobPhase * 2) * 0.024 * bobAmt;
       const bobX = Math.cos(this._bobPhase) * 0.030 * bobAmt;
 
-      const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads);
-      const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads) - dip;
-      const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + (this.recoilKick || 0) * 0.09;
+      const targetX = THREE.MathUtils.lerp(preset.pos.x, 0.0, ads) + pose.x;
+      const targetY = THREE.MathUtils.lerp(preset.pos.y, -0.145, ads) + pose.y;
+      const targetZ = THREE.MathUtils.lerp(preset.pos.z, -0.30, ads) + pose.z + (this.recoilKick || 0) * 0.09;
 
       // Smooth follow for the BASE position only
       this._vmPos = this._vmPos || preset.pos.clone();
@@ -476,18 +637,19 @@ export class WeaponSystem {
 
       this.weaponMesh.position.copy(this.camera.position);
       this.weaponMesh.quaternion.copy(this.camera.quaternion);
-      const offset = this._vmPos.clone();
+      const offset = this._vmOffset.copy(this._vmPos);
       offset.x += bobX; offset.y += bobY;    // bob on top of smoothed base
       offset.applyQuaternion(this.camera.quaternion);
       this.weaponMesh.position.add(offset);
 
       // Recoil pitch on viewmodel + subtle roll with the bob
-      this.weaponMesh.rotation.x = this.camera.rotation.x - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
-      this.weaponMesh.rotation.y = this.camera.rotation.y;
-      this.weaponMesh.rotation.z = this.camera.rotation.z + bobX * 1.2;
-      const s = preset.scale * (1 - ads * 0.12);
+      this.weaponMesh.rotation.x = this.camera.rotation.x + pose.rx - (this.recoilOffset || 0) * 0.05 - (this.recoilKick || 0) * 0.10;
+      this.weaponMesh.rotation.y = this.camera.rotation.y + pose.ry;
+      this.weaponMesh.rotation.z = this.camera.rotation.z + pose.rz + bobX * 1.2;
+      const s = preset.scale * (1 - ads * 0.12) * pose.scale;
       this.weaponMesh.scale.setScalar(s);
-      // Brazos del fallback (blocky): siguen al arma con el mismo bob/recoil.
+      this._applyAnimationParts(this.weaponMesh, pose);
+      // Brazos del fallback siguen al arma con el mismo bob/recoil.
       this._syncFallbackArms(bobX, bobY);
     }
   }
@@ -869,9 +1031,11 @@ export class WeaponSystem {
     if (this.isReloading) return;
     if (this.ammoInMag === this.currentWeapon.magazineSize) return;
     if (this.reserveAmmo <= 0) return;
+    if (this._switchAnim > 0) this._finishSwitch();
     this.isReloading = true;
     this.reloadTimer = this.currentWeapon.reloadTime;
-    if (this.audio) this.audio.play('reloadStart');
+    this._actionStage = 0;
+    if (this.audio) this.audio.play('reloadStart', this.currentWeapon.name);
   }
 
   // dir: 1-3 selects a slot, -1 cycles to the previous weapon, 'next' cycles
@@ -879,6 +1043,7 @@ export class WeaponSystem {
   // players on the pistol).
   switchWeapon(dir) {
     if (this.isReloading) return;
+    if (this._switchAnim > 0) this._finishSwitch();
     // Duelo de Escuadras: SOLO armas en propiedad (la TIENDA desbloquea el resto)
     const isOwned = (i) => this.owned.has(this.weapons[i]);
     let idx = this.currentIndex;
@@ -906,29 +1071,58 @@ export class WeaponSystem {
     this.reserveAmmo = this.currentWeapon.magazineSize * 3;
     this.isReloading = false;
     this.fireCooldown = 0.2;
-    // Visible switch animation: gun dips and rises with the new model
-    this._switchAnim = 0.28;
+    // Visible switch animation: unequip → swap → equip → ready. The previous
+    // model stays visible until the handoff phase, so a switch never pops
+    // straight from one silhouette to another.
+    const oldKey = this._displayWeaponKey || this.weapons[this.currentIndex];
+    this._switchPreviousKey = oldKey;
+    this._switchDuration = SWITCH_DURATIONS[this.weapons[idx]] || 0.38;
+    this._switchAnim = this._switchDuration;
+    this._switchPending = true;
+    this._switchStage = 0;
     this._switchReady = true;
-    if (this.audio) this.audio.play('switch');
-    this._updateWeaponMesh();
+    if (this.audio) this.audio.play('switch', this.currentWeapon.name);
   }
 
   _updateWeaponMesh() {
     if (!this._weaponModels) return;
     const current = this.weapons[this.currentIndex];
-    // GLB real disponible → oculta TODOS (blocky y GLB) salvo el GLB actual.
-    // Si no llegó aún, el blocky de la misma arma es el visible (fallback).
-    const glb = this._glbModels && this._glbModels[current];
+    const display = (this._switchPending && this._switchPreviousKey)
+      ? this._switchPreviousKey
+      : (this._displayWeaponKey || current);
+    const glb = this._glbModels && this._glbModels[display];
     for (const key of Object.keys(this._weaponModels)) {
-      this._weaponModels[key].visible = !glb && key === current;
+      this._weaponModels[key].visible = this._viewmodelVisible && !glb && key === display;
     }
     for (const key of Object.keys(this._glbModels || {})) {
-      this._glbModels[key].visible = key === current;
+      this._glbModels[key].visible = this._viewmodelVisible && key === display;
     }
-    this.weaponMesh = glb || this._weaponModels[current];
+    this.weaponMesh = glb || this._weaponModels[display];
     // El viewmodel activo escala/bobea vía preset; el GLB hereda transform
     // del wrap — aplicar la skin del arsenal también tiñe el GLB (accent).
-    if (glb) this._applySkinToGlb(current);
+    if (glb) this._applySkinToGlb(display);
+  }
+
+  _finishSwitch() {
+    if (this._switchAnim <= 0 && !this._switchPending) return;
+    this._switchAnim = 0;
+    this._switchPending = false;
+    this._switchPreviousKey = null;
+    this._switchStage = -1;
+    this._switchReady = false;
+    this._displayWeaponKey = this.weapons[this.currentIndex];
+    this._updateWeaponMesh();
+  }
+
+  resetTransient() {
+    this.isReloading = false;
+    this.reloadTimer = 0;
+    this.fireCooldown = 0;
+    this._finishSwitch();
+    this._actionStage = -1;
+    this._resetActionPose();
+    this._displayWeaponKey = this.weapons[this.currentIndex];
+    this._updateWeaponMesh();
   }
 
   // Skins sobre GLB: tiñe la malla (colormap de Kenney) con el accent global.

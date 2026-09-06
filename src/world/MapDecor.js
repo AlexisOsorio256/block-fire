@@ -4,7 +4,7 @@ import { mergeGeometries } from '../lib/BufferGeometryUtils.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // MapDecor — capa VISUAL del mapa, desacoplada de la COLISIÓN
 // ═══════════════════════════════════════════════════════════════════════════
-// Contrato de la slice (punto DÉCIMO del brief) + clasificación §9:
+// Contrato de la capa visual (punto DÉCIMO del brief) + clasificación §9:
 //   · El mapa NO cambia de estructura: los colliders estructurales (muros,
 //     casas, coberturas) siguen naciendo SOLO en Map.js. MapDecor añade
 //     colliders únicamente para sus PROPS SÓLIDOS a nivel de jugador
@@ -253,7 +253,7 @@ export class MapDecor {
   }
 
   // Rótulo BLOCKFIRE: tablero oscuro + canvas de texto procedural (512x128,
-  // el único "map" de la slice — pequeño y generado, no un asset).
+  // el único catálogo de la capa — pequeño y generado, no un asset).
   _textMat(text, fg) {
     const key = `txt${text}${fg}`;
     if (!this._mat.has(key)) {

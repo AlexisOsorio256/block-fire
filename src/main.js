@@ -26,7 +26,7 @@ window.Game = Game;
 console.log('%c BLOCKFIRE — FFA 8 players — 20 kills to win ', 'background:#ffd23f;color:#0a0f1e;padding:6px 10px;border-radius:6px;font-weight:900;');
 console.log(`BUILD_ID=${BUILD_ID}`);
 console.log('PC: WASD + Mouse (click to lock) + Click to shoot | Mobile: joystick + drag + buttons');
-console.log('Tests: ?runTests=1 | Capture: ?capture=ready|playing');
+if (BF_DEV_TOOLS) console.log('Tests: ?runTests=1 | Capture: ?capture=ready|playing');
 
 // ---- Landscape gate (regla permanente: BLOCKFIRE es horizontal) ----
 // En pantallas táctiles, TODA la app (lobby incluido) se bloquea en portrait:

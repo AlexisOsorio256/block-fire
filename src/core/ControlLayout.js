@@ -238,7 +238,6 @@ class ControlLayout {
       panel.querySelector('#ce-scale-out').textContent = `${d.scale.toFixed(2)}×`;
       panel.querySelector('#ce-opacity').value = String(d.opacity);
       panel.querySelector('#ce-op-out').textContent = `${Math.round(d.opacity * 100)}%`;
-      console.log('[CE-SYNC]', this.selectedId, d.scale, d.opacity);
     } else {
       hint.textContent = 'Toca un control para seleccionarlo y arrastrarlo';
       row.style.display = 'none';

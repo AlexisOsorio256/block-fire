@@ -24,6 +24,14 @@ export class Input {
     this._touchLook = { x: 0, y: 0, active: false };
     this._joystick = { x: 0, y: 0, active: false };
     this._jumpTimer = null;
+    // Touch state exists before DOM binding so blur/pagehide are safe even
+    // when the page is loaded without mobile controls or Pointer Events.
+    this._firePointers = new Set();
+    this._fireLook = { x: 0, y: 0 };
+    this._joystickPointer = null;
+    this._lookPointer = null;
+    this.sprintLock = false;
+    this.crouch = false;
     this._setupKeyboardMouse();
     this._setupTouch();
     // Safety net: any focus loss / visibility change / orientation flip must
@@ -33,17 +41,27 @@ export class Input {
       if (document.visibilityState === 'hidden') this._releaseAll();
     });
     window.addEventListener('orientationchange', () => this._releaseAll());
+    window.addEventListener('pagehide', () => this._releaseAll());
   }
 
   _releaseAll() {
+    this._keys.clear();
+    this._mouseDown = false;
+    this._aimDown = false;
     this.fire = false;
     this.aim = false;
     this.reload = false;
     this.jump = false;
+    this.switchWeapon = 0;
+    this.move.x = 0;
+    this.move.y = 0;
+    this.look.x = 0;
+    this.look.y = 0;
+    this.sprint = false;
     this.sprintLock = false;
     this.crouch = false;
     if (this._jumpTimer) { clearTimeout(this._jumpTimer); this._jumpTimer = null; }
-    this._firePointers = new Set();
+    if (this._firePointers) this._firePointers.clear();
     this._fireLook.x = 0;
     this._fireLook.y = 0;
     this._joystick.active = false;
@@ -194,6 +212,7 @@ export class Input {
     };
     joystickZone.addEventListener('pointerup', joystickRelease);
     joystickZone.addEventListener('pointercancel', joystickRelease);
+    joystickZone.addEventListener('lostpointercapture', joystickRelease);
 
     // ---- Look zone: separate pointer, same ownership contract ----
     let lastLookX = 0, lastLookY = 0;
@@ -227,6 +246,7 @@ export class Input {
     };
     lookZone.addEventListener('pointerup', lookRelease);
     lookZone.addEventListener('pointercancel', lookRelease);
+    lookZone.addEventListener('lostpointercapture', lookRelease);
 
     // ---- Action buttons: each is its own pointer; cancel releases ----
     // Fire (both buttons): hold to fire, DRAG to aim — the Free Fire gesture.
@@ -261,6 +281,7 @@ export class Input {
       };
       el.addEventListener('pointerup', release);
       el.addEventListener('pointercancel', release);
+      el.addEventListener('lostpointercapture', release);
     };
     bindFire(btnFire);
     bindFire(document.getElementById('btn-fire-left'));

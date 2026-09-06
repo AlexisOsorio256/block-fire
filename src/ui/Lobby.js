@@ -177,7 +177,7 @@ export class Lobby {
   // mide el modelo montado, se alinean los pies al pedestal y se derivan las
   // métricas que consume applyCameraPose(). Nada de números a ojo.
   buildHero() {
-    // Fallback inmediato (blocky) para que el héroe NUNCA aparezca desarmado…
+    // Fallback inmediato para que el héroe NUNCA aparezca desarmado…
     const gun = AvatarLib.makeHeldWeapon('rifle', 0xffd23f);
     // Operador 3 = DUNE (paleta desierto/oro): el héroe comparte la paleta
     // dorada de la marca; sin tinte de equipo (no hay bando en el lobby).
@@ -211,6 +211,7 @@ export class Lobby {
       });
     }
     av.root.scale.setScalar(1.22); // presencia: el héroe debe lucir en el estudio
+    av.setGrounded();
     av.root.position.set(0, PED_TOP, 0);
     // El frente nativo del GLB es −Z (visor medido a −0.19u del hueso de la
     // cabeza: ?capture=probe). create() lo voltea con rotation.y=π. La cámara
@@ -476,11 +477,10 @@ export class Lobby {
     const vFov = THREE.MathUtils.degToRad(LOBBY_FOV);
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
     const halfWView = Math.tan(hFov / 2) * dist; // semiancho visible en el plano del héroe
-    // 34% (medido): el 30% dejaba el borde IZQUIERDO del Box3 del héroe a 5px
-    // dentro de la columna de UI (uiClear 371 < 376+8px exigidos por el test
-    // 26). El empuje extra es aire, no composición: el héroe sigue centrado
-    // en el tercio derecho y la bóveda lo recorta igual.
-    return halfWView * 0.34; // héroe al ~73% del ancho de pantalla
+    // 50%: el volumen de equipamiento requiere más separación de la UI lateral.
+    // El empuje extra es aire, no composición: el héroe sigue centrado en el
+    // tercio derecho y la bóveda lo recorta igual.
+    return halfWView * 0.50; // héroe al ~80% del ancho de pantalla
   }
 
   // Métricas (para el test de encuadre y debug): Box3 del héroe en NDC con

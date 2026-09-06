@@ -15,6 +15,7 @@ import { DamageNumbers } from '../fx/DamageNumbers.js';
 import { MatchSquad } from './MatchSquad.js';
 import { Shop } from '../economy/Shop.js';
 import { Lobby } from '../ui/Lobby.js';
+import { BUILD_ID } from './BuildInfo.js';
 
 // Scratch de _separateEntities (reutilizados; jamás escapan)
 const _sepEnts = [];
@@ -79,6 +80,9 @@ export class Game {
     this._dpr = { min: 0.9, max: isMobile ? 1.75 : 2.0, value: Math.min(window.devicePixelRatio, isMobile ? 1.75 : 2.0) };
     this.renderer.setPixelRatio(this._dpr.value);
     this._frameTimes = [];
+    this._frameMetrics = new Float64Array(180);
+    this._frameMetricCursor = 0;
+    this._frameMetricCount = 0;
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -156,7 +160,7 @@ export class Game {
       bot.operatorName = OPERATOR_NAMES[i % OPERATOR_NAMES.length]; // identidad visible
       this.bots.push(bot);
     }
-    // Avatares GLB reales: cargar y aplicarlo a los 7 bots (fallback blocky
+    // Avatares GLB reales: cargar y aplicarlo a los 7 bots (fallback técnico
     // automático si el asset no está)
     AvatarLib.load().then((ok) => {
       console.log('[Avatars] GLB listo:', ok, '— aplicando a', this.bots.length, 'bots');
@@ -597,8 +601,11 @@ export class Game {
     if (this.hud && this.hud.killfeedEl) this.hud.killfeedEl.innerHTML = '';
     const dOv = document.getElementById('death-overlay');
     if (dOv) dOv.classList.remove('show');
-    this.weaponSystem.fireCooldown = 0;
-    this.weaponSystem._switchAnim = 0;
+    if (this.weaponSystem.resetTransient) this.weaponSystem.resetTransient();
+    else {
+      this.weaponSystem.fireCooldown = 0;
+      this.weaponSystem._switchAnim = 0;
+    }
     this._hitstop = 0;
     this._shake = 0;
     this.hitFlash = 0;
@@ -635,6 +642,9 @@ export class Game {
   // cap, raise it back. Small steps avoid visible oscillation.
   _adaptResolution(dt) {
     this._frameTimes.push(dt);
+    this._frameMetrics[this._frameMetricCursor] = dt;
+    this._frameMetricCursor = (this._frameMetricCursor + 1) % this._frameMetrics.length;
+    this._frameMetricCount = Math.min(this._frameMetricCount + 1, this._frameMetrics.length);
     if (this._frameTimes.length < 90) return;
     const avg = this._frameTimes.reduce((a,b)=>a+b, 0) / this._frameTimes.length;
     this._frameTimes.length = 0;
@@ -654,6 +664,71 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  // DEV-only inspection surface. It is intentionally a method on Game so
+  // production keeps one small callable contract while the bundle define
+  // removes the test harness itself. No player-facing HUD depends on it.
+  getDiagnostics() {
+    const gl = this.renderer && this.renderer.getContext ? this.renderer.getContext() : null;
+    const attrs = gl && gl.getContextAttributes ? (gl.getContextAttributes() || {}) : {};
+    let vendor = null;
+    let renderer = null;
+    try {
+      const debugInfo = gl && gl.getExtension ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+      if (debugInfo && gl.getParameter) {
+        vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || null;
+        renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || null;
+      }
+    } catch (e) { /* privacy-restricted WebGL contexts omit the debug strings */ }
+
+    const frameMs = [];
+    for (let i = 0; i < this._frameMetricCount; i++) {
+      const index = (this._frameMetricCursor - this._frameMetricCount + i + this._frameMetrics.length) % this._frameMetrics.length;
+      frameMs.push(this._frameMetrics[index] * 1000);
+    }
+    frameMs.sort((a, b) => a - b);
+    const percentile = (q) => frameMs.length
+      ? frameMs[Math.min(frameMs.length - 1, Math.floor((frameMs.length - 1) * q))]
+      : null;
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const drawingBuffer = {
+      width: gl ? gl.drawingBufferWidth : null,
+      height: gl ? gl.drawingBufferHeight : null,
+    };
+    const deviceDpr = Number(window.devicePixelRatio) || 1;
+    const rendererDpr = this.renderer.getPixelRatio ? this.renderer.getPixelRatio() : this._dpr.value;
+    const mapHalf = this.map && Number.isFinite(this.map.size) ? this.map.size : null;
+    const shadowMap = this._sunLight && this._sunLight.shadow && this._sunLight.shadow.mapSize;
+    return {
+      buildId: BUILD_ID,
+      userAgent: navigator.userAgent,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      dpr: {
+        device: deviceDpr,
+        renderer: rendererDpr,
+        dynamic: { min: this._dpr.min, max: this._dpr.max, current: this._dpr.value },
+      },
+      drawingBuffer,
+      webgl: {
+        vendor,
+        renderer,
+        antialias: attrs.antialias ?? null,
+      },
+      shadows: {
+        enabled: !!(this.renderer && this.renderer.shadowMap && this.renderer.shadowMap.enabled),
+        mapSize: shadowMap ? { width: shadowMap.x, height: shadowMap.y } : null,
+      },
+      map: mapHalf === null ? null : { halfSize: mapHalf, width: mapHalf * 2, depth: mapHalf * 2 },
+      fps: Number.isFinite(this.fps) ? this.fps : null,
+      frameTimeMs: { p50: percentile(0.50), p95: percentile(0.95), samples: frameMs.length },
+      touch: {
+        coarse,
+        platform: !!this._isTouchPlatform,
+        maxTouchPoints: Number(navigator.maxTouchPoints) || 0,
+        pointerEvent: !!window.PointerEvent,
+      },
+    };
   }
 
   // Screen-space angle of an attacker relative to where the player faces:
@@ -848,6 +923,7 @@ export class Game {
     if (!ally) return; // sin aliados vivos: la ronda se cierra sola (eliminación)
     this._spectating = ally;
     _specCamGoal.copy(ally.position); _specCamGoal.y += _SPEC_EYE + _SPEC_DIST;
+    _specLookGoal.set(ally.position.x, ally.position.y + 1.2, ally.position.z);
     this.hud.showSpectate(this._displayName(ally));
     this.hud.showPlayerDeadHud(true);
   }
@@ -893,10 +969,13 @@ export class Game {
     camGoal.x -= Math.sin(ally.yaw) * _SPEC_DIST;
     camGoal.z -= Math.cos(ally.yaw) * _SPEC_DIST;
     this.camera.position.lerp(camGoal, Math.min(1, dt * 4));
-    const lookGoal = _specLookGoal.copy(ally.position); lookGoal.y += 1.2;
-    const look = this.camera.getWorldDirection(_specLookTmp);
-    _specLookTmp.lerp(lookGoal, Math.min(1, dt * 5));
-    this.camera.lookAt(_specLookTmp);
+    // getWorldDirection() returns a unit direction, not a world-space point.
+    // Keep a persistent world target and smooth it toward the ally's head;
+    // passing the direction as lookAt() target caused large position-dependent
+    // jumps and made spectator framing point near the origin.
+    _specLookTmp.set(ally.position.x, ally.position.y + 1.2, ally.position.z);
+    _specLookGoal.lerp(_specLookTmp, Math.min(1, dt * 5));
+    this.camera.lookAt(_specLookGoal);
   }
 
   _maxBotKills() {

@@ -114,18 +114,19 @@ export class Bot {
     this.weaponKey = 'pistol';
 
     // Avatar GLB real: se inyecta cuando AvatarLib termina de cargar; hasta
-    // entonces (o si falla) la malla blocky de arriba ES el personaje.
+    // entonces (o si falla) la malla simple de arriba es el personaje.
     this._avatar = null;
-    this._blockyParts = [];
+    this._fallbackParts = [];
   }
 
-  // Reemplaza el cuerpo blocky por el soldado GLB animado (mismo group:
+  // Reemplaza el cuerpo de fallback por el soldado GLB animado (mismo group:
   // posición/rotación/muerte/respawn siguen operando igual).
   // Compra en la fase de compra: cambia el arma VISIBLE en la mano.
-  // Ruta principal: GLB real; el blocky solo vive si el asset falla.
+  // Ruta principal: GLB real; el fallback solo vive si el asset falla.
   setWeapon(key) {
     this.weaponKey = key;
     if (!this._avatar || !AvatarLib.ready) return;
+    if (this._avatar.triggerAction) this._avatar.triggerAction('swap');
     // localizar el gunPivot (hijo de la mano derecha) y swap el modelo
     const oldGun = this._gunPivot && this._gunPivot.children[0];
     const teamColor = this.team === 'ally' ? 0x2ee86e : 0xff5a4a;
@@ -135,9 +136,9 @@ export class Bot {
       if (prev) this._gunPivot.remove(prev);
       this._gunPivot.add(gun);
     };
-    // blocky inmediato (feedback de compra sin esperar red/disco)…
+    // Fallback inmediato (feedback de compra sin esperar red/disco)…
     mount(AvatarLib.makeHeldWeapon(key, teamColor));
-    // …y GLB real cuando llegue (reemplaza al blocky en el mismo pivote)
+    // …y GLB real cuando llegue (reemplaza el fallback en el mismo pivote)
     AvatarLib.makeHeldWeaponGlb(key).then((glb) => { if (glb) mount(glb); });
   }
 
@@ -149,12 +150,13 @@ export class Bot {
     if (!av) return;
     this._avatar = av;
     av.root.scale.setScalar(1.15); // presencia: personajes más grandes (pedido del usuario)
+    av.setGrounded();
     this._gunPivot = null;
     // localizar el pivote del arma (hijo de la mano derecha creado por create())
     av.root.traverse((o) => { if (o.isBone && /RightHand$/i.test(o.name)) { this._gunPivot = o.children.find(c => c.type === 'Group') || null; } });
-    // Ocultar piezas blocky (conservar el grupo: Game las posiciona igual)
-    this._blockyParts = this.mesh.children.filter(c => c !== av.root).map(c => { c.userData.__wasVisible = c.visible; return c; });
-    for (const c of this._blockyParts) c.visible = false;
+    // Ocultar piezas de fallback (conservar el grupo: Game las posiciona igual)
+    this._fallbackParts = this.mesh.children.filter(c => c !== av.root).map(c => { c.userData.__wasVisible = c.visible; return c; });
+    for (const c of this._fallbackParts) c.visible = false;
     this.mesh.add(av.root);
   }
 
@@ -162,14 +164,14 @@ export class Bot {
     const group = new THREE.Group();
 
     // 7 OWN outfit presets — each bot reads as a distinct operator at a
-    // glance (palette + gear + silhouette). All original blocky designs.
+    // glance (palette + gear + silhouette). Diseños originales y legibles.
     const OUTFITS = [
       { name: 'assault',  body: 0xb0453c, pants: 0x2a2f3a, gear: 0x39445c, crest: true  }, // asalto rojo oscuro + cresta
       { name: 'urban',    body: 0x5a6b80, pants: 0x3a4250, gear: 0x8b97a8, pads:  true },  // urbano gris-azul
       { name: 'tactical', body: 0x3d4a3a, pants: 0x2b332b, gear: 0x556b52, pack:  true },  // táctico verde
       { name: 'scout',    body: 0xc2a35a, pants: 0x6e5a34, gear: 0x2e3950, hood:  true },  // explorador arena
       { name: 'heavy',    body: 0x4a3540, pants: 0x302229, gear: 0x6e2f3c, bulky: true },  // pesado oscuro
-      { name: 'raider',   body: 0xd97b2d, pants: 0x4a3a2a, gear: 0x8a44d9, crest: true },  // blocky colorido
+      { name: 'raider',   body: 0xd97b2d, pants: 0x4a3a2a, gear: 0x8a44d9, crest: true },  // paleta colorida
       { name: 'nightops', body: 0x232a38, pants: 0x181d28, gear: 0x39d7ff, pads:  true },  // ops nocturno
     ];
     const outfit = OUTFITS[this.id % OUTFITS.length];
@@ -272,7 +274,7 @@ export class Bot {
     this._lLeg = makeLeg(-1);
     this._rLeg = makeLeg(1);
 
-    // Blocky rifle held at hip (parented to right arm pivot so it swings too)
+    // Rifle de fallback en la cadera (parentado al brazo derecho)
     const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.58), darkMat);
     gun.position.set(0.42, 0.85, 0.35);
     group.add(gun);
@@ -295,6 +297,7 @@ export class Bot {
     if (!this.isAlive) return false;
     if (attacker && attacker.team && attacker.team === this.team) return false; // fuego amigo OFF
     this.health -= amount;
+    if (this._avatar && this._avatar.triggerAction) this._avatar.triggerAction('hit');
     // Hit flinch: short knockback away from the attacker — visible hit confirm
     if (attacker && this.mesh) {
       const away = new THREE.Vector3().subVectors(this.position, attacker.position);
@@ -340,6 +343,7 @@ export class Bot {
       // DEATH Tumble: visible 0.6s — fall back + spin, then hide. The Game
       // VFX loop drives _dyingT so no new timer system is needed.
       this._dyingT = 0.6;
+      if (this._avatar && this._avatar.triggerAction) this._avatar.triggerAction('death');
       this._dyingDir = attacker ? Math.atan2(
         this.position.x - attacker.position.x,
         this.position.z - attacker.position.z
@@ -404,7 +408,11 @@ export class Bot {
     this._stuckT = 0;
     this._stuckAnchor = null;
     if (this.navigation) this.navigation.reset(this.id);
-    if (this._avatar) { this._avatar.setMoving(false); }
+    if (this._avatar) {
+      this._avatar.resetAction();
+      this._avatar.setMoving(false);
+      this._avatar.setGrounded();
+    }
   }
 
   update(dt, player, bots, map) {

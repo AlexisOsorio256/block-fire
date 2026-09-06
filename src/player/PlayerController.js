@@ -11,6 +11,7 @@ const S = {
   nextPos: new THREE.Vector3(),
   cand: new THREE.Vector3(),
   axis: new THREE.Vector3(), // sondeo por eje (X y luego Z)
+  probe: new THREE.Vector3(), // clearance al levantarse
   up: new THREE.Vector3(0, 1, 0),
 };
 
@@ -121,13 +122,12 @@ export class PlayerController {
     // Crouch: animated blend. Standing up only if there's clearance above the
     // current feet (a crouch under a platform must NOT clip through it).
     const wantCrouch = this.input.crouch === true;
-    const feetNow = this.player.position.y - this.height;
     if (wantCrouch) {
       this.crouchBlend = Math.min(1, this.crouchBlend + dt * 9);
     } else {
       // Only rise when the full standing capsule fits
       if (this.crouchBlend > 0) {
-        const probe = this.player.position.clone();
+        const probe = S.probe.copy(this.player.position);
         probe.y = (this.player.position.y - this.height) + this.standHeight;
         const clear = !this.map || !this.map.checkCollision(probe, this.radius, this.standHeight);
         if (clear) {

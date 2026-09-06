@@ -3,7 +3,7 @@ import { GLTFLoader } from '../lib/GLTFLoader.js';
 
 // ── AssetRegistry — DUEÑO ÚNICO de la carga de assets GLB ──
 // Precarga, cache, clonación y FALLBACKS: si un GLB no carga (offline/APK
-// vieja), los consumidores reciben null y montan su fallback blocky — el
+// vieja), los consumidores reciben null y montan su fallback técnico — el
 // juego NUNCA se rompe por un asset (misma filosofía que AvatarLib).
 // Los materiales se clonan por instancia cuando el consumidor los tiñe.
 
@@ -46,7 +46,7 @@ class AssetRegistry {
 
 export const assets = new AssetRegistry();
 
-// ── Armas: mapa weaponKey → URL. La ruta normal carga GLB; el blocky queda
+// ── Armas: mapa weaponKey → URL. La ruta normal carga GLB; el fallback queda
 // como fallback técnico si el asset falla. Origen/licencia: CREDITS.md. ──
 export const WEAPON_MODELS = {
   rifle:   'assets/models/weapons/rifle.glb',

@@ -151,7 +151,9 @@ export class AudioManager {
 
     // Map game events to real samples first
     const sampleMap = {
-      'shoot': variant === 'Shotgun' ? 'shoot-shotgun' : variant === 'Pistol' ? 'shoot-pistol' : 'shoot-rifle',
+      // No hay grabación SMG licenciada en el paquete actual: su fallback
+      // procedural tiene un timbre corto propio y no se disfraza de rifle.
+      'shoot': variant === 'SMG' ? null : variant === 'Shotgun' ? 'shoot-shotgun' : variant === 'Pistol' ? 'shoot-pistol' : 'shoot-rifle',
       'hit': 'hit',
       'headshot': 'headshot',
       'kill': 'kill',
@@ -182,6 +184,7 @@ export class AudioManager {
       case 'shoot': {
         if (variant === 'Shotgun') { this._noise(null, t, 0.24, {freq: 900, gain: 0.5}); this._tone(t, 0.16, {type:'sine', from:150, to:40, gain:0.45}); }
         else if (variant === 'Pistol') { this._noise(null, t, 0.10, {freq: 2400, gain: 0.38}); this._tone(t, 0.08, {type:'sine', from:300, to:90, gain:0.32}); }
+        else if (variant === 'SMG') { this._noise(null, t, 0.055, {freq: 3200, type: 'highpass', gain: 0.32}); this._tone(t, 0.045, {type:'triangle', from:190, to:72, gain:0.22}); }
         else { this._noise(null, t, 0.13, {freq: 2000, gain: 0.4}); this._tone(t, 0.09, {type:'sine', from:220, to:60, gain:0.36}); }
         break;
       }
@@ -193,7 +196,15 @@ export class AudioManager {
       case 'respawn': this._tone(t, 0.09, {type:'sine', from:400, to:800, gain:0.18}); this._tone(t, 0.12, {type:'sine', from:600, to:1200, gain:0.14, delay:0.08}); break;
       case 'reloadStart': this._noise(null, t, 0.05, {freq:1400, gain:0.2}); this._tone(t, 0.04, {type:'square', from:320, to:180, gain:0.1}); break;
       case 'reloadEnd': this._noise(null, t, 0.06, {freq:1000, gain:0.24}); this._tone(t, 0.06, {type:'square', from:500, to:240, gain:0.14}); break;
+      case 'reload_mag_out': this._noise(null, t, 0.045, {freq:1050, gain:0.16}); this._tone(t, 0.045, {type:'square', from:220, to:120, gain:0.09}); break;
+      case 'reload_mag_in': this._noise(null, t, 0.050, {freq:1850, gain:0.18}); this._tone(t, 0.055, {type:'square', from:320, to:520, gain:0.10}); break;
+      case 'reload_bolt': this._noise(null, t, 0.055, {freq:2850, gain:0.20}); this._tone(t, 0.045, {type:'square', from:760, to:420, gain:0.11}); break;
+      case 'reload_slide': this._noise(null, t, 0.045, {freq:3400, gain:0.17}); this._tone(t, 0.040, {type:'square', from:880, to:520, gain:0.10}); break;
+      case 'reload_shell': this._tone(t, 0.055, {type:'triangle', from:720, to:420, gain:0.12}); this._noise(null, t, 0.035, {freq:1500, gain:0.10}); break;
+      case 'reload_pump': this._noise(null, t, 0.075, {freq:1250, gain:0.22}); this._tone(t, 0.065, {type:'square', from:180, to:560, gain:0.12}); break;
       case 'switch': this._noise(null, t, 0.05, {freq:1600, gain:0.16}); this._tone(t, 0.05, {type:'square', from:700, to:500, gain:0.1}); break;
+      case 'switch_swap': this._noise(null, t, 0.045, {freq:2450, gain:0.14}); this._tone(t, 0.055, {type:'triangle', from:460, to:780, gain:0.11}); break;
+      case 'equip': this._tone(t, 0.060, {type:'square', from:520, to:760, gain:0.11}); break;
       case 'ui': this._tone(t, 0.07, {type:'sine', from:660, to:880, gain:0.16}); break;
       case 'empty': this._tone(t, 0.04, {type:'square', from:1100, to:700, gain:0.1}); break;
       case 'jump': this._tone(t, 0.09, {type:'sine', from:320, to:470, gain:0.12}); break;

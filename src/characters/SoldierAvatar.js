@@ -7,8 +7,8 @@ import { assets, WEAPON_MODELS } from '../core/AssetRegistry.js';
 // con animaciones Idle/Walk/Run. Cada instancia es un clone de esqueleto
 // (SkeletonUtils.clone) con su propio AnimationMixer.
 //
-// Fallback: si el GLB no carga (offline/APK viejo), los bots conservan su
-// malla blocky — el juego NUNCA se rompe por un asset.
+// Fallback técnico: si el GLB no carga (offline/APK viejo), los bots conservan
+// una malla simple y el juego nunca se rompe por un asset.
 //
 // Tinte por equipo: los materiales del GLB se clonan por instancia y se
 // multiplican hacia verde (aliado) / rojo (enemigo) — identidad de escuadra
@@ -198,6 +198,7 @@ export const AvatarLib = {
     });
     // Banda de hombro única por avatar (fuera del traverse: solo 1)
     if (!isHero) this._addTeamBand(clone, teamCol);
+    this._addGearPiece(clone, opts.operator ?? 0);
     // Normaliza la pose TPose→Idle y orientación: el soldado mira +Z en el
     // ejemplo original; nuestros bots miran +Z con yaw. Ajuste empírico abajo.
     clone.rotation.y = Math.PI; // el GLB mira hacia -Z; el juego usa +Z como frente
@@ -237,12 +238,24 @@ export const AvatarLib = {
       clone.add(gunPivot);
     }
 
+    // Medición única de pies en el rig sin buscar Box3 durante update().
+    // Bot/Lobby fijan después la escala y reaplican este offset una sola vez.
+    clone.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(clone);
+    const feetOffset = Number.isFinite(bounds.min.y) ? bounds.min.y : 0;
+    const actionDurations = { shoot: 0.16, reload: 1.20, hit: 0.18, death: 0.60, swap: 0.42 };
+
     return {
       root: clone,
       mixer,
       actions,
       gunPivot, // pivote del arma (hermano del esqueleto; update() lo ancla)
       _handBone: hand, // hueso de la mano derecha (ancla del arma por frame)
+      feetOffset,
+      setGrounded() {
+        const scaleY = Math.abs(this.root.scale.y) || 1;
+        this.root.position.y = -this.feetOffset * scaleY;
+      },
       _loco: 'idle',
       // Estado de locomoción: 'idle' | 'walk' | 'run'. Desconocidos → idle.
       setLocomotion(state) {
@@ -251,10 +264,28 @@ export const AvatarLib = {
       },
       // Compat: el Bot llamaba setMoving(bool). walk genérico en movimiento.
       setMoving(moving) { this.setLocomotion(moving ? 'walk' : 'idle'); },
+      _action: 'idle',
+      _actionT: 0,
+      _actionDuration: 0,
+      triggerAction(name) {
+        const duration = actionDurations[name];
+        if (!duration) return;
+        this._action = name;
+        this._actionT = duration;
+        this._actionDuration = duration;
+        if (name === 'shoot') this._pulse = 1;
+      },
+      resetAction() {
+        this._action = 'idle';
+        this._actionT = 0;
+        this._actionDuration = 0;
+        this._pulse = 0;
+        clone.rotation.z = 0;
+      },
       // Culatazo al disparar: el GLB no trae clip de tiro; un dip corto del
       // torso vende cada disparo sin tocar el esqueleto (root, no huesos).
       _pulse: 0,
-      pulse() { this._pulse = 1; },
+      pulse() { this.triggerAction('shoot'); },
       update(dt) {
         // Funde cada peso hacia su objetivo: transición legible sin pops y
         // sin depender de que el llamador acierte el momento exacto.
@@ -265,7 +296,25 @@ export const AvatarLib = {
           actions[k].setEffectiveWeight(Math.abs(next - target) < 0.01 ? target : next);
         }
         if (this._pulse > 0) this._pulse = Math.max(0, this._pulse - dt * 5);
-        clone.rotation.x = -0.13 * this._pulse;
+        let actionK = 0;
+        if (this._actionT > 0) {
+          this._actionT = Math.max(0, this._actionT - dt);
+          actionK = this._actionDuration > 0 ? this._actionT / this._actionDuration : 0;
+          if (this._actionT === 0) {
+            this._action = 'idle';
+            this._actionDuration = 0;
+          }
+        }
+        const phase = 1 - actionK;
+        const envelope = Math.sin(Math.min(1, Math.max(0, phase)) * Math.PI);
+        const actionX = this._action === 'reload' ? -0.11 * envelope
+          : this._action === 'hit' ? 0.16 * envelope
+          : this._action === 'death' ? -0.28 * phase
+          : this._action === 'swap' ? 0.07 * envelope
+          : this._action === 'shoot' ? -0.08 * envelope
+          : 0;
+        clone.rotation.x = -0.13 * this._pulse + actionX;
+        clone.rotation.z = this._action === 'hit' ? 0.10 * envelope : 0;
         mixer.update(dt);
         // ANCLAJE DEL ARMA A LA MANO (estado de render exacto): tras el
         // mixer.update los huesos ya tienen su pose ESTE frame — copiar
@@ -339,9 +388,9 @@ export const AvatarLib = {
     return g;
   },
 
-  // ── Arma GLB REAL en la mano (ruta principal; blocky = fallback) ──
-  // Async: resuelve al llegar el asset; el llamador ya montó el blocky y este
-  // lo reemplaza en el mismo pivote. Escala de mano ~0.5 (el bot lo sujeta).
+  // ── Arma GLB REAL en la mano (ruta principal; fallback técnico) ──
+  // Async: resuelve al llegar el asset; el llamador ya montó la malla simple y
+  // esta la reemplaza en el mismo pivote. Escala de mano ~0.5.
   async makeHeldWeaponGlb(key) {
     const url = WEAPON_MODELS[key];
     if (!url) return null;

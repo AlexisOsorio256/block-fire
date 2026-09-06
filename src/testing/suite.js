@@ -225,9 +225,8 @@ export function runTestSuite(game) {
       pc16.respawn(new THREE.Vector3(0, 1.65, 18)); // validated spawn — always clear
       game.input._keys.clear(); // test 2 left a stale move vector — idle player
       game.input.update();
-      for (let i = 0; i < 5; i++) { pc16.update(1 / 60); if (i < 2) console.log('[DBG16]', i, pc16.player.position.y.toFixed(3), pc16.height.toFixed(3), pc16.onGround); }
+      for (let i = 0; i < 5; i++) pc16.update(1 / 60);
       const feetBefore = pc16.player.position.y - pc16.height;
-      console.log('[DBG16] pre-crouch feet', feetBefore.toFixed(3), 'y', pc16.player.position.y.toFixed(3));
       for (let i = 0; i < 40; i++) pc16.update(1 / 60);
       const feetAfter = pc16.player.position.y - pc16.height;
       const crouchOk = pc16.crouchBlend > 0.9 && pc16.height < 1.3 && Math.abs(feetBefore - feetAfter) < 0.02;
@@ -275,7 +274,6 @@ export function runTestSuite(game) {
         const r40 = el40.getBoundingClientRect();
         const cx40 = (r40.left + r40.width / 2) / vw40, cy40 = (r40.top + r40.height / 2) / vh40;
         const px40 = Math.abs(cx40 - 0.75) < 0.02 && Math.abs(cy40 - 0.5) < 0.02;
-        if (!px40) console.log('[DBG42]', JSON.stringify({ vw40, vh40, cx40, cy40, rect: [r40.left, r40.top, r40.width, r40.height], styleLeft: el40.style.left, styleTop: el40.style.top, mcDisplay: getComputedStyle(document.getElementById('mobile-controls')).display, editing: document.body.className }));
         // La fracción sobrevive a un ciclo reload de Settings (mismo storage)
         const raw40 = JSON.parse(localStorage.getItem('bf_settings') || '{}');
         const persisted40 = raw40.controlLayout && raw40.controlLayout['btn-fire']
@@ -824,6 +822,10 @@ export function runTestSuite(game) {
       const specAlly38 = game._spectating;
       for (let i = 0; i < 30; i++) game._updateSpectator(1 / 60); // ~0.5s: el lerp converge
       const camFollows38 = game.camera.position.distanceTo(specAlly38.position) < 6;
+      const lookDir38 = new THREE.Vector3();
+      const lookTarget38 = new THREE.Vector3(specAlly38.position.x, specAlly38.position.y + 1.2, specAlly38.position.z);
+      game.camera.getWorldDirection(lookDir38);
+      const camLooksAt38 = lookDir38.dot(lookTarget38.sub(game.camera.position).normalize()) > 0.96;
       // aliado especteado muere → auto-switch al siguiente vivo (fase roundEnd
       // YA decidida: se simula la muerte ANTES del cierre de ronda)
       game.phase = 'buy'; // congela el gate de fin de ronda durante el switch
@@ -844,7 +846,7 @@ export function runTestSuite(game) {
         && !document.getElementById('hud-bottom').classList.contains('spectator-hidden')
         && game.player.isAlive;
       game.phaseTime = timeSave38.phaseTime; game.matchTime = timeSave38.matchTime + 1e9; // loop nunca cierra esta ronda congelada
-      log('38 SPECTATE ON DEATH + AUTOSWITCH + CLEAN RESET', spectateOk38 && camFollows38 && autoSwitch38 && cycledOk38 && clean38,
+      log('38 SPECTATE ON DEATH + AUTOSWITCH + CLEAN RESET', spectateOk38 && camFollows38 && camLooksAt38 && autoSwitch38 && cycledOk38 && clean38,
         `banner:${spectateOk38} vmOculto:${!vmVisible38} camSigue:${camFollows38} autoSwitch:${autoSwitch38} ciclo:${cycledOk38} reset:${clean38}`);
       // Aserciones de GLB/consola: los assets llegan ASÍNCRRONOS — el test
       // SONDEA (mismo patrón que 26/34) en lugar de correr a tiempo fijo.
@@ -855,7 +857,7 @@ export function runTestSuite(game) {
           game._startSpectating(); // re-activa: el HUD se re-pinta y el VM se apaga al siguiente frame
           return setTimeout(() => poll38(attempt + 1), 250);
         }
-        const glbOk38 = vm38 ? vm38.visible === false : true; // viewmodel oculto (cualquier ruta: blocky o GLB)
+        const glbOk38 = vm38 ? vm38.visible === false : true; // viewmodel oculto (GLB o fallback técnico)
         log('38b SPECTATE VIEWMODEL HIDDEN (GLB RACE)', glbOk38,
           `vm ${vm38 ? (vm38.visible ? 'VISIBLE (bug)' : 'oculto') : 'sin viewmodel'} tras ${attempt} reintentos`);
         game._resetTemporalState();
