@@ -95,6 +95,11 @@ export class WeaponSystem {
     this.audio = audio;
     this.vfx = vfx;          // VfxSystem (partículas)
     this.applyDamage = applyDamage;
+    // Cadencia POR TIRADOR de bots: id → instante de reloj hasta el que no
+    // puede disparar (el cooldown del jugador es la cadencia del arma; el de
+    // cada bot vive aquí y muere con la partida — regla §4).
+    this._botFireCd = new Map();
+    this._wClock = 0;
     this.game = game;        // backref: onPlayerFired + hud (contrato pequeño)
     this.weaponData = WeaponData; // el arsenal vive aquí (la tienda lo consulta)
 
@@ -405,6 +410,7 @@ export class WeaponSystem {
   }
 
   update(dt, canShoot) {
+    this._wClock += dt;
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.isReloading) {
       this.reloadTimer -= dt;
@@ -497,7 +503,7 @@ export class WeaponSystem {
     this._adsBlend = THREE.MathUtils.lerp(this._adsBlend || 0, target, Math.min(1, dt * 12));
   }
 
-  canFire(usesPlayerAmmo = true) {
+  canFire(usesPlayerAmmo = true, shooter = null) {
     // isReloading is exclusively the player's state (bots never reload). It
     // must NOT gate bots: probing showed every bot went silent for the whole
     // player reload (1.1–1.9s), gifting the player a free-push window.
@@ -511,6 +517,14 @@ export class WeaponSystem {
       }
       this.reload();
       return false;
+    }
+    // Cadencia POR TIRADOR (bot): el cooldown y el cargador son del jugador.
+    // El fireCooldown GLOBAL que antes bloqueaba a los bots silenciaba al
+    // equipo entero hasta 3s tras CADA disparo de cualquier bot — rondas
+    // "vacías" con todos paseándose y rondas perdidas sin combate visto.
+    if (shooter && shooter.isBot) {
+      const until = this._botFireCd.get(shooter.id) || 0;
+      if (this._wClock < until) return false;
     }
     return true;
   }
@@ -528,7 +542,7 @@ export class WeaponSystem {
   // volumen del test 12.
   fire(shooter, targets, map = null, opts = null) {
     const usesPlayerAmmo = !shooter.isBot;
-    if (!this.canFire(usesPlayerAmmo)) return null;
+    if (!this.canFire(usesPlayerAmmo, shooter)) return null;
     // Regla Free Fire: DISPARAR rompe la protección de spawn. Sin esto, el
     // jugador podría disparar inmune (la inmunidad nunca se quitaría en uso real).
     if (usesPlayerAmmo && this.game && this.game.onPlayerFired) this.game.onPlayerFired();
@@ -562,6 +576,11 @@ export class WeaponSystem {
         const scale = 1 - ads * 0.35;
         this.playerController.addRecoil(weapon.recoil * 0.028 * scale, (Math.random()-0.5) * weapon.recoil * 0.014);
       }
+    } else if (shooter && shooter.isBot) {
+      // Cadencia del PROPIO bot (misma fireRate del arma que el jugador):
+      // antes un solo disparo de un bot congelaba a TODO el equipo hasta 3s
+      // (cooldown global) — equipo mudo = rondas sin combate (bug P0).
+      this._botFireCd.set(shooter.id, this._wClock + weapon.fireRate);
     }
 
     // Crosshair feedback (player only)
@@ -624,6 +643,7 @@ export class WeaponSystem {
       const assistCone = (touch ? 0.11 : 0.07);      // mitad de cono (rad)
       const maxPull = (touch ? 0.055 : 0.035);        // rotación máxima (rad)
       let bestDev = Infinity;
+      let bestDist = 0;
       let pullDir = null;
       let pullStrength = 0;
       for (const target of targets) {
@@ -648,6 +668,7 @@ export class WeaponSystem {
         const dev = Math.acos(Math.min(1, dot));
         if (dev < bestDev) {
           bestDev = dev;
+          bestDist = dist;
           // dirección de jalado: del rayo crudo HACIA el pecho, escalada
           // por cercanía al centro del cono (magnetismo progresivo)
           pullStrength = maxPull * (1 - dev / assistCone);
@@ -656,7 +677,21 @@ export class WeaponSystem {
       }
       if (pullDir) {
         // Fricción: acerca UNA FRACCIÓN del hueco, nunca fija el objetivo.
-        baseDir.lerp(pullDir, Math.min(0.85, pullStrength / Math.max(0.02, bestDev))).normalize();
+        // TECHO DEL CIERRE (bug headDrag): el lerp por-dev (≈0.71 a 12u en
+        // touch) podía desplazar el rayo MÁS que el error de puntería del
+        // jugador — apuntar EXACTO a la cabeza quedaba jalado al torso
+        // (0.51u de caída a 12u: fuera de la esfera de 0.28). La fricción
+        // ayuda a ACERCARSE, jamás a atravesar el punto apuntado: el cierre
+        // se limita a la MITAD del error angular y a un techo lineal con la
+        // distancia (0.30 rad·u ≈ 0.28 rad a 0.9u vs 0.033 a 9.5u), así el
+        // drag vertical REAL del jugador siempre puede ganar y llevar el
+        // tiro a la cabeza — el assist crea espacio, no lo consume.
+        const gapClosed = Math.min(
+          Math.min(0.85, pullStrength / Math.max(0.02, bestDev)),
+          bestDev * 0.5,
+          0.30 / Math.max(2, bestDist)
+        );
+        baseDir.lerp(pullDir, gapClosed).normalize();
       }
     }
 
@@ -847,9 +882,14 @@ export class WeaponSystem {
     // Duelo de Escuadras: SOLO armas en propiedad (la TIENDA desbloquea el resto)
     const isOwned = (i) => this.owned.has(this.weapons[i]);
     let idx = this.currentIndex;
-    if (dir === 'next') {
+    if (dir === 'next' || dir === -1) {
+      // Ciclar (Q/E/botón ARMA) salta las no-owned: el ciclo debe terminar en
+      // un arma PROPIA en ambas direcciones (antes prev se rendía si el slot
+      // adyacente no era owned y el botón moría).
+      const step = dir === 'next' ? 1 : -1;
       let g = 0;
-      do { idx = (idx + 1) % this.weapons.length; g++; } while (g <= this.weapons.length && !isOwned(idx));
+      do { idx = (idx + step + this.weapons.length) % this.weapons.length; g++; }
+      while (g <= this.weapons.length && !isOwned(idx));
       if (!isOwned(idx)) return; // el inventario entero sin posesión
     } else if (typeof dir === 'number' && dir >= 1 && dir <= this.weapons.length) {
       if (!isOwned(dir - 1)) return; // no comprada: la tienda manda

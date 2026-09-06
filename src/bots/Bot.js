@@ -94,6 +94,12 @@ export class Bot {
     this.shootCooldown = 0;
     this.strafeDir = Math.random() > 0.5 ? 1 : -1;
     this.strafeTimer = 0;
+    // INTENCIÓN (anti-idle P0): segundos de ronda SIN contacto de ningún tipo
+    // (target, memoria o daño recibido). Al superarlo, el bot toma un objetivo
+    // táctico barato (centro/lanes) en vez de deambular: el mapa no se queda
+    // con "todos paseándose" hasta el timeout. Se resetea en cada respawn.
+    this._noContactT = 0;
+    this._tacticalGoal = null;
 
     // Memoria CORTA del último enemigo visto (reacciona como humano, no como radar):
     // recordar posición ~1.5s tras perder LOS; prescinde del target luego.
@@ -393,6 +399,10 @@ export class Bot {
     this._reactWait = 0;
     this._noShootTime = 0;
     this._flankT = 0;
+    this._noContactT = 0;
+    this._tacticalGoal = null;
+    this._stuckT = 0;
+    this._stuckAnchor = null;
     if (this.navigation) this.navigation.reset(this.id);
     if (this._avatar) { this._avatar.setMoving(false); }
   }
@@ -434,6 +444,7 @@ export class Bot {
       // Objetivo NUEVO → arrancar tiempo de reacción; el mismo → mantener
       if (this.target !== nearest) this._reactWait = role.react;
       this._lastSeen = { x: nearest.position.x, z: nearest.position.z, ttl: 1.5 };
+      this._noContactT = 0; // contacto = ver enemigo
     } else if (this._lastSeen) {
       this._lastSeen.ttl -= dt;
       if (this._lastSeen.ttl <= 0) this._lastSeen = null;
@@ -443,6 +454,23 @@ export class Bot {
     // ── State machine (con memoria: chase a la ÚLTIMA POSICIÓN VISTA) ──
     // El umbral de ataque usa la distancia efectiva del ARMA+rol.
     const prefDistNow = preferredDist(role, this.weaponKey);
+    // ANTI-IDLE (P0): sin target, sin memoria y sin daño recibido durante
+    // demasiado tiempo → la ronda se está muriendo en un paseo. Tras el umbral
+    // el bot toma un OBJETIVO TÁCTICO BARATO (centro/lanes: zonas de conflicto
+    // donde el combate pasa; jamás posiciones ocultas del enemigo). Dura hasta
+    // que el contacto llegue (entonces el flujo normal de chase/attack manda).
+    this._noContactT += dt;
+    const IDLE_LIMIT = 10;
+    if ((nearest || this._lastSeen || this._flinchT > 0)) {
+      this._noContactT = 0;
+      this._tacticalGoal = null;
+    } else if (this._noContactT > IDLE_LIMIT && !this._tacticalGoal) {
+      this._tacticalGoal = this._pickTacticalGoal();
+      this._noContactT = 0;
+      this.stateTimer = 0;
+    }
+    if (this._tacticalGoal && (nearest || this._lastSeen)) this._tacticalGoal = null;
+
     if (nearest && nearestDist < prefDistNow + 8) {
       this.state = 'attack';
     } else if (nearest) {
@@ -481,9 +509,29 @@ export class Bot {
       goalX = this.position.x + (-dz / len) * this._flankDir * 6;
       goalZ = this.position.z + (dx / len) * this._flankDir * 6;
     } else if (this.state === 'wander') {
-      // ALIADOS con ancla: reagruparse cerca del jugador pero en POSICIÓN
-      // PROPIA (offset por rol/lane: no patitos, ocupan puntos distintos)
-      if (this.team === 'ally' && player && player.isAlive) {
+      // OBJETIVO TÁCTICO anti-idle: moverse hacia una zona de conflicto
+      // (determinada SIN ver posiciones ocultas) tiene prioridad en wander.
+      if (this._tacticalGoal) {
+        goalX = this._tacticalGoal.x; goalZ = this._tacticalGoal.z;
+        // llegado a la zona (o sin ruta hacia ella: celda muerta por el
+        // jitter): CRUZAR al extremo contrario de la base — patrulla N-S con
+        // propósito (el contacto llega al CRUZAR la arena, no al zigzaguear
+        // alrededor de la casa central).
+        const nearGoal = Math.hypot(goalX - this.position.x, goalZ - this.position.z) < 4;
+        const recG = nav && nav._paths ? nav._paths.get(this.id) : null;
+        const noRoute = nav && wp === null && recG && recG.at >= 0 && this.stateTimer > 2.5;
+        if (nearGoal || noRoute) {
+          // enemigo (base norte, z<0) cruza a z>0; aliado cruza a z<0
+          const cross = (this.team === 'enemy' ? 1 : -1) * this.map.size * 0.32;
+          this._tacticalGoal = { x: (Math.random() - 0.5) * 8, z: cross + (Math.random() - 0.5) * 6 };
+          goalX = this._tacticalGoal.x; goalZ = this._tacticalGoal.z;
+        }
+      }
+      // ALIADOS con ancla: reagruparse cerca del jugador SOLO si el jugador
+      // avanza (el ancla vive en SU base si el jugador no se mueve → la
+      // escuadra entera pasaba 90s en spawn). El anti-idle (goal táctico al
+      // centro) manda sobre el ancla: salir de spawn con propósito.
+      else if (this.team === 'ally' && player && player.isAlive && this._tacticalGoal === null && this._noContactT < IDLE_LIMIT) {
         const spread = (this.id - 1) * 2.2; // aliado 0..2 → -2.2, 0, +2.2
         const side = this._laneSeed;
         goalX = player.position.x + side * (3 + Math.abs(spread)) + spread * 0.3;
@@ -505,6 +553,30 @@ export class Bot {
 
     if (this.state === 'wander') {
       if (wp) {
+        // ATAJOS: el A* es 4-dir y el string-pulling conserva esquinas — un
+        // waypoint más adelante alcanzable en recta no justifica zigzag.
+        // La LOS se valida contra el MAPA REAL (checkCollision por muestreo
+        // con el radio del bot), no contra el grid: el grid solo garantiza
+        // el CENTRO de cada celda y un "atajo visible" saltaba el wp de
+        // acceso real (autopsia: botón patinando hasta agotar la ruta).
+        const recNav = nav && nav._paths ? nav._paths.get(this.id) : null;
+        if (recNav && recNav.path.length > recNav.i) {
+          const skip = Math.min(recNav.i + 2, recNav.path.length - 1);
+          const cand = recNav.path[skip];
+          if (skip > recNav.i && cand) {
+            const dxs = cand.x - this.position.x, dzs = cand.z - this.position.z;
+            const len = Math.hypot(dxs, dzs) || 1;
+            const probe = S.axis.copy(this.position);
+            let clear = true;
+            for (let st = 1; st <= 4; st++) {
+              probe.x = this.position.x + (dxs / len) * (len * st / 4);
+              probe.z = this.position.z + (dzs / len) * (len * st / 4);
+              probe.y = this.position.y;
+              if (map.checkCollision(probe, this.radius, this.height)) { clear = false; break; }
+            }
+            if (clear) { recNav.i = skip; wp = cand; }
+          }
+        }
         // seguir el camino de Navigation (con falla local si un frame no hay)
         S.wp.set(wp.x, 0, wp.z).sub(this.position); S.wp.y = 0;
         if (S.wp.lengthSq() > 0.001) {
@@ -616,6 +688,7 @@ export class Bot {
     // Apply movement with SMOOTH ACCELERATION — bots ease into their stride
     // instead of snapping to full speed (kills the "ghost sliding" look).
     // velocity lerps toward the wish velocity; position integrates velocity.
+    const moveMag0 = move.lengthSq();
     const wish = S.wish;
     if (move.lengthSq() > 0.01) wish.copy(move).multiplyScalar(this.speed); else wish.set(0, 0, 0);
     const accelT = Math.min(1, (move.lengthSq() > 0.01 ? 6.5 : 9) * dt);
@@ -637,10 +710,29 @@ export class Bot {
         // Blocked head-on: cut velocity so the bot doesn't push into walls
         this.velocity.multiplyScalar(0.4);
       }
-      // Face movement direction if not looking at target
-      if (!lookAtTarget && move.lengthSq() > 0.01) {
-        this.targetYaw = Math.atan2(move.x, move.z);
+    }
+    // STUCK-BREAKER (P0): quiere moverse y NO GANA TERRENO en ~2.5s →
+    // nueva ruta y lateral corto. Mide desplazamiento desde la ANCLA: si en
+    // ese tiempo no se alejó >1.5u, es atasco (la micro-oscilación entre dos
+    // waypoints inalcanzables también cuenta). FUERA del gate de velocidad.
+    // Sin radar, sin ronda congelada.
+    {
+      const anchor = this._stuckAnchor || (this._stuckAnchor = new THREE.Vector3());
+      this._stuckT += dt;
+      if (this._stuckT > 2.5) {
+        if (moveMag0 > 0.0002 && this.position.distanceTo(anchor) < 1.5) {
+          if (nav) nav.reset(this.id);
+          this.strafeDir = -this.strafeDir;
+          this._flankT = 1.2;
+          this._flankDir = -this._flankDir;
+        }
+        this._stuckT = 0;
+        anchor.copy(this.position);
       }
+    }
+    // Face movement direction if not looking at target
+    if (!lookAtTarget && move.lengthSq() > 0.01) {
+      this.targetYaw = Math.atan2(move.x, move.z);
     }
 
     // Look at target
@@ -729,5 +821,18 @@ export class Bot {
       shoot,
       target: nearest
     };
+  }
+
+  // Zona de conflicto para el anti-idle: centros y lanes del mapa (por dónde
+  // pasa el combate de todos los modos). SIN radar — solo geografía barata.
+  // La determinación es determinista por bot+turno: el equipo cubre zonas
+  // distintas en vez de peregrinar en fila india.
+  _pickTacticalGoal() {
+    // Centro (0,0): TODO el tráfico N-S de la arena pasa por el centro o los
+    // lanes — converger hacia el centro maximiza el contacto sin radar.
+    // El jitter reparte al escuadrón; si el punto cae en celda muerta (muro
+    // central), el próximo repath del anti-idle lo vuelve a sortear.
+    const jitter = 6;
+    return { x: (Math.random() - 0.5) * jitter, z: (Math.random() - 0.5) * jitter };
   }
 }

@@ -19,7 +19,10 @@ import * as THREE from '../lib/three.module.js';
 // y cada bot sigue su waypoint activo con el steering que ya tenía.
 
 const CELL = 2;          // metros por celda (bot radius 0.38 + margen sobra)
-const MAX_PATH_LEN = 520; // límite de A*: diagonal completa expande ~426 (medido)
+// Con el cierre de bordes del grid la ruta óptima serpentea más (nudos de la
+// arena forzan rodeos): la diagonal completa expande ~510 (medido). 800 deja
+// margen sin tocar gameplay (solo presupuesto de cómputo del repath).
+const MAX_PATH_LEN = 800;
 
 export class Navigation {
   constructor(map) {
@@ -52,7 +55,23 @@ export class Navigation {
         grid[j * d + i] = this.map.checkCollision(probe, 0.45, 1.65) ? 0 : 1;
       }
     }
-    this._grid = grid;
+    // CIERRE DE BORDES (P0: bot congelado en (-21,-19)): una celda libre cuyo
+    // VECINO es bloqueado deja un pasillo de papel entre celdas "libres" — el
+    // A* pasa por el hueco pero el CUERPO del bot (radio 0.38) choca con el
+    // muro que separa los centros. Una celda caminable solo se mantiene si
+    // sus 4 vecinos cardinales también lo son (los bordes pasan a bloqueadas;
+    // los pasillos reales miden ≥2 celdas, nadie queda encerrado).
+    const closed = new Uint8Array(d * d);
+    for (let j = 0; j < d; j++) {
+      for (let i = 0; i < d; i++) {
+        if (!grid[j * d + i]) continue;
+        const ok =
+          (i > 0 && grid[j * d + i - 1]) && (i < d - 1 && grid[j * d + i + 1]) &&
+          (j > 0 && grid[(j - 1) * d + i]) && (j < d - 1 && grid[(j + 1) * d + i]);
+        closed[j * d + i] = ok ? 1 : 0;
+      }
+    }
+    this._grid = closed;
   }
 
   _idx(x, z) {

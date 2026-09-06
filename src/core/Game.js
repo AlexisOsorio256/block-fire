@@ -8,6 +8,7 @@ import { Map } from '../world/Map.js';
 import { HUD } from '../ui/HUD.js';
 import { AudioManager } from '../audio/AudioManager.js';
 import { settings } from './Settings.js';
+import { controlLayout } from './ControlLayout.js';
 import { AvatarLib } from '../characters/SoldierAvatar.js';
 import { VfxSystem } from '../fx/VfxSystem.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
@@ -21,6 +22,13 @@ const _sepRadii = [];
 const _sepProbe = new THREE.Vector3();
 // Payload de HUD reutilizado (HUD.update solo lo lee)
 const _hudPayload = {};
+// Scratch del espectador (vectores reutilizados; jamás escapan)
+const _specCamGoal = new THREE.Vector3();
+const _specLookGoal = new THREE.Vector3();
+const _specLookTmp = new THREE.Vector3();
+// Encuadre del espectador: altura de hombro y distancia tras el aliado
+const _SPEC_EYE = 1.9;
+const _SPEC_DIST = 3.6;
 // Identidades de operador (deben coincidir con SoldierAvatar.OPERATORS):
 // el nombre corto vive en el killfeed y ancla la lectura del personaje.
 const OPERATOR_NAMES = ['BRAVO', 'VULTURE', 'TALON', 'DUNE', 'HAVOC', 'ROOK', 'GHOST'];
@@ -195,6 +203,11 @@ export class Game {
     this.playerDeaths = 0;
     this._resultShown = false;
     this._pendingRespawns = []; // setTimeout ids of scheduled respawns
+    // ESPECTADOR (Duelo de Escuadras): al morir el jugador con aliados vivos,
+    // la cámara sigue a un aliado en 3ª persona. Estado vivo aquí, limpieza
+    // garantizada en _resetTemporalState (startRound/retry lo llaman siempre).
+    this._spectating = null;   // aliado especteado (bot) | null = inactivo
+    this._specWish = 0;        // -1 anterior · 0 nada · +1 siguiente (consumido por frame)
 
     // Feedback de cámara (dueño: Game). Las partículas viven en this.vfx.
     this.hitFlash = 0;
@@ -276,6 +289,12 @@ export class Game {
     window.addEventListener('keydown', e=>{
       if(e.code==='F3'){
         this.hud.toggleDebug();
+      }
+      // Espectador (solo lectura): Q/E y ←/→ cambian de compañero. Solo piden;
+      // el consumo ocurre en _updateSpectator y nunca mueve al aliado.
+      if (this._spectating && !e.repeat) {
+        if (e.code === 'KeyQ' || e.code === 'ArrowLeft') this._specWish = -1;
+        else if (e.code === 'KeyE' || e.code === 'ArrowRight') this._specWish = 1;
       }
     });
   }
@@ -370,7 +389,7 @@ export class Game {
       this._configOpen = true;
       if (this.input && this.input.setEditMode) this.input.setEditMode(false);
       const note = document.getElementById('cfg-note');
-      if (note) note.textContent = 'EDITAR CONTROLES: arrastra cada botón y suéltalo. Se guarda solo.';
+      if (note) note.textContent = 'EDITAR CONTROLES: mueve, redimensiona y ajusta la opacidad de cada control. Se guarda solo.';
       if (document.pointerLockElement) document.exitPointerLock();
       this.audio.play('ui');
     };
@@ -388,7 +407,8 @@ export class Game {
       this.audio.play('ui');
     });
     if (resetCfg) resetCfg.addEventListener('click', () => {
-      settings.reset();
+      settings.reset(); // incluye controlLayout → todos los controles a default
+      controlLayout.apply();
       for (const [inputId, outId, setting, fmt] of cfgBindings) {
         const input = document.getElementById(inputId);
         const out = document.getElementById(outId);
@@ -399,18 +419,44 @@ export class Game {
       const note = document.getElementById('cfg-note');
       if (note) note.textContent = 'Controles restablecidos. Se guarda en este dispositivo.';
       this.audio.play('ui');
-    });
-    if (editCfg) editCfg.addEventListener('click', () => {
+    });    if (editCfg) editCfg.addEventListener('click', () => {
       if (this.input && this.input.setEditMode) {
         const on = !this.input.editMode;
-        this.input.setEditMode(on);
-        const note = document.getElementById('cfg-note');
-        if (note) note.textContent = on
-          ? 'MODO EDICIÓN: arrastra cada botón. CERRAR guarda y vuelve al juego.'
-          : 'Disposición guardada.';
+        this.input.setEditMode(on); // el editor oculta este panel y añade su HUD
       }
       this.audio.play('ui');
     });
+
+    // ABANDONAR PARTIDA: acción destructiva DENTRO de config (solo en partida),
+    // con confirmación de dos pasos — jamás un botón flotante de toque
+    // accidental. Sin partida en curso no existe (CSS body:not(.playing)).
+    const abandonWrap = document.getElementById('cfg-danger');
+    const abandonAsk = document.getElementById('cfg-abandon');
+    const abandonConfirm = document.getElementById('cfg-abandon-confirm');
+    const abandonYes = document.getElementById('cfg-abandon-yes');
+    const abandonNo = document.getElementById('cfg-abandon-no');
+    const hideAbandonConfirm = () => {
+      if (abandonConfirm) abandonConfirm.classList.add('hidden');
+      if (abandonAsk) abandonAsk.classList.remove('hidden');
+    };
+    hideAbandonConfirm();
+    if (abandonAsk) abandonAsk.addEventListener('click', () => {
+      abandonAsk.classList.add('hidden');
+      if (abandonConfirm) abandonConfirm.classList.remove('hidden');
+      this.audio.play('ui');
+    });
+    if (abandonNo) abandonNo.addEventListener('click', () => {
+      hideAbandonConfirm();
+      configPanel.classList.add('hidden');
+      this._configOpen = false; // decisión de seguir jugando: reanudar directamente
+      this.audio.play('ui');
+    });
+    if (abandonYes) abandonYes.addEventListener('click', () => this.abandonMatch());
+    // Cerrar el panel siempre re-arma el estado de confirmación
+    if (abandonWrap) {
+      const closeObs = () => hideAbandonConfirm();
+      closeCfg && closeCfg.addEventListener('click', closeObs);
+    }
 
     const startGame = ()=>{
       this.audio.init();
@@ -556,6 +602,7 @@ export class Game {
     this._hitstop = 0;
     this._shake = 0;
     this.hitFlash = 0;
+    this._stopSpectating(); // espectador muere con la ronda: overlay + HUD vida/arma restaurados
     if (this.damageNumbers) this.damageNumbers.reset();
   }
 
@@ -688,7 +735,7 @@ export class Game {
       this.teamScore[killerTeam] = (this.teamScore[killerTeam] || 0) + 1;
       if(attacker && !attacker.isBot){
         this.playerKills++;
-        this.hud.showKill(attacker.name || 'YOU', this._displayName(target), hitType==='head');
+        this.hud.showKill(this._displayName(attacker), this._displayName(target), hitType==='head', (attacker.weaponKey || (attacker.isBot ? null : this.weaponSystem.weapons[this.weaponSystem.currentIndex])));
         // Player kill streak: consecutive kills within 3.5s escalate the banner
         const now = performance.now();
         this._streakCount = (now - (this._lastKillAt || 0) < 3500) ? (this._streakCount || 0) + 1 : 1;
@@ -720,11 +767,16 @@ export class Game {
           if (lbl) lbl.textContent = this.gameMode === 'squad' ? 'ESPERA EL FIN DE LA RONDA' : 'REAPARECIENDO...';
           dOv.classList.add('show');
         }
+        // En escuadras con aliados vivos, el overlay muere → espectador real
+        // (cámara siguiendo a un compañero, HUD de vida/arma fuera).
+        if (this.gameMode === 'squad' && this.phase === 'combat') {
+          this._startSpectating();
+        }
       } else if(target.isBot && attacker && attacker.isBot){
         attacker.kills++;
         // Bots killing each other (or the player) belong in the feed: in an
         // FFA the leaderboard race must stay legible, not only your own kills.
-        this.hud.showKill(this._displayName(attacker), target.isBot ? this._displayName(target) : 'YOU', hitType==='head');
+        this.hud.showKill(this._displayName(attacker), this._displayName(target), hitType==='head', attacker.isBot ? attacker.weaponKey : this.weaponSystem.weapons[this.weaponSystem.currentIndex]);
       }
       // FFA: 20 kills gana la partida (legacy)
       if (this.gameMode === 'ffa' && (this.playerKills >= this.killTarget || this._maxBotKills() >= this.killTarget)) {
@@ -788,15 +840,75 @@ export class Game {
     return died;
   }
 
+  // ═══ ESPECTADOR (Duelo de Escuadras, solo lectura) ═══
+  // SOLO aliados vivos. El aliado especteado corre su IA normal: ningún
+  // input del espectador toca al bot (la cámara solo LEE posición/yaw).
+  _startSpectating() {
+    const ally = this.bots.find(b => b.team === 'ally' && b.isAlive);
+    if (!ally) return; // sin aliados vivos: la ronda se cierra sola (eliminación)
+    this._spectating = ally;
+    _specCamGoal.copy(ally.position); _specCamGoal.y += _SPEC_EYE + _SPEC_DIST;
+    this.hud.showSpectate(this._displayName(ally));
+    this.hud.showPlayerDeadHud(true);
+  }
+
+  // Añade un aliado al índice del especteado y salta a otro vivo si el
+  // actual murió (auto-switch) o el jugador pidió siguiente/anterior.
+  _cycleSpectate(dir) {
+    if (!this._spectating) return;
+    const alive = this.bots.filter(b => b.team === 'ally' && b.isAlive);
+    if (alive.length === 0) { this._stopSpectating(); return; }
+    const curIdx = alive.indexOf(this._spectating);
+    const next = curIdx === -1
+      ? alive[0] // el actual murió: auto-switch al primero vivo
+      : alive[(curIdx + dir + alive.length) % alive.length];
+    this._spectating = next;
+    this.hud.showSpectate(this._displayName(next));
+  }
+
+  _stopSpectating() {
+    if (!this._spectating && !this.hud._specShown) return;
+    this._spectating = null;
+    this.hud.hideSpectate();
+    this.hud.showPlayerDeadHud(false);
+  }
+
+  _updateSpectator(dt) {
+    // Cambio de compañero: Q/E o flechas (PC) ya se capturaron en keydown;
+    // aquí se consumen. El pedido llega por input._specNext/_specPrev.
+    const wish = this._specWish;
+    this._specWish = 0;
+    if (wish !== 0) this._cycleSpectate(wish);
+    // El especteado murió (o ya no es válido): siguiente vivo o espectador fuera
+    if (!this._spectating || !this._spectating.isAlive) {
+      const alive = this.bots.filter(b => b.team === 'ally' && b.isAlive);
+      if (alive.length === 0) { this._stopSpectating(); return; }
+      this._spectating = alive[0];
+      this.hud.showSpectate(this._displayName(this._spectating));
+    }
+    const ally = this._spectating;
+    // Cámara 3ª persona: detrás/encima del aliado según SU yaw (lectura pura),
+    // suavizada. lookAt suavizado hacia la cabeza del aliado.
+    const camGoal = _specCamGoal.set(ally.position.x, ally.position.y + _SPEC_EYE, ally.position.z);
+    camGoal.x -= Math.sin(ally.yaw) * _SPEC_DIST;
+    camGoal.z -= Math.cos(ally.yaw) * _SPEC_DIST;
+    this.camera.position.lerp(camGoal, Math.min(1, dt * 4));
+    const lookGoal = _specLookGoal.copy(ally.position); lookGoal.y += 1.2;
+    const look = this.camera.getWorldDirection(_specLookTmp);
+    _specLookTmp.lerp(lookGoal, Math.min(1, dt * 5));
+    this.camera.lookAt(_specLookTmp);
+  }
+
   _maxBotKills() {
     return Math.max(...this.bots.map(b=>b.kills), 0);
   }
 
-  // Nombre de killfeed: ALIADO_2 es quien ES (equipo+posición); el operador
-  // (BRAVO, VULTURE…) es el personaje que se ve — ambos, separados por punto.
+  // Nombre PLAYER-FACING: SOLO el callsign del operador (BRAVO, VULTURE…).
+  // bot.id/team/name (ALIADO_2, BOT_1, ENEMIGO_2) son datos internos de IA:
+  // jamás salen al killfeed ni a la UI.
   _displayName(ent) {
-    if (!ent) return 'BOT';
-    return ent.isBot ? `${ent.name || 'BOT'}·${ent.operatorName || 'OP'}` : (ent.name || 'YOU');
+    if (!ent) return '';
+    return ent.isBot ? (ent.operatorName || 'OPERADOR') : 'TÚ';
   }
 
   // Lista de objetivos válidos para un disparo (todos los combatientes).
@@ -970,18 +1082,10 @@ export class Game {
     }
     // Player
     this.playerController.update(dt);
-    // Muerto en escuadras: espectar al primer aliado vivo (estilo Free Fire)
-    // en vez de mirar al punto de muerte hasta el fin de ronda.
+    // Muerto en escuadras: espectador REAL (cámara en 3ª persona detrás del
+    // aliado vivo; cambia de compañero con Q/E o los botones ‹ › móviles).
     if (!this.player.isAlive && this.gameMode === 'squad' && this.phase === 'combat') {
-      const mate = this.bots.find(b => b.team === 'ally' && b.isAlive);
-      if (mate) {
-        this.camera.position.copy(mate.position);
-        this.camera.position.y += 0.15;
-        this.camera.rotation.order = 'YXZ';
-        this.camera.rotation.y = mate.yaw;
-        this.camera.rotation.x = 0;
-        this.camera.rotation.z = 0;
-      }
+      this._updateSpectator(dt);
     }
     if (savedMove && this.input) {
       this.input.move = savedMove.m; this.input.jump = savedMove.j;

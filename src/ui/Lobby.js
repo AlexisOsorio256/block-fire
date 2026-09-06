@@ -476,7 +476,11 @@ export class Lobby {
     const vFov = THREE.MathUtils.degToRad(LOBBY_FOV);
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
     const halfWView = Math.tan(hFov / 2) * dist; // semiancho visible en el plano del héroe
-    return halfWView * 0.30; // héroe al ~72% del ancho de pantalla
+    // 34% (medido): el 30% dejaba el borde IZQUIERDO del Box3 del héroe a 5px
+    // dentro de la columna de UI (uiClear 371 < 376+8px exigidos por el test
+    // 26). El empuje extra es aire, no composición: el héroe sigue centrado
+    // en el tercio derecho y la bóveda lo recorta igual.
+    return halfWView * 0.34; // héroe al ~73% del ancho de pantalla
   }
 
   // Métricas (para el test de encuadre y debug): Box3 del héroe en NDC con

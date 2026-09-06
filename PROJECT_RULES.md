@@ -84,23 +84,39 @@ lectura inmediata. Mundo consistente con el modo elegido. Fuego amigo OFF.
 Horizontal SIEMPRE, en TODAS las pantallas. PC y Android son primera clase con
 las mismas reglas. Móvil no se declara listo sin hardware real.
 
-**Estrategia Android**: existen dos vías en el repo — Capacitor (producción:
-plugins, storage persistente, `tools/build-web.sh` → `www/` → gradle) y la
-APK mínima sin gradle (`tools/webview/build.sh`, aapt2+d8+apksigner). El
-README antiguo recomendaba TWA/PWA. **Contradicción abierta: NO decidida por
-el humano.** Ambas vías se mantienen; la documentación las describe, no
-elige. Decisión pendiente de dirección.
+**Estrategia Android**: **Capacitor es la vía canónica de PRODUCCIÓN**
+(plugins, storage persistente, integraciones futuras). La APK mínima sin
+gradle (`tools/webview/build.sh`) sobrevive únicamente como smoke/debug rápido
+si aporta valor y no diverge. La web runtime es única; Android es una cáscara
+delgada y nunca reescribe gameplay. No mantener tres estrategias Android
+iguales por años.
 
 La APK (cualquiera de las vías) es una cáscara y nunca reescribe gameplay.
 
-## 7. Rendimiento y economía de la IA
+## 7. Rendimiento, procesos y economía de la IA
 
 Frame estable sobre picos bonitos. Reutilizar geometrías y materiales; ningún
 `requestAnimationFrame`, listener o timer sin dueño y sin reset al terminar la
 partida. Y la IA también tiene presupuesto: herramientas en batch por mensaje,
-cero polling, cada cambio visual cuesta 1–3 capturas (no 20). Posicionamiento
-primero con invariantes numéricos (bounding boxes, distancias, spawns, TTK);
-la captura es para VERIFICAR, no para explorar.
+cero polling, cada cambio visual cuesta pocas capturas con pregunta concreta.
+
+**Higiene de procesos (regla permanente)**: TODO proceso iniciado por una IA
+tiene DUEÑO. Prohibido dejar vivos Chromium/chrome-headless, `http.server`,
+node servers, emuladores, `adb forward`, gradle daemons, watchers o procesos
+de captura después del trabajo que los necesitó. PROHIBIDO `nohup ... &` sin
+lifecycle explícito (PID file + stop + verificación). Prohibido `pkill`
+indiscriminado (puede matar apps reales del usuario). Cada proceso: registrar
+PID, cerrarse al terminar, limpiar sus temporales. Con 8 GB de RAM: mínimo
+número de procesos persistentes; máximo un emulador a la vez, sin dejarlo
+abierto tras su frente.
+
+**Build reproducible**: las herramientas del repo (`tools/*.sh`) calculan la
+raíz desde la ubicación del script. PROHIBIDO rutas absolutas de máquina
+humana. El bundle de PRODUCCIÓN no lleva harness de testing/capturas (rama
+muerta por define); los tests viven en DEV (`?runTests=1`) y son el seguro
+del proyecto: no se borran por crecer, se mantienen protegiendo invariantes.
+Toda build lleva BUILD_ID (commit+timestamp) visible solo en consola/debug,
+nunca player-facing.
 
 ## 8. Protocolo de la IA
 
@@ -122,41 +138,53 @@ IA. La visión DETECTA anomalías; los píxeles las EXPLICAN. Sin captura =
 SIN VERIFICAR = no se cierra el trabajo. (Presupuesto: 1 captura antes,
 1 después; tercera solo si la segunda revela defecto.)
 
-## 10. Flujo de trabajo: orquestador + subagentes de slice
+## 10. Flujo de trabajo: orquestador + dueños de frente
 
-El trabajo se organiza en **VERTICAL SLICES cerradas** (una experiencia
-completa: tienda, lobby, gunplay…), no en tweaks sueltos ni en un parche
-gigante. El agente principal (orquestador) NO necesita hacer todo el trabajo
-en su propio contexto:
+El trabajo se organiza en **FRENTES COMPLETOS cerrados** (una experiencia o
+problema entero, puede atravesar Input, Game, HUD, Map, assets…). El
+orquestador administra trabajo; los SUBAGENTES DUEÑOS lo ejecutan.
 
-- **Delegación de slice**: el orquestador lanza un subagente con CONTEXTO
-  COMPLETO y autocontenido (rutas, cómo servir, cómo capturar, plantillas de
-  puppeteer existentes, estado global `window.__BLOCKFIRE__`, suite, reglas)
-  y el subagente HACE las ediciones, ve sus propias capturas e ITERA hasta
-  cerrar. Esto protege el presupuesto de imágenes del orquestador y da a cada
-  slice un dueño con visión completa del problema.
+**Orquestador principal**: 0 imágenes como objetivo. Asigna dueños, evita
+conflictos de archivos, recibe reportes compactos, revisa diffs, integra y
+ejecuta verificación global. NO consume su contexto viendo capturas.
+
+**Subagente dueño visual (regla obligatoria): QUIEN VE EL DEFECTO VISUAL ES,
+POR DEFECTO, QUIEN LO CORRIGE.** Cada dueño recibe contexto limpio y
+autocontenido del frente completo, VE él mismo sus capturas, diagnostica,
+EDITA, ejecuta, RECAPTURA, vuelve a ver e ITERA él mismo hasta cerrar.
+Prohibido el relevo "A ve → A describe → B interpreta → B corrige": añade
+latencia y pierde información. Tampoco se cierra un frente visual solo con
+PIL/histogramas/números: los números EXPLICAN, la visión DETERMINA
+presentación. Ambos: NUMÉRICO + VISUAL.
+
+- **Presupuesto de visión** (límite duro del proveedor: 8 imágenes por chat):
+  máximo operativo **6 imágenes por dueño visual**, reservando 2 del límite
+  para contingencias; nunca superar 6 de forma planificada. Cada imagen debe
+  responder una pregunta (no mirar 10 veces la misma pantalla). Si con 6 no
+  cierra: reportar estado y abrir un agente nuevo limpio.
+- **Juez fresco OPCIONAL**: solo cuando el dueño dice que cerró, el cambio es
+  visualmente importante y una segunda opinión aporta valor. Máximo 2
+  imágenes; acepta o veta; NO es intermediario obligatorio. Si veta, la
+  corrección vuelve AL MISMO dueño mientras su contexto siga vivo.
 - **Capturas de ESTADOS COMPLETOS**: la verificación visual recorre TODOS los
-  estados del juego (lobby → compra → combate → muerte → fin de ronda →
-  retry → regreso al lobby, en PC y móvil landscape), no solo la pantalla
-  tocada. Los bugs suelen vivir en la transición, no en la pantalla.
-- **Presupuesto duro de visión**: la visión multimodal es un recurso ESCASO
-  (límite duro de 8 imágenes POR CHAT de agente; agotarlo traba al agente y
-  pierde el trabajo). Por tanto: capturas se sacan siempre, pero se ANALIZAN
-  programáticamente (Python/PIL, node: dimensiones, histogramas, píxeles por
-  región, colores dominantes, comparación antes/después por región) para TODO
-  el trabajo. Separación de roles OBLIGATORIA: el agente de IMPLEMENTACIÓN
-  lee CERO imágenes (solo píxel-análisis); un agente JUEZ aparte y con
-  contexto fresco hace la lectura visual final (máximo 2 imágenes por juez:
-  antes y después). Prohibido iterar leyendo la misma pantalla.
-- **Destino Android SIEMPRE presente**: se itera en web (puppeteer) porque es
-  el ciclo más rápido, pero el producto se empaqueta a Android
-  (Capacitor/webview). Toda decisión de rendimiento, DPR, safe-areas, touch y
-  peso de assets se toma como si corriera en un WebView móvil. "Web" nunca es
-  excusa para costes que Android no se puede permitir.
-- **Reporte de slice**: el subagente devuelve ARCHIVOS CAMBIADOS / QUÉ CAMBIÓ
-  / PRUEBAS EJECUTADAS / EVIDENCIA / RESULTADO / RIESGOS. Lo no ejecutado se
-  marca SIN VERIFICAR. El orquestador integra, conserva la suite en verde y
-  decide la siguiente slice.
+  estados del juego (lobby → compra → combate → muerte → espectador → fin de
+  ronda → retry → regreso al lobby, en PC y móvil landscape), no solo la
+  pantalla tocada. Los bugs suelen vivir en la transición, no en la pantalla.
+- **Destino Android SIEMPRE presente**: se itera en web (headless/puppeteer)
+  porque es el ciclo más rápido, pero el producto se empaqueta a Android.
+  Toda decisión de rendimiento, DPR, safe-areas, touch y peso de assets se
+  toma como si corriera en un WebView móvil. "Web" nunca es excusa para
+  costes que Android no se puede permitir.
+- **Seguridad de ediciones paralelas**: se pueden paralelizar auditorías, y
+  implementaciones si los archivos son disjuntos. Antes de lanzar dueños, el
+  orquestador define la tabla FRENTE → ARCHIVOS QUE POSEE. Dos frentes nunca
+  editan a la vez `Game.js`, `Input.js`, `style.css`, `index.html` o `HUD.js`
+  sin coordinación: uno espera o el orquestador integra la parte común.
+- **Reporte de frente**: el dueño devuelve FRENTE / BUGS CONFIRMADOS / CAUSA /
+  ARCHIVOS / CORRECCIONES / TESTS / EVIDENCIA / IMÁGENES USADAS x/6 /
+  MÉTRICAS / RIESGO RESTANTE / SIN VERIFICAR. Lo no ejecutado se marca SIN
+  VERIFICAR. El orquestador integra, conserva la suite en verde y decide el
+  siguiente frente.
 
 ## 11. Git
 

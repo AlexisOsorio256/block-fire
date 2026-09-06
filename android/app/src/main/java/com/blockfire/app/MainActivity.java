@@ -25,7 +25,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onStart() {
         super.onStart();
-        WebView wv = (WebView) findViewById(com.getcapacitor.R.id.webview);
+        WebView wv = getBridge().getWebView();
         if (wv != null) {
             wv.setWebChromeClient(new WebChromeClient() {
                 @Override

@@ -6,6 +6,7 @@
 // finger. Nothing here multiplies touchstart semantics (touches[0] ambiguity
 // was the old bug: with two fingers down, both zones read the SAME touch).
 import { settings } from './Settings.js';
+import { controlLayout } from './ControlLayout.js';
 
 export class Input {
   constructor() {
@@ -171,6 +172,7 @@ export class Input {
 
     joystickZone.addEventListener('pointerdown', e => {
       e.preventDefault();
+      if (controlLayout.editMode) return; // el editor arrastra la base/joystick
       if (this._joystickPointer !== null) return; // already owned by a finger
       this._joystickPointer = e.pointerId;
       this._joystick.active = true;
@@ -231,13 +233,14 @@ export class Input {
     // The drag deltas feed their OWN accumulator (not the look zone's) so
     // releasing the look-zone finger can never wipe pending fire-drag deltas.
     // PlayerController's getLookDelta sums both and applies sensitivity once.
+    // En MODO EDICIÓN el control NO ejecuta gameplay (el editor arrastra).
     this._firePointers = new Set();
     this._fireLook = { x: 0, y: 0 };
     const bindFire = (el) => {
       if (!el) return;
       let lastX = 0, lastY = 0;
       el.addEventListener('pointerdown', e => {
-        if (this.editMode) return; // layout editor owns the pointer while editing
+        if (controlLayout.editMode) return;
         e.preventDefault();
         this._firePointers.add(e.pointerId);
         this.fire = true;
@@ -273,6 +276,7 @@ export class Input {
       if (mc) mc.classList.toggle('aiming', on);
     };
     if (btnAim) btnAim.addEventListener('pointerdown', e => {
+      if (controlLayout.editMode) return;
       e.preventDefault();
       this._setAim(!this.aim);
     });
@@ -281,6 +285,7 @@ export class Input {
     this.sprintLock = false;
     if (btnSprint) {
       btnSprint.addEventListener('pointerdown', e => {
+        if (controlLayout.editMode) return;
         e.preventDefault();
         this.sprintLock = !this.sprintLock;
         btnSprint.classList.toggle('active', this.sprintLock);
@@ -291,6 +296,7 @@ export class Input {
     this.crouch = false;
     if (btnCrouch) {
       btnCrouch.addEventListener('pointerdown', e => {
+        if (controlLayout.editMode) return;
         e.preventDefault();
         this.crouch = !this.crouch;
         btnCrouch.classList.toggle('active', this.crouch);
@@ -299,7 +305,10 @@ export class Input {
 
     const bindButton = (el, onDown, onUp) => {
       if (!el) return;
-      el.addEventListener('pointerdown', e => { e.preventDefault(); onDown(); });
+      el.addEventListener('pointerdown', e => {
+        if (controlLayout.editMode) return;
+        e.preventDefault(); onDown();
+      });
       const up = e => { e.preventDefault(); onUp(); };
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);
@@ -315,62 +324,20 @@ export class Input {
     // button a dead end for mobile players on the other two weapons.
     bindButton(btnSwitch, () => this.switchWeapon = 'next', () => {});
 
-    // ---- Control layout editor: drag buttons, drop, saved (localStorage) ----
-    // Not a professional editor: drag → drop → persist, with RESTABLECER.
-    this.editMode = false;
-    const btnIds = ['btn-sprint', 'btn-crouch', 'btn-jump', 'btn-reload', 'btn-switch', 'btn-aim', 'btn-fire', 'btn-fire-left'];
-    this.applyLayout = () => {
-      for (const id of btnIds) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        const [dx, dy] = settings.getBtnPos(id);
-        el.style.transform = `translate(${dx}px, ${dy}px)`;
-      }
-    };
-    this.setEditMode = (on) => {
-      this.editMode = on;
-      const mc = document.getElementById('mobile-controls');
-      if (mc) mc.classList.toggle('editing', on);
-    };
-    for (const id of btnIds) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      let dragId = null, baseDx = 0, baseDy = 0, startX = 0, startY = 0;
-      el.addEventListener('pointerdown', e => {
-        if (!this.editMode) return;
-        e.preventDefault(); e.stopPropagation();
-        dragId = e.pointerId;
-        const [dx, dy] = settings.getBtnPos(id);
-        baseDx = dx; baseDy = dy;
-        startX = e.clientX; startY = e.clientY;
-        try { el.setPointerCapture(e.pointerId); } catch (err) {}
-      });
-      el.addEventListener('pointermove', e => {
-        if (dragId !== e.pointerId) return;
-        e.preventDefault();
-        const [dx, dy] = settings.clampBtnPos(baseDx + (e.clientX - startX), baseDy + (e.clientY - startY));
-        el.style.transform = `translate(${dx}px, ${dy}px)`;
-      });
-      const drop = e => {
-        if (dragId !== e.pointerId) return;
-        dragId = null;
-        const r = el.getBoundingClientRect();
-        const cur = el.style.transform.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/);
-        if (cur) settings.setBtnPos(id, parseFloat(cur[1]), parseFloat(cur[2]));
-      };
-      el.addEventListener('pointerup', drop);
-      el.addEventListener('pointercancel', drop);
-    }
+    // ---- Control layout: ControlLayout.js es el dueño (posición fracción
+    // 0..1, tamaño y opacidad por control, persistencia normalizada). Input
+    // solo lo aplica y delega el modo edición en él.
+    this.editMode = false; // lectura pública: Game/config consultan el estado
+    Object.defineProperty(this, 'editMode', {
+      get: () => controlLayout.editMode,
+      set: (v) => controlLayout.setEditMode(!!v),
+    });
+    this.setEditMode = (on) => controlLayout.setEditMode(on);
+    this.applyLayout = () => controlLayout.apply();
 
     // Player-configurable control scale/opacity (lobby settings panel).
     this.applyControlSettings = () => {
-      const mc = document.getElementById('mobile-controls');
-      if (!mc) return;
-      const scale = settings.get('btnScale');
-      const opacity = settings.get('btnOpacity');
-      mc.style.setProperty('--btn-scale', String(scale));
-      mc.style.setProperty('--btn-opacity', String(opacity));
-      this.applyLayout();
+      controlLayout.apply();
     };
     this.applyControlSettings();
   }

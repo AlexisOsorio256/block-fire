@@ -126,14 +126,35 @@ export class MatchSquad {
     g.immuneUntil = g.matchTime + 3.0;
     for (const b of g.bots) b.immuneUntil = g.matchTime + 3.0;
     g.hud.showImmunity(3);
-    const allyAlive = (g.player.isAlive ? 1 : 0) + g.bots.filter(b => b.team === 'ally' && b.isAlive).length;
-    const enemyAlive = g.bots.filter(b => b.team === 'enemy' && b.isAlive).length;
+    const { ally, enemy } = this._aliveCounts();
     // Defensa en profundidad (B5): si la fase de compra dejó un equipo a cero,
     // cerrar la ronda de inmediato en vez de jugar 90s contra un mapa vacío.
-    if (allyAlive === 0 || enemyAlive === 0) {
-      this.endRound(enemyAlive === 0 ? 'ally' : 'enemy');
+    if (ally === 0 || enemy === 0) {
+      this.endRound(enemy === 0 ? 'ally' : 'enemy');
       return;
     }
+  }
+
+  // Vivos por equipo (fuente única: el jugador + bots, misma fórmula en
+  // eliminación y timeout — jamás una tercera cuenta divergente).
+  _aliveCounts() {
+    const g = this.g;
+    return {
+      ally: (g.player.isAlive ? 1 : 0) + g.bots.filter(b => b.team === 'ally' && b.isAlive).length,
+      enemy: g.bots.filter(b => b.team === 'enemy' && b.isAlive).length,
+      allyHP: (g.player.isAlive ? g.playerController.health : 0) + g.bots.filter(b => b.team === 'ally' && b.isAlive).reduce((s, b) => s + b.health, 0),
+      enemyHP: g.bots.filter(b => b.team === 'enemy' && b.isAlive).reduce((s, b) => s + b.health, 0),
+    };
+  }
+
+  // Fin de ronda por TIEMPO: regla DETERMINISTA y documentada —
+  //   1) más vivos, 2) más HP agregada de los vivos, 3) empate exacto = ronda nula.
+  // Jamás se anuncia ganador sin causa: la razón queda registrada para debug.
+  _timeoutWinner() {
+    const { ally, enemy, allyHP, enemyHP } = this._aliveCounts();
+    if (ally !== enemy) return ally > enemy ? 'ally' : 'enemy';
+    if (allyHP !== enemyHP) return allyHP > enemyHP ? 'ally' : 'enemy';
+    return 'draw';
   }
 
   // Fin de ronda: banner + oro → (Game decide: siguiente ronda o fin del duelo)
@@ -141,6 +162,14 @@ export class MatchSquad {
     const g = this.g;
     if (g.phase === 'roundEnd') return;
     g.phase = 'roundEnd';
+    const { ally, enemy } = this._aliveCounts();
+    // Razón de fin (contrato §12: auditable, no adivinable). Eliminación =
+    // un equipo a 0; si ambos equipos tienen vivos, la única ruta válida es
+    // el timeout determinista de tickPhase.
+    const reason = (ally === 0 || enemy === 0)
+      ? `eliminacion A${ally}/E${enemy}`
+      : `timeout A${ally}/E${enemy} HP ${(this._aliveCounts().allyHP) | 0}/${(this._aliveCounts().enemyHP) | 0}`;
+    console.log(`[MATCH] ronda ${g.round} fin — ${reason} → ${winner}`);
     document.body.classList.remove('buying');
     g.hud.closeShop();
     g.shopOpenFlag = false;
@@ -182,10 +211,8 @@ export class MatchSquad {
     } else if (g.phase === 'combat') {
       g.hud.tickBuyPhase(-1, g.BUY_TIME); // oculta el contador de compra
       if (g.phaseTime <= 0) {
-        // Tiempo agotado → gana el equipo con MÁS VIVOS (empate = ronda nula)
-        const allyCount = (g.player.isAlive ? 1 : 0) + g.bots.filter(b => b.team === 'ally' && b.isAlive).length;
-        const enemyCount = g.bots.filter(b => b.team === 'enemy' && b.isAlive).length;
-        this.endRound(allyCount > enemyCount ? 'ally' : enemyCount > allyCount ? 'enemy' : 'draw');
+        // Tiempo agotado → regla determinista (_timeoutWinner, ver arriba).
+        this.endRound(this._timeoutWinner());
       }
     } else if (g.phase === 'roundEnd') {
       if (g.matchTime - g._roundEndTime > 3.0) this.afterRoundEnd();

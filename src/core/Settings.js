@@ -10,7 +10,9 @@ const DEFAULTS = {
   adsMul: 0.75,     // look multiplier while aiming down sights
   btnScale: 1.0,    // mobile action-button scale (0.8..1.4)
   btnOpacity: 1.0,  // mobile control opacity (0.4..1.0)
-  btnPos: {},       // per-button drag offsets: { btnId: [dx, dy] }
+  // Layout de controles táctiles (dueño: ControlLayout.js): por control
+  // { fx, fy } = fracción del viewport (0..1, centro) + scale + opacity.
+  controlLayout: {},
 };
 
 const RANGES = {
@@ -31,14 +33,11 @@ class Settings {
     try {
       const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
       for (const k of Object.keys(DEFAULTS)) {
-        if (k === 'btnPos') {
-          // btnPos: only sane numeric pairs survive a load
-          if (raw.btnPos && typeof raw.btnPos === 'object') {
-            for (const [id, v] of Object.entries(raw.btnPos)) {
-              if (Array.isArray(v) && v.length === 2 && v.every(n => typeof n === 'number' && isFinite(n))) {
-                this._values.btnPos[id] = this.clampBtnPos(v[0], v[1]);
-              }
-            }
+        if (k === 'controlLayout') {
+          // Validación fina la hace ControlLayout al LEER cada entrada:
+          // aquí solo aceptamos objetos planos (basura → default).
+          if (raw.controlLayout && typeof raw.controlLayout === 'object') {
+            this._values.controlLayout = raw.controlLayout;
           }
           continue;
         }
@@ -50,27 +49,6 @@ class Settings {
   }
 
   get(name) { return this._values[name]; }
-
-  // Button drag offsets — the in-match layout editor writes through here.
-  getBtnPos(id) {
-    return this._values.btnPos[id] || [0, 0];
-  }
-
-  setBtnPos(id, dx, dy) {
-    const c = this.clampBtnPos(dx, dy);
-    this._values.btnPos[id] = c;
-    this._persist();
-  }
-
-  resetBtnPos() {
-    this._values.btnPos = {};
-    this._persist();
-  }
-
-  clampBtnPos(dx, dy) {
-    const L = 170, V = 120; // px, keeps any button on-screen from its anchor
-    return [Math.max(-L, Math.min(L, Math.round(dx))), Math.max(-V, Math.min(V, Math.round(dy)))];
-  }
 
   set(name, value) {
     if (!(name in DEFAULTS)) return;
@@ -87,14 +65,16 @@ class Settings {
 
   reset() {
     for (const k of Object.keys(DEFAULTS)) {
-      if (k === 'btnPos') continue;
+      if (k === 'controlLayout') continue;
       this.set(k, DEFAULTS[k]);
     }
-    this.resetBtnPos();
+    this._values.controlLayout = {};
+    this._persist();
   }
 
   isDefault() {
-    return Object.keys(DEFAULTS).every(k => k === 'btnPos' || this._values[k] === DEFAULTS[k]);
+    return Object.keys(DEFAULTS).every(k =>
+      k === 'controlLayout' || this._values[k] === DEFAULTS[k]);
   }
 
   _clamp(name, v) {

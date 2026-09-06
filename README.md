@@ -35,21 +35,16 @@ cd tools/webview && bash build.sh  # → builds/blockfire-webview.apk (generado)
 bash tools/build-web.sh && npx cap sync android && cd android && ./gradlew assembleDebug
 ```
 
-## 📱 Estrategia Android — CONTRADICCIÓN ABIERTA, no decidida
+## 📱 Estrategia Android — Capacitor es la vía de PRODUCCIÓN
 
-Existen **dos vías vivas** y ninguna eliminada:
+1. **Capacitor** (`android/`, vía gradle): **canónica**. Plugins, storage
+   persistente, camino a ads/integraciones futuras. `tools/build-web.sh` →
+   `www/` → `npx cap sync` → gradle.
+2. **WebView mínima sin gradle** (`tools/webview/build.sh`): aapt2+d8+apksigner.
+   Sobrevive SOLO como smoke/debug rápido si aporta valor y no diverge.
 
-1. **Capacitor** (`android/`, vía gradle): plugins, storage persistente, camino
-   a ads futuros. Es la que el `package.json` declara (`@capacitor/*`).
-2. **WebView mínima sin gradle** (`tools/webview/build.sh`): aapt2+d8+apksigner,
-   APK de prueba rápida sin toolchain completo.
-
-3. **TWA/PWA** (recomendada en este README antiguamente): APK mínima que abre
-   la URL en Chrome; NO está implementada y no hay decisión humana que la
-   elija. No se declara plan canónico.
-
-El humano debe elegir UNA antes de la primera release. Hasta entonces ambas
-conviven y ninguna se borra.
+TWA/PWA: descartada, no implementada. La web runtime es única; Android es una
+cáscara delgada y nunca reescribe gameplay.
 
 </div>
 
@@ -109,7 +104,7 @@ versionan — regla §3. Para capturar estados: puppeteer headless con
 - **7 bots con identidad de operador** (paleta de traje propia + 3 siluetas
   modulares sobre el mismo rig: casco / hombreras / mochila en el color `gear`
   del operador; equipo = visor + banda, nunca el traje teñido) que usan el GLB
-  de soldado animado si carga (fallback blocky automático con 7 outfits
+  de soldado animado si carga (PRIMITIVE FALLBACK automático con 7 outfits
   propios), navegación con occupancy grid + A* (`src/bots/Navigation.js`):
   rodean obstáculos, memoria corta del último enemigo, separación,
   **distancia táctica según el arma en la mano** (tabla `WEAPON_RANGE` en
@@ -120,7 +115,7 @@ versionan — regla §3. Para capturar estados: puppeteer headless con
 - **4 armas (rifle, pistola, escopeta, SMG) con modelos GLB de Kenney (CC0,
   ver `assets/models/weapons/LICENSE-kenney.txt`)**, viewmodel en primera
   persona con brazos agarrando el arma, siluetas y sonidos propios, retroceso,
-  recarga y cambio animados; fallback blocky si el GLB falla
+  recarga y cambio animados; PRIMITIVE FALLBACK si el GLB falla
 - **Aim assist tipo levantar-mira**: fricción moderada cerca del torso (sin
   snap), aplicada UNA VEZ sobre la dirección base ANTES del spread — mueve el
   centro del patrón y jamás comprime el de la escopeta; la cabeza es
@@ -150,7 +145,7 @@ versionan — regla §3. Para capturar estados: puppeteer headless con
 - **Skins de armas cosméticas y GRATIS**: se eligen en el lobby (persistente
   en localStorage); el oro del Clash Squad solo compra armas
 - **Lobby de estudio**: héroe 3D encuadrado por Box3 (completo, ~68% de altura,
-  testeado) **con arma GLB real** (el blocky solo existe mientras carga o si
+  testeado) **con arma GLB real** (el PRIMITIVE FALLBACK solo existe mientras carga o si
   el asset falla), pedestal, luces de estudio, CTA JUGAR dominante, selector
   de modo y de skin de armas, estadísticas locales y panel de configuración
 
@@ -182,7 +177,7 @@ src/ui/HUD.js                  HUD, kill feed, banners y daño direccional
 src/ui/Lobby.js                escena 3D del lobby (héroe, pedestal, luces)
 src/ui/WeaponIcons.js          iconos de armas de la tienda (render GLB offscreen)
 src/audio/AudioManager.js      samples (CC0/CC-BY) + fallback procedural
-src/characters/SoldierAvatar.js  soldado GLB animado + fallback blocky
+src/characters/SoldierAvatar.js  soldado GLB animado + PRIMITIVE FALLBACK
 src/testing/suite.js           suite ?runTests=1 (todos en verde, obligatorio)
 src/testing/capture.js         harness ?capture= (auditoría visual)
 ```

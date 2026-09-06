@@ -196,6 +196,44 @@ export class HUD {
     }
   }
 
+  // ── ESPECTADOR (Duelo de Escuadras) ──
+  // Ojo: _specShown vive en HUD (dueño del DOM); el estado del espectador
+  // (a quién se espectea) vive en Game. hideSpectate limpia TODO lo visual.
+  showSpectate(name) {
+    let el = document.getElementById('spectate-banner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'spectate-banner';
+      el.innerHTML = '<b>ESPECTANDO</b><span id="spectate-name"></span>' +
+        '<div class="spec-nav"><button id="spec-prev" aria-label="Compañero anterior">‹</button>' +
+        '<button id="spec-next" aria-label="Compañero siguiente">›</button></div>';
+      document.getElementById('hud').appendChild(el);
+      // Botones móviles ‹ › (PC usa Q/E o flechas): solo PIDEN el cambio.
+      document.getElementById('spec-prev').addEventListener('click', () => {
+        if (this._gameRef && this._gameRef._spectating) this._gameRef._specWish = -1;
+      });
+      document.getElementById('spec-next').addEventListener('click', () => {
+        if (this._gameRef && this._gameRef._spectating) this._gameRef._specWish = 1;
+      });
+    }
+    el.querySelector('#spectate-name').textContent = name || '';
+    el.classList.add('show');
+    this._specShown = true;
+  }
+
+  hideSpectate() {
+    const el = document.getElementById('spectate-banner');
+    if (el) el.classList.remove('show');
+    this._specShown = false;
+  }
+
+  // Muerto en escuadras: el HUD de vida/arma del jugador muerto desaparece
+  // (arma/manos ya no existen); el marcador de rondas y el tiempo siguen.
+  showPlayerDeadHud(dead) {
+    const hb = document.getElementById('hud-bottom');
+    if (hb) hb.classList.toggle('spectator-hidden', !!dead);
+  }
+
   update({ score, timeLeft, health, ammo, kills, deaths, fps, pos, botCount, weaponName, leader }) {
     if (this.leaderEl) this.leaderEl.textContent = leader !== undefined ? leader : (this.leaderEl.textContent || '0');
     if (this.timerEl) {
@@ -234,12 +272,16 @@ export class HUD {
     }
   }
 
-  showKill(killer, victim, isHeadshot) {
+  // Killfeed: NOMBRE → NOMBRE con glifo del arma + marca compacta de
+  // headshot. Nombres SIEMPRE player-facing (Game._displayName los filtra).
+  showKill(killer, victim, isHeadshot, weaponKey) {
     if (!this.killfeedEl) return;
     const entry = document.createElement('div');
-    entry.className = 'kill-entry';
-    entry.textContent = `${killer} ${isHeadshot ? '◉' : '→'} ${victim}`;
-    if (isHeadshot) entry.style.borderLeftColor = '#ff4444';
+    entry.className = 'kill-entry' + (isHeadshot ? ' hs' : '');
+    const GLYPH = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
+    entry.innerHTML =
+      `<b>${killer}</b><i class="kf-weapon">${GLYPH[weaponKey] || '→'}</i>` +
+      `<i class="kf-hs" style="display:${isHeadshot ? '' : 'none'}">◉</i><b>${victim}</b>`;
     this.killfeedEl.appendChild(entry);
     setTimeout(()=> {
       entry.style.opacity = '0';

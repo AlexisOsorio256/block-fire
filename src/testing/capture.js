@@ -2,6 +2,7 @@
 // Herramienta de auditoría visual (reglas §8): pone el juego en la situación
 // pedida para fotografiarlo siempre desde la misma situación.
 import * as THREE from '../lib/three.module.js';
+import { controlLayout } from '../core/ControlLayout.js';
 
 export function setupCapture(game, mode) {
   setTimeout(()=>{
@@ -23,6 +24,36 @@ export function setupCapture(game, mode) {
       // compra dejaba capturas "atrapadas en la tienda" (auditoría visual).
       game.phaseTime = 0.05;
       }
+    if(mode==='cfgpanel'){
+      // Frente EDITOR DE CONTROLES: estado 1 — panel de configuración abierto
+      // (con el botón EDITAR CONTROLES) sobre el lobby.
+      document.getElementById('config-panel').classList.remove('hidden');
+    }
+    if(mode==='ctrledit'){
+      // Estado 2 — modo edición ACTIVO con un control seleccionado: el panel
+      // de configuración se aparta, HUD del editor visible, FUEGO seleccionado
+      // (tamaño y opacidad no-default para VER que los sliders aplican).
+      game.input.setEditMode(true);
+      controlLayout.apply();
+      controlLayout.select('btn-fire');
+      controlLayout.setSelectedScale(1.5);
+      controlLayout.setSelectedOpacity(0.7);
+      controlLayout.apply(); // 2ª pasada: los px se derivan del tamaño FINAL
+      controlLayout._syncPanel();
+      console.log('[CAPDBG]', JSON.stringify({
+        sel: controlLayout.selectedId,
+        fire: controlLayout.get('btn-fire'),
+        rect: (() => { const r = document.getElementById('btn-fire').getBoundingClientRect(); return [r.left, r.top, r.width]; })(),
+        inlineScale: document.getElementById('btn-fire').style.getPropertyValue('--ctl-scale'),
+        transform: getComputedStyle(document.getElementById('btn-fire')).transform,
+      }));
+      const hint = document.querySelector('#ce-hint');
+      if (hint) hint.textContent = 'SELECCIONADO: FUEGO — arrastra para moverlo';
+      // El JUGAR del lobby no participa de este estado: lo bajamos de opacidad
+      // NO — mejor: ocultar el overlay como en partida real (el editor flota
+      // sobre el gameplay/escenario, que es el contexto real de uso).
+      document.getElementById('overlay').classList.add('hidden');
+    }
     if(mode==='probe' || mode==='combatprobe'){
       // SONDA NUMÉRICA (cero imágenes): pose de cámara del lobby + raycast
       // cámara→pecho del héroe contra TODA la escena. Identifica QUÉ objeto

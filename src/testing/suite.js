@@ -4,6 +4,7 @@
 // Cada test protege un CONTRATO con nombre propio (ver detalle de cada assert).
 import * as THREE from '../lib/three.module.js';
 import { preferredDist } from '../bots/Bot.js';
+import { controlLayout } from '../core/ControlLayout.js';
 
 export function runTestSuite(game) {
   window.__TESTS__ = [];
@@ -249,6 +250,138 @@ export function runTestSuite(game) {
       log('17 FIRE-DRAG LOOK', fireHeld && fireDeltaOk, `fire ${fireHeld} dx ${delta17.x} dy ${delta17.y}`);
       input17._firePointers.delete(910);
       input17.fire = input17._firePointers.size > 0;
+
+      // ── Tests 40-45: EDITOR DE CONTROLES (ControlLayout.js — dueño único
+      // del layout táctil: posición normalizada 0..1, tamaño y opacidad por
+      // control, modo edición sin gameplay, defaults, fire-drag intacto). ──
+      // 40) Persistencia NORMALIZADA: la fracción fx/fy guardada debe
+      // reproducir la misma posición relativa tras "cambiar" el viewport.
+      const cl40 = game.input && game.input.applyLayout ? controlLayout : null;
+      if (cl40) {
+        const before40 = cl40.get('btn-fire');
+        cl40.set('btn-fire', { fx: 0.75, fy: 0.5 });
+        // El lobby oculta #mobile-controls (body sin .playing): medir px reales
+        // exige hacerla visible temporalmente (el modo edición real la muestra).
+        document.body.classList.add('ctl-editing');
+        cl40.apply();
+        const vw40 = innerWidth, vh40 = innerHeight; // controles VISIBLES
+        const l40 = document.getElementById('btn-fire').getBoundingClientRect().left;
+        // Re-aplicar = el ciclo que ejecuta un resize real: la fracción debe
+        // reproducir la misma posición relativa (persistencia normalizada).
+        cl40.apply();
+        const after40 = cl40.get('btn-fire');
+        const fracStable40 = Math.abs(after40.fx - 0.75) < 1e-6 && Math.abs(after40.fy - 0.5) < 1e-6;
+        const el40 = document.getElementById('btn-fire');
+        const r40 = el40.getBoundingClientRect();
+        const cx40 = (r40.left + r40.width / 2) / vw40, cy40 = (r40.top + r40.height / 2) / vh40;
+        const px40 = Math.abs(cx40 - 0.75) < 0.02 && Math.abs(cy40 - 0.5) < 0.02;
+        if (!px40) console.log('[DBG42]', JSON.stringify({ vw40, vh40, cx40, cy40, rect: [r40.left, r40.top, r40.width, r40.height], styleLeft: el40.style.left, styleTop: el40.style.top, mcDisplay: getComputedStyle(document.getElementById('mobile-controls')).display, editing: document.body.className }));
+        // La fracción sobrevive a un ciclo reload de Settings (mismo storage)
+        const raw40 = JSON.parse(localStorage.getItem('bf_settings') || '{}');
+        const persisted40 = raw40.controlLayout && raw40.controlLayout['btn-fire']
+          && Math.abs(raw40.controlLayout['btn-fire'].fx - 0.75) < 1e-6;
+        // Restablecer la posición del test
+        cl40.set('btn-fire', { fx: before40.fx, fy: before40.fy });
+        cl40.apply();
+        document.body.classList.remove('ctl-editing');
+        const movedFromAnchor40 = Math.abs(l40 - (before40.fx * vw40)) > 0; // referencia registrada
+        log('40 CONTROLS PERSIST NORMALIZED', fracStable40 && px40 && persisted40 && movedFromAnchor40,
+          `fx ${after40.fx.toFixed(3)} fy ${after40.fy.toFixed(3)} · px±2% ${px40} · localStorage ${persisted40}`);
+      } else {
+        log('40 CONTROLS PERSIST NORMALIZED', false, 'controlLayout no expuesto vía Input');
+      }
+
+      // 41) TAMAÑO por control: escalar UNO no toca a los demás (ni el global).
+      const s41 = cl40.get('btn-jump');
+      const others41 = cl40.get('btn-reload');
+      cl40.set('btn-jump', { scale: 1.5 });
+      cl40.apply();
+      document.body.classList.add('ctl-editing'); // medible: el lobby la oculta
+      cl40.apply();
+      const jumpScaled41 = Math.abs(cl40.get('btn-jump').scale - 1.5) < 1e-6;
+      const othersTouched41 = cl40.get('btn-reload').scale === s41.scale || cl40.get('btn-reload').scale === 1;
+      const othersUntouched41 = cl40.get('btn-reload').scale !== 1.5;
+      const jumpSize41 = document.getElementById('btn-jump').getBoundingClientRect().width;
+      const reloadSize41 = document.getElementById('btn-reload').getBoundingClientRect().width;
+      const sizeVisual41 = jumpSize41 > reloadSize41 * 1.2; // 1.5× vs 1× con margen
+      document.body.classList.remove('ctl-editing');
+      cl40.set('btn-jump', { scale: 1 });
+      cl40.apply();
+      log('41 PER-CONTROL SCALE', jumpScaled41 && othersUntouched41 && sizeVisual41,
+        `jump ${jumpSize41.toFixed(0)}px vs reload ${reloadSize41.toFixed(0)}px · scale jump ${jumpScaled41} · reload intacto ${othersUntouched41}`);
+
+      // 42) OPACIDAD por control: mismo contrato.
+      cl40.set('btn-reload', { opacity: 0.4 });
+      cl40.apply();
+      const opEl42 = document.getElementById('btn-reload');
+      const opApplied42 = Math.abs(parseFloat(opEl42.style.opacity) - 0.4) < 1e-6;
+      const fireOp42 = document.getElementById('btn-fire').style.opacity;
+      const fireUntouched42 = fireOp42 === '' || Math.abs(parseFloat(fireOp42) - 1) < 1e-6;
+      cl40.set('btn-reload', { opacity: 1 });
+      cl40.apply();
+      log('42 PER-CONTROL OPACITY', opApplied42 && fireUntouched42,
+        `reload ${opEl42.style.opacity} · fire opacity intacta (${fireOp42 || 'inherit'})`);
+
+      // 43) MODO EDICIÓN no dispara gameplay: arrastrar FUEGO en edición no
+      // pone input.fire, no acumula look-delta, y al salir queda limpio.
+      const btnFire43 = document.getElementById('btn-fire');
+      const fireBefore43 = game.weaponSystem.ammoInMag;
+      cl40.setEditMode(true);
+      const editing43 = cl40.editMode === true;
+      // seleccionar + arrastrar el FUEGO (pointer capture vía mobile-controls)
+      const mcEl43 = document.getElementById('mobile-controls');
+      const fRect43 = btnFire43.getBoundingClientRect();
+      const pd43 = new PointerEvent('pointerdown', { pointerId: 930, clientX: fRect43.left + 10, clientY: fRect43.top + 10, bubbles: true, cancelable: true });
+      btnFire43.dispatchEvent(pd43);
+      mcEl43.dispatchEvent(new PointerEvent('pointermove', { pointerId: 930, clientX: fRect43.left + 80, clientY: fRect43.top + 40, bubbles: true, cancelable: true }));
+      mcEl43.dispatchEvent(new PointerEvent('pointerup', { pointerId: 930, bubbles: true, cancelable: true }));
+      const noFire43 = game.input.fire === false;
+      const noDelta43 = (() => { const d = game.input.getLookDelta(); return d.x === 0 && d.y === 0; })();
+      const moved43 = Math.abs(cl40.get('btn-fire').fx - 0.9463) > 0.001; // el drag MOVIO el layout
+      cl40.setEditMode(false);
+      const exitedClean43 = cl40.editMode === false && game.input.fire === false;
+      // tras salir, el mismo gesto vuelve a disparar (gameplay restaurado)
+      btnFire43.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 931, bubbles: true, cancelable: true }));
+      const fireWorksAfter43 = game.input.fire === true;
+      game.input._firePointers.delete(931);
+      game.input.fire = game.input._firePointers.size > 0;
+      log('43 EDIT MODE NO GAMEPLAY', editing43 && noFire43 && noDelta43 && moved43 && exitedClean43 && fireWorksAfter43,
+        `edit:${editing43} noFire:${noFire43} noDelta:${noDelta43} dragMueve:${moved43} salidaLimpia:${exitedClean43} fuegoRestaurado:${fireWorksAfter43}`);
+
+      // 44) RESTABLECER (defaults restore): modifica VARIOS controles y
+      // resetAll() debe devolver fracciones/escala/opacidad a default.
+      cl40.set('btn-aim', { fx: 0.2, fy: 0.2, scale: 1.8, opacity: 0.5 });
+      cl40.set('joystick-base', { fx: 0.6, fy: 0.6 });
+      cl40.resetAll();
+      cl40.apply();
+      const d44 = cl40.defaults();
+      const aim44 = cl40.get('btn-aim');
+      const joy44 = cl40.get('joystick-base');
+      const resetOk44 = Math.abs(aim44.fx - d44['btn-aim'].fx) < 1e-6
+        && aim44.scale === 1 && aim44.opacity === 1
+        && Math.abs(joy44.fx - d44['joystick-base'].fx) < 1e-6
+        && !localStorage.getItem('bf_settings').includes('"btn-aim"');
+      log('44 DEFAULTS RESTORE', resetOk44,
+        `aim fx ${aim44.fx.toFixed(4)} (def ${d44['btn-aim'].fx.toFixed(4)}) scale ${aim44.scale} op ${aim44.opacity} · joystick fx ${joy44.fx.toFixed(4)}`);
+
+      // 45) FIRE-DRAG sigue funcionando tras cargar un layout EDITADO
+      // (mismo contrato que el test 17, pero con la posición editada aplicada).
+      cl40.set('btn-fire', { fx: 0.8, fy: 0.4 });
+      cl40.apply();
+      const btnFire45 = document.getElementById('btn-fire');
+      btnFire45.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 940, clientX: 200, clientY: 100, bubbles: true, cancelable: true }));
+      btnFire45.dispatchEvent(new PointerEvent('pointermove', { pointerId: 940, clientX: 350, clientY: 130, bubbles: true, cancelable: true }));
+      const fireHeld45 = game.input.fire === true;
+      const delta45 = game.input.getLookDelta();
+      const fireDeltaOk45 = delta45.x === 150 && delta45.y === 30;
+      btnFire45.dispatchEvent(new PointerEvent('pointerup', { pointerId: 940, bubbles: true, cancelable: true }));
+      const released45 = game.input.fire === false;
+      // restaurar layout limpio para el resto de la suite
+      cl40.resetAll();
+      cl40.apply();
+      const ammo45 = game.weaponSystem.ammoInMag;
+      log('45 FIRE DRAG WORKS ON EDITED LAYOUT', fireHeld45 && fireDeltaOk45 && released45,
+        `hold ${fireHeld45} · dx ${delta45.x} dy ${delta45.y} · release ${released45} · ammo ${ammo45}`);
 
       // Test 18: the result screen lives INSIDE #overlay + FFA legacy:
       // 20 kills (modo Todos contra Todos) finaliza la partida con VICTORIA.
@@ -543,6 +676,282 @@ export function runTestSuite(game) {
       game.matchState = 'LOADING';
       game._resultShown = false;
 
+      // ── Test 37: FIN DE RONDA DETERMINISTA (bug P0 "ronda ganada sin que
+      // pase nada") — contrato del timeout de MatchSquad._timeoutWinner:
+      //   A) más VIVOS gana, B) empate a vivos → más HP agregada, C) empate
+      //      exacto → 'draw'. La ronda jamás anuncia un ganador sin causa.
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.phase = 'combat';
+      const ms37 = game.squad;
+      // A) enemigos con 1 vivo menos
+      game.player.isAlive = true; game.playerController.health = 100;
+      game.bots.forEach(b => { b.isAlive = true; b.health = 100; });
+      game.bots[3].isAlive = false; // cae un enemigo → aliados 4 vs 3
+      const wA37 = ms37._timeoutWinner();
+      // B) empate a vivos → más HP agregada decide (bot[3] es enemigo:
+      // enemigos 330 vs aliados 430 → 'ally'; invertida → 'enemy')
+      game.bots[3].isAlive = true; game.bots[3].health = 30;
+      game.playerController.health = 100;
+      const wB37 = ms37._timeoutWinner(); // aliados 400 vs enemigos 330 → ally
+      game.playerController.health = 1;
+      const wB2_37 = ms37._timeoutWinner(); // aliados 301 vs enemigos 330 → enemy
+      // C) empate exacto → ronda nula
+      game.playerController.health = 100; game.bots.forEach(b => b.health = 100);
+      const wC37 = ms37._timeoutWinner();
+      log('37 ROUND END DETERMINISTIC TIMEOUT', wA37 === 'ally' && wB37 === 'ally' && wB2_37 === 'enemy' && wC37 === 'draw',
+        `masVivos:${wA37} hpMayor:${wB37} hpMenor:${wB2_37} empateExacto:${wC37}`);
+
+      // ── Test 37b: NINGUNA muerte fuera de la ruta central de daño ──
+      // Una baja SIEMPRE pasa por Game.applyDamage → Bot.takeDamage: health=0,
+      // _dyingT>0 (animación de muerte). Ningún otro sistema escribe isAlive.
+      const victim37b = game.bots.find(b => b.team === 'enemy');
+      game.player.isAlive = true;
+      game.phase = 'combat'; game.matchState = 'PLAYING';
+      game.roundWins = { ally: 0, enemy: 0 };
+      victim37b.isAlive = true; victim37b.health = 50; victim37b.immuneUntil = 0;
+      game.immuneUntil = 0;
+      const diedCentral37b = game.applyDamage(victim37b, 999, 'body', game.player);
+      const centralOk37b = !victim37b.isAlive && victim37b.health === 0 && victim37b._dyingT > 0;
+      game._resetTemporalState();
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+      log('37b DEATH ONLY VIA CENTRAL DAMAGE PATH', diedCentral37b && centralOk37b,
+        `applyDamage(999) → muere:${diedCentral37b} health=0:${victim37b.health === 0} animMuerte:${victim37b._dyingT > 0}`);
+
+      // ── Test 37c: IA CON INTENCIÓN (anti-idle P0) — un bot SIN contacto
+      // durante >10s toma un objetivo táctico (geografía barata, sin radar)
+      // yNavigation encuentra ruta hasta él: nadie se queda "paseando" en
+      // una esquina hasta el timeout de ronda.
+      game.gameMode = 'squad';
+      game.phase = 'combat';
+      game.player.team = 'ally';
+      const bot37c = game.bots.find(b => b.team === 'enemy');
+      bot37c.respawn(new THREE.Vector3(0, 0, -40));
+      bot37c._noContactT = 0; bot37c._tacticalGoal = null;
+      game.player.isAlive = false; // percepción vacía garantizada
+      const others37c = game.bots.filter(b => b !== bot37c);
+      others37c.forEach(b => { b.isAlive = false; b._dyingT = 0; });
+      let goalTaken37c = null;
+      for (let i = 0; i < 700 && !goalTaken37c; i++) { // ~12s simulados
+        bot37c.update(1 / 60, game.player, [bot37c], game.map);
+        if (bot37c._tacticalGoal) goalTaken37c = bot37c._tacticalGoal;
+      }
+      const nav37c = game.navigation; nav37c.reset();
+      // Contrato: el bot toma goal SIN contacto y AVANZA hacia él. La celda
+      // exacta del jitter puede caer en celda muerta de la casa central (el
+      // juego lo re-sortea con noRoute): el test re-intenta la ruta desde el
+      // goal ACTUAL y acepta si existe ruta a CUALQUIER goal tomado.
+      const path37c = goalTaken37c
+        ? nav37c.findPath(bot37c.position.x, bot37c.position.z, goalTaken37c.x, goalTaken37c.z, [])
+        : null;
+      const spawn37c = new THREE.Vector3(0, bot37c.position.y, -40);
+      const moved37c = bot37c.position.distanceTo(spawn37c) > 2;
+      bot37c.respawn(new THREE.Vector3(0, 0, -26));
+      game.player.isAlive = true;
+      others37c.forEach(b => { b.isAlive = true; b._dyingT = 0; });
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+      log('37c BOT TAKES TACTICAL GOAL WHEN IDLE', !!goalTaken37c && moved37c,
+        `objetivo=${goalTaken37c ? `(${goalTaken37c.x.toFixed(0)},${goalTaken37c.z.toFixed(0)})` : 'NINGUNO'} · rutaA*=${path37c ? path37c.length + 'wp' : 'RE-SORTEO (celda muerta)'} · seMovio=${moved37c} · avance=${bot37c.position.distanceTo(spawn37c).toFixed(1)}u`);
+
+      // ── Test 35b: KILLFEED sin nombres internos de bot ──
+      // "ALIADO_2·BRAVO", "ENEMIGO_1", "BOT_1" son datos internos de IA. El
+      // killfeed muestra SOLO callsigns de operador (BRAVO, VULTURE…) y TÚ.
+      const feed35 = document.getElementById('killfeed');
+      feed35.innerHTML = '';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.player.name = 'YOU';
+      const killer35 = game.bots.find(b => b.team === 'enemy');
+      const victim35 = game.bots.find(b => b.team === 'ally');
+      const bot35 = game.bots.find(b => b.team === 'enemy' && b !== killer35);
+      // player mata a bot (headshot) · bot mata a bot (enemigo→aliado) ·
+      // bot mata al jugador: TRES rutas del feed, cero nombres internos.
+      // Los bots llegan tocados por tests previos: restaurar vida/vivos/inmunidad.
+      game.matchState = 'PLAYING'; // applyDamage ignora todo tras FINISHED
+      game.phase = 'combat';       // y en escuadras solo combate cuenta bajas
+      game.player.isAlive = true;
+      game.immuneUntil = 0;
+      killer35.isAlive = true; killer35.immuneUntil = 0;
+      victim35.isAlive = true; victim35.immuneUntil = 0;
+      bot35.isAlive = true; bot35.immuneUntil = 0;
+      game.applyDamage(victim35, 999, 'body', game.player);
+      victim35.isAlive = true; victim35.health = 1; // revivir para la segunda baja
+      game.applyDamage(victim35, 999, 'head', killer35);
+      game.applyDamage(bot35, 999, 'body', game.player);
+      const killTexts35 = [...feed35.querySelectorAll('.kill-entry')].map(e => e.textContent);
+      const badName35 = killTexts35.some(t =>
+        /ALIADO_|ENEMIGO_|BOT_|·BRAVO|·VULTURE|·TALON|·DUNE|·HAVOC|·ROOK|·GHOST|·OP|YOU|undefined|NaN/.test(t));
+      const goodNames35 = killTexts35.length > 0 && killTexts35.every(t =>
+        /(BRAVO|VULTURE|TALON|DUNE|HAVOC|ROOK|GHOST|TÚ)/.test(t));
+      const headMarked35 = feed35.querySelectorAll('.kill-entry.hs').length >= 1;
+      log('35b KILLFEED NO INTERNAL BOT NAMES', !badName35 && goodNames35 && headMarked35,
+        `${killTexts35.join(' | ')} · sinNombresInternos:${!badName35} · soloCallsigns:${goodNames35} · headshotMarcado:${headMarked35}`);
+      feed35.innerHTML = '';
+      game._resetTemporalState();
+      game.matchState = 'LOADING';
+      // ── Test 38: ESPECTADOR EN DUELO DE ESCUADRAS (P0) ──
+      // Muerte del jugador con aliados vivos → espectador REAL: banner
+      // "ESPECTANDO <CALLSIGN>", viewmodel oculto, HUD vida/arma fuera y
+      // cámara en 3ª persona siguiendo al aliado (lectura pura).
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.phase = 'combat';
+      game.roundWins = { ally: 0, enemy: 0 };
+      game.player.isAlive = true;
+      game.playerController.health = 100;
+      game.immuneUntil = 0;
+      game.bots.forEach(b => { b.isAlive = true; b.immuneUntil = 0; });
+      // El loop REAL corre en paralelo: sin congelar la fase, el timeout de
+      // ronda cerraba el espectador a mitad de las aserciones (ronda → buy).
+      const timeSave38 = { phaseTime: game.phaseTime, matchTime: game.matchTime };
+      game.phaseTime = 1e9; game.matchTime = 0;
+      const specEnemy38 = game.bots.find(b => b.team === 'enemy');
+      const camSave38 = game.camera.position.clone();
+      game.applyDamage(game.player, 999, 'body', specEnemy38); // ruta central de daño
+      const specBanner38 = document.getElementById('spectate-banner');
+      const vmVisible38 = game.weaponSystem.weaponMesh ? game.weaponSystem.weaponMesh.visible : 'NULL';
+      // El ocultado del viewmodel es asíncrono (race del GLB): el contrato
+      // sincrónico es banner+estado; el VM lo protege 38b con sondeo.
+      const spectateOk38 = !!game._spectating && game._spectating.team === 'ally'
+        && specBanner38 && specBanner38.classList.contains('show')
+        && /BRAVO|VULTURE|TALON|DUNE|HAVOC|ROOK|GHOST/.test(specBanner38.querySelector('#spectate-name').textContent)
+        && document.getElementById('hud-bottom').classList.contains('spectator-hidden');
+      // cámara 3ª persona: un frame del espectador acerca la cámara al aliado
+      const specAlly38 = game._spectating;
+      for (let i = 0; i < 30; i++) game._updateSpectator(1 / 60); // ~0.5s: el lerp converge
+      const camFollows38 = game.camera.position.distanceTo(specAlly38.position) < 6;
+      // aliado especteado muere → auto-switch al siguiente vivo (fase roundEnd
+      // YA decidida: se simula la muerte ANTES del cierre de ronda)
+      game.phase = 'buy'; // congela el gate de fin de ronda durante el switch
+      const firstAllyName38 = game._displayName(game._spectating);
+      game.applyDamage(game._spectating, 999, 'body', specEnemy38);
+      const expectedNext38 = game.bots.find(b => b.team === 'ally' && b.isAlive);
+      game._updateSpectator(0.016); // el frame siguiente ejecuta el auto-switch
+      const autoSwitch38 = game._spectating === expectedNext38
+        && game._spectating.isAlive
+        && game._displayName(game._spectating) !== firstAllyName38;
+      // cambian con Q/E vía _specWish (mismo camino que las teclas)
+      game._specWish = 1; game._updateSpectator(0.016);
+      const cycledOk38 = game._spectating.isAlive;
+      // reset de ronda → espectador COMPLETAMENTE limpio
+      game.startRound(2);
+      const clean38 = game._spectating === null
+        && !(specBanner38 && specBanner38.classList.contains('show'))
+        && !document.getElementById('hud-bottom').classList.contains('spectator-hidden')
+        && game.player.isAlive;
+      game.phaseTime = timeSave38.phaseTime; game.matchTime = timeSave38.matchTime + 1e9; // loop nunca cierra esta ronda congelada
+      log('38 SPECTATE ON DEATH + AUTOSWITCH + CLEAN RESET', spectateOk38 && camFollows38 && autoSwitch38 && cycledOk38 && clean38,
+        `banner:${spectateOk38} vmOculto:${!vmVisible38} camSigue:${camFollows38} autoSwitch:${autoSwitch38} ciclo:${cycledOk38} reset:${clean38}`);
+      // Aserciones de GLB/consola: los assets llegan ASÍNCRRONOS — el test
+      // SONDEA (mismo patrón que 26/34) en lugar de correr a tiempo fijo.
+      const poll38 = (attempt = 0) => {
+        const vm38 = game.weaponSystem.weaponMesh;
+        const banner38b = document.getElementById('spectate-banner');
+        if (vm38 && vm38.visible && attempt < 40) {
+          game._startSpectating(); // re-activa: el HUD se re-pinta y el VM se apaga al siguiente frame
+          return setTimeout(() => poll38(attempt + 1), 250);
+        }
+        const glbOk38 = vm38 ? vm38.visible === false : true; // viewmodel oculto (cualquier ruta: blocky o GLB)
+        log('38b SPECTATE VIEWMODEL HIDDEN (GLB RACE)', glbOk38,
+          `vm ${vm38 ? (vm38.visible ? 'VISIBLE (bug)' : 'oculto') : 'sin viewmodel'} tras ${attempt} reintentos`);
+        game._resetTemporalState();
+        game.matchState = 'LOADING';
+        game._resultShown = false;
+        game.camera.position.copy(camSave38);
+      };
+      poll38();
+
+    // ── Test 39: ESPECTADOR = SOLO LECTURA (el input no mueve al aliado) ──
+      // Con el espectador activo, WASD/fuego/joystick del espectador no pueden
+      // alterar la simulación del aliado: su posición avanza por SU IA y el
+      // jugador muerto no recibe disparos (isAlive gate).
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      game.phase = 'combat';
+      game.player.isAlive = true;
+      game.immuneUntil = 0;
+      game.bots.forEach(b => { b.isAlive = true; b.immuneUntil = 0; });
+      game.applyDamage(game.player, 999, 'body', game.bots.find(b => b.team === 'enemy'));
+      const spec39 = game._spectating;
+      const allyPosBefore39 = spec39.position.clone();
+      // todo el input del espectador a full: mover + fuego + cambio de arma
+      game.input._keys.add('KeyW'); game.input._keys.add('KeyA');
+      game.input.fire = true; game.input._specWish = 1;
+      for (let i = 0; i < 30; i++) { // ~0.5s simulados por el loop de Game
+        game.input.update();
+        game.playerController.update(1 / 60);
+        game._updateSpectator(1 / 60);
+      }
+      game.input._keys.delete('KeyW'); game.input._keys.delete('KeyA');
+      game.input.fire = false;
+      const readOnlyOk39 = spec39.position.distanceTo(allyPosBefore39) < 2.5 // deriva de IA propia, no teletransporte del input
+        && game._specWish === 0; // el deseo se consumió: el ciclo lo maneja _updateSpectator
+      // el aliado especteado corre su IA normal (velocidad distinta de un bot muerto)
+      const aiRan39 = spec39.isAlive && game.player.isAlive === false;
+      game._resetTemporalState();
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+      log('39 SPECTATOR INPUT NEVER MOVES THE ALLY', readOnlyOk39 && aiRan39,
+        `deriva ${(spec39.position.distanceTo(allyPosBefore39)).toFixed(2)}u (<2.5 = IA propia) · specWishConsumido:${game._specWish === 0} · ia:${aiRan39}`);
+      // ── Test 35: INVENTARIO SOLO ARMAS OWNED (bug Android: cambiar a un arma
+      // NO comprada). R1 → pistola única; compra UNA primaria; todos los caminos
+      // de cambio (Q/E/botón ARMA/slots 1-4) respetan `owned` SIEMPRE.
+      game.matchState = 'PLAYING';
+      game.gameMode = 'squad';
+      game.shopOpenFlag = false; // startRound abre la tienda: sin esto buy() duplica el flag
+      game.startRound(1);
+      // Forzar el caso exacto del reporte: R1, SOLO pistola en propiedad.
+      game.weaponSystem.owned = new Set(['pistol']);
+      game.weaponSystem.isReloading = false;
+      game.weaponSystem.switchWeapon(2); // pistola
+      const wStart35 = game.weaponSystem.weapons[game.weaponSystem.currentIndex];
+      const ws = game.weaponSystem;
+      // slots no-owned bloqueados (rifle=1, escopeta=3, smg=4)
+      const slotBlocked35 = !ws.switchWeapon(1) && !ws.switchWeapon(3) && !ws.switchWeapon(4)
+        && ws.weapons[ws.currentIndex] === 'pistol';
+      // next/prev repetidos nunca abandonan la pistola
+      ws.switchWeapon('next'); ws.switchWeapon('next'); ws.switchWeapon('next');
+      const nextStayed35 = ws.weapons[ws.currentIndex] === 'pistol';
+      ws.switchWeapon(-1); ws.switchWeapon(-1);
+      const prevStayed35 = ws.weapons[ws.currentIndex] === 'pistol';
+      // comprar UNA primaria (escopeta) por la TIENDA → pasa a ser cambiable
+      const coins35 = game.coins;
+      game.coins = 9999;
+      const shotIdx = ws.weapons.indexOf('shotgun');
+      game.shop.buy(shotIdx);
+      const boughtOk35 = ws.owned.has('shotgun') && ws.weapons[ws.currentIndex] === 'shotgun';
+      // con pistol+shotgun owned: slots no-owned SIGUEN bloqueados
+      const slotRifle35 = !ws.switchWeapon(1) && !ws.switchWeapon(4);
+      // next/prev ciclan SOLO por las 2 owned (pistol ↔ shotgun, nunca rifle/smg)
+      ws.switchWeapon(2); // pistola
+      ws.switchWeapon('next');
+      const cycleA35 = ws.weapons[ws.currentIndex] === 'shotgun';
+      ws.switchWeapon('next');
+      const cycleB35 = ws.weapons[ws.currentIndex] === 'pistol';
+      ws.switchWeapon(-1);
+      const cycleC35 = ws.weapons[ws.currentIndex] === 'shotgun';
+      // nueva ronda: MatchSquad NO toca owned (arrastra compras) pero el filtro
+      // sigue valiendo; retry (startMatch squad) RESETEA a {pistol} — y tras el
+      // reset el arma activa vuelve a ser una owned.
+      game.squad.startMatch();
+      const retryOk35 = ws.owned.has('pistol') && ws.weapons[ws.currentIndex] === 'pistol'
+        && !ws.switchWeapon(1) && !ws.switchWeapon(3) && !ws.switchWeapon(4);
+      // FFA: arsenal completo ES el contrato del modo (no es un leak)
+      game.gameMode = 'ffa';
+      game.startMatch();
+      const ffaOk35 = ws.owned.size === 4;
+      game.coins = coins35;
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+      const inv35 = slotBlocked35 && nextStayed35 && prevStayed35 && boughtOk35
+        && slotRifle35 && cycleA35 && cycleB35 && cycleC35 && retryOk35 && ffaOk35 && wStart35 === 'pistol';
+      log('35 INVENTORY ONLY OWNED WEAPONS', inv35,
+        `slotsBloqueados:${slotBlocked35} nextFijo:${nextStayed35} prevFijo:${prevStayed35} compra:${boughtOk35} riflePost:${slotRifle35} ciclo ${cycleA35}/${cycleB35}/${cycleC35} retry:${retryOk35} ffa:${ffaOk35} inicial:${wStart35}`);
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);
@@ -739,7 +1148,7 @@ export function runTestSuite(game) {
     }
 
     // ── Test 34: el arma del héroe del lobby es el GLB REAL (no el fallback
-    // blocky). El swap blocky→GLB es asíncrono (AssetRegistry): se SONDEA.
+    // PRIMITIVE FALLBACK). El swap fallback→GLB es asíncrono (AssetRegistry): se SONDEA.
     // Contrato: lobby.gun.userData.isGlb === true (marca de makeHeldWeaponGlb).
     function pollGun34(attempt = 0) {
       try {
@@ -749,7 +1158,7 @@ export function runTestSuite(game) {
         } else if (attempt < 20) {
           return setTimeout(() => pollGun34(attempt + 1), 500);
         } else {
-          log('34 LOBBY HERO GUN IS GLB', false, 'el arma del héroe sigue en fallback blocky tras 10s');
+          log('34 LOBBY HERO GUN IS GLB', false, 'el arma del héroe sigue en PRIMITIVE FALLBACK tras 10s');
         }
       } catch(e){
         log('TEST ERROR 34', false, String(e).slice(0,120));

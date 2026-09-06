@@ -31,9 +31,10 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
 
 /* Gameplay-only UI: HUD + touch controls render ONLY during a match.
    In the lobby they bled through the translucent overlay (and stayed
-   interactive underneath on touch devices). */
+   interactive underneath on touch devices). MODO EDICIÓN de controles es la
+   única excepción: se edita DESDE el lobby también (los tests la usan). */
 body:not(.playing) #hud,
-body:not(.playing) #mobile-controls{ display:none !important; }
+body:not(.playing):not(.ctl-editing) #mobile-controls{ display:none !important; }
 
 /* Mobile LANDSCAPE: short screen — health/ammo move to the TOP corners
    (row 1), score chip just below them (row 2); thumb controls keep the bottom */
@@ -66,6 +67,12 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #hitmarker i:nth-child(4){ right:2px; bottom:2px; transform:rotate(-45deg); }
 #killfeed{ position:fixed; top:60px; right:16px; z-index:5; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
 .kill-entry{ background: rgba(0,0,0,0.6); border-left:3px solid #ffd23f; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:800; color:#fff; animation: killIn 0.3s ease; transition: opacity 0.3s, transform 0.3s; }
+.kill-entry.hs{ border-left-color:#ff4444; }
+.kill-entry b{ letter-spacing:0.06em; }
+/* Glifo del arma entre nombres + headshot: punto rojo compacto (sin leer texto) */
+.kill-entry .kf-weapon{ font-style:normal; color:#ffd23f; margin:0 6px; opacity:0.9; }
+.kill-entry.hs .kf-weapon{ color:#ff7a6a; }
+.kill-entry .kf-hs{ font-style:normal; color:#ff4444; margin-right:5px; font-size:10px; }
 @keyframes killIn{ from{ transform:translateX(20px); opacity:0 } to{ transform:translateX(0); opacity:1 } }
 
 /* Damage vignette — REAL overlay over the canvas (body-paint was hidden
@@ -96,6 +103,22 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #death-overlay span{ font-size:42px; font-weight:900; letter-spacing:0.14em; color:#ff5a4a; text-shadow:0 0 24px rgba(255,40,30,0.6), 0 3px 0 rgba(0,0,0,0.8); }
 #death-overlay label{ font-size:12px; font-weight:800; letter-spacing:0.28em; color:rgba(255,255,255,0.75); }
 
+/* Espectador — banner discreto abajo-centro + navegación ‹ › (móvil) */
+#spectate-banner{ position:fixed; left:50%; bottom:12%; transform:translateX(-50%);
+  z-index:6; pointer-events:none; display:none; flex-direction:column; align-items:center; gap:4px;
+  background:rgba(8,12,22,0.72); border:1px solid rgba(255,255,255,0.14); border-radius:12px;
+  padding:8px 18px; backdrop-filter: blur(6px); }
+#spectate-banner.show{ display:flex; }
+#spectate-banner b{ font-size:10px; font-weight:900; letter-spacing:0.3em; color:#8fa4c8; }
+#spectate-banner #spectate-name{ font-size:18px; font-weight:900; letter-spacing:0.12em; color:#ffd23f; text-shadow:0 2px 0 rgba(0,0,0,0.85); }
+#spectate-banner .spec-nav{ display:flex; gap:26px; }
+#spectate-banner .spec-nav button{ pointer-events:auto; appearance:none; cursor:pointer;
+  width:34px; height:30px; border-radius:8px; border:1px solid rgba(255,255,255,0.18);
+  background:rgba(255,255,255,0.07); color:#fff; font-size:17px; font-weight:900; line-height:1; }
+#spectate-banner .spec-nav button:active{ background:rgba(255,210,63,0.2); }
+/* HUD del jugador muerto fuera (vida/arma); marcador de rondas y tiempo siguen */
+#hud-bottom.spectator-hidden{ display:none !important; }
+
 /* Kill banner — big, brief, celebratory */
 #killbanner{ position:fixed; left:50%; top:34%; transform:translate(-50%,-50%) scale(0.8); z-index:5; display:flex; flex-direction:column; align-items:center; gap:2px; opacity:0; pointer-events:none; }
 #killbanner .kb-title{ font-size:36px; font-weight:900; letter-spacing:0.08em; color:#ffd23f; text-shadow:0 0 22px rgba(255,180,0,0.7), 0 3px 0 rgba(0,0,0,0.85); }
@@ -122,16 +145,28 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 .dmg-num.kill{ color:#ff4444; font-size:23px; text-shadow:0 0 10px rgba(255,40,40,0.85), 0 2px 3px rgba(0,0,0,0.7); }
 
 /* Mobile controls */
-#mobile-controls{ position:fixed; inset:0; z-index:3; pointer-events:none; display:none;
-  --btn-scale:1; --btn-opacity:1; }
+#mobile-controls{ position:fixed; inset:0; z-index:3; pointer-events:none; display:none; }
 @media (pointer: coarse), (max-width: 900px){
-  #mobile-controls{ display:block; opacity:var(--btn-opacity); }
+  #mobile-controls{ display:block; }
 }
+/* Safe-area insets expuestas como custom properties: ControlLayout.js lee
+   estos valores para el clamp de posición (nada crítico bajo notch/barra). */
+:root{ --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px); }
 #joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:45%; pointer-events:auto; touch-action:none; }
-#joystick-base{ position:absolute; left:24px; bottom:24px; width:110px; height:110px; border-radius:50%; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); backdrop-filter: blur(6px); }
-#joystick-stick{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:48px; height:48px; border-radius:50%; background: rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.18); transition: transform 0.05s; }
+#joystick-base{ position:absolute; left:24px; bottom:24px; width:110px; height:110px; border-radius:50%; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); backdrop-filter: blur(6px); transform:scale(var(--ctl-scale,1)); }
+/* El STICK escala con su base: ControlLayout escribe --ctl-scale en el base
+   y el stick multiplica su tamaño (el transform del stick queda libre para
+   el desplazamiento del joystick en Input.js). */
+#joystick-stick{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:calc(48px * var(--ctl-scale,1)); height:calc(48px * var(--ctl-scale,1)); border-radius:50%; background: rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.18); transition: transform 0.05s; }
 #look-zone{ position:absolute; right:0; top:0; width:58%; height:100%; pointer-events:auto; touch-action:none; }
-#action-buttons{ position:absolute; right:16px; bottom:16px; display:flex; gap:10px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; max-width:220px; }
+#action-buttons{ position:absolute; right:16px; bottom:16px; display:flex; gap:10px; pointer-events:none; flex-wrap:wrap; justify-content:flex-end; max-width:220px; }
+/* Layout EDITABLE: cada botón (y el joystick) es posicionado por
+   ControlLayout.js (left/top absolutos en px, derivados de fracción 0..1);
+   el contenedor #action-buttons ya no posiciona nada — solo el wrap. */
+#action-buttons .action-btn{ position:absolute; left:auto; top:auto; }
+/* .action-btn: tamaño base 54px; ControlLayout escala con --ctl-scale */
+.action-btn{ position:relative; width:54px; height:54px; border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; transform:scale(var(--ctl-scale,1)); pointer-events:auto; }
 #btn-fullscreen{ position:absolute; top:10px; right:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; z-index:4; }
 #btn-fullscreen svg{ width:20px; height:20px; }
 #btn-fullscreen:active{ background: rgba(255,210,60,0.25); }
@@ -142,7 +177,7 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #btn-settings svg{ width:20px; height:20px; }
 #btn-settings:active{ background: rgba(255,210,60,0.25); transform:rotate(30deg); }
 
-.action-btn{ position:relative; width: calc(54px * var(--btn-scale)); height: calc(54px * var(--btn-scale)); border-radius:50%; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.38); color:#fff; backdrop-filter: blur(6px); touch-action:none; display:grid; place-items:center; padding:0; }
+.action-btn{ transform:scale(var(--ctl-scale,1)); }
 .action-btn svg{ width:56%; height:56%; pointer-events:none; }
 /* Self-explaining buttons: tiny label under each icon */
 .action-btn .lbl{ position:absolute; left:50%; bottom:-13px; transform:translateX(-50%); font-size:8px; font-weight:800; letter-spacing:0.08em; color:rgba(255,255,255,0.75); text-shadow:0 1px 2px rgba(0,0,0,0.9); pointer-events:none; white-space:nowrap; }
@@ -154,12 +189,50 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 /* Second fire button (left side) — only exists while ADS is latched.
    Placed ABOVE the joystick zone (not inside it): a button under the movement
    thumb steals drags — the index finger reaches it comfortably. */
-#action-buttons-left{ position:absolute; left:20px; bottom:190px; pointer-events:none; opacity:0; transform:translateY(8px); transition: opacity 0.18s ease, transform 0.18s ease; }
-#mobile-controls.aiming #action-buttons-left{ opacity:1; transform:translateY(0); pointer-events:auto; }
+#action-buttons-left{ position:absolute; left:20px; bottom:190px; pointer-events:none; opacity:0; transition: opacity 0.18s ease; }
+#mobile-controls.aiming #action-buttons-left{ opacity:1; pointer-events:none; }
+/* El 2º FUEGO lo posiciona ControlLayout como botón individual; su
+   visibilidad sigue ligada al latch de MIRA (siempre pointer-events:none:
+   el disparo de precisión real sale del fuego principal en dispositivos
+   reales; aquí vive como control secundario movible). */
+#mobile-controls.aiming #btn-fire-left{ opacity:inherit; }
 #btn-fire-left{ border-color:rgba(255,90,74,0.55); }
-/* Edit mode: dashed outlines + drag affordance */
+/* Edit mode: dashed outlines + drag affordance + control seleccionado.
+   ⚙/pantalla-completa son de PARTIDA: en el lobby (editor desde CONFIGURACIÓN)
+   sobran y se retiran para no confundir con los controles en edición. */
+body:not(.playing) #btn-settings, body:not(.playing) #btn-fullscreen{ display:none; }
+#mobile-controls.editing #btn-settings, #mobile-controls.editing #btn-fullscreen{ display:none; }
 #mobile-controls.editing .action-btn{ outline:2px dashed rgba(255,210,63,0.8); outline-offset:3px; cursor:move; }
+#mobile-controls.editing #joystick-base{ outline:2px dashed rgba(255,210,63,0.8); outline-offset:3px; cursor:move; }
 #mobile-controls.editing .zone-label{ color:#ffd23f; }
+.action-btn.ctl-selected, #mobile-controls.editing #joystick-base.ctl-selected{ outline:3px solid #4ade80 !important; outline-offset:3px; }
+/* ── Panel del editor de controles (ControlLayout.js) ──
+   HUD pequeño arriba-centro: título, hint, sliders del control seleccionado
+   y GUARDAR · RESTABLECER · SALIR. Vive DENTRO de #mobile-controls → hereda
+   pointer-events:auto (los controles tienen touch-action:none). */
+#ctl-editor{ position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:9;
+  pointer-events:auto; min-width:250px; max-width:min(430px, 90vw);
+  background:rgba(8,12,24,0.94); border:1px solid rgba(255,210,63,0.4); border-radius:12px;
+  padding:8px 12px 10px; box-shadow:0 8px 28px rgba(0,0,0,0.55); }
+#ctl-editor.hidden{ display:none !important; }
+#ctl-editor .ce-title{ font-size:11px; font-weight:900; letter-spacing:0.2em; color:#ffd23f; }
+#ctl-editor .ce-hint{ font-size:9.5px; font-weight:700; color:#9fb6e0; margin-top:2px; min-height:12px; }
+#ctl-editor .ce-row{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:4px 8px; margin-top:6px; }
+#ctl-editor .ce-row label{ font-size:9px; font-weight:900; letter-spacing:0.12em; color:#8fa4c8; }
+#ctl-editor .ce-row span{ display:flex; align-items:center; gap:8px; }
+#ctl-editor .ce-row output{ font-size:10px; font-weight:800; color:#fff; min-width:38px; text-align:right; }
+#ctl-editor input[type=range]{ flex:1; width:100%; appearance:none; height:6px; border-radius:3px; background:rgba(255,255,255,0.15); outline:none; }
+#ctl-editor input[type=range]::-webkit-slider-thumb{ appearance:none; width:16px; height:16px; border-radius:50%; background:#ffd23f; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.5); cursor:pointer; }
+#ctl-editor .ce-actions{ display:flex; gap:8px; margin-top:8px; }
+#ctl-editor .ce-actions button{ flex:1; appearance:none; cursor:pointer; pointer-events:auto; border:none;
+  font-size:10px; font-weight:900; letter-spacing:0.1em; padding:8px 0; border-radius:8px; }
+#ctl-editor #ce-save{ color:#06101e; background:linear-gradient(180deg,#ffd23f,#ffab00); box-shadow:0 2px 0 #8a5a00; }
+#ctl-editor #ce-reset{ color:#06101e; background:rgba(255,255,255,0.22); }
+#ctl-editor #ce-exit{ color:#e6eefc; background:rgba(255,90,74,0.2); border:1px solid rgba(255,90,74,0.5); }
+#ctl-editor .ce-actions button:active{ transform:translateY(1px); }
+/* En edición los botones NO muestran feedback de gameplay (no hay :active
+   amarillo: en edición el amarillo significa SELECCIÓN, no pulsación). */
+#mobile-controls.editing .action-btn:active{ transform:scale(var(--ctl-scale,1)); background:rgba(0,0,0,0.38); border-color:rgba(255,255,255,0.12); }
 /* Zone labels — the two halves explain themselves */
 .zone-label{ position:absolute; left:24px; bottom:150px; font-size:9px; font-weight:800; letter-spacing:0.22em; color:rgba(255,255,255,0.4); pointer-events:none; }
 .zone-label-right{ left:auto; right:22px; bottom:auto; top:18px; }
@@ -410,20 +483,29 @@ body.buying #mobile-controls{ opacity:0.25; pointer-events:none; }
 .shop-item span{ color:#ffd166; font-weight:700; }
 
 
-/* ── HUD de sistema: PAUSA + ARSENAL juntos arriba-derecha (no pegados a la esquina) ── */
-#btn-arsenal{ position:fixed; top:14px; right:150px; z-index:35; background:rgba(20,24,33,.8);
+/* ── HUD de sistema: ARSENAL arriba-derecha ── */
+#btn-arsenal{ position:fixed; top:14px; right:14px; z-index:35; background:rgba(20,24,33,.8);
   color:#ffd166; border:2px solid #ffd166; border-radius:10px; font-size:14px; font-weight:800;
   padding:9px 16px; cursor:pointer; display:none; letter-spacing:.5px; }
 body.playing #btn-arsenal{ display:block; }
 #btn-arsenal:active{ transform:scale(.94); }
-#btn-pause{ position:fixed; top:14px; right:14px; z-index:35; background:rgba(20,24,33,.8);
-  color:#fff; border:2px solid #5a6a8a; border-radius:10px; font-size:14px; font-weight:800;
-  padding:9px 14px; cursor:pointer; display:none; }
-body.playing #btn-pause{ display:block; }
-#btn-pause:active{ transform:scale(.94); }
 
-/* ═══ Botón abandonar ═══ */
-#btn-pause{ border-color:#ff5a4a; color:#ff8a7a; }
+/* ── ABANDONAR: zona destructiva DENTRO del panel de configuración ──
+   Solo existe en partida (body.playing); en el lobby no se renderiza. */
+#cfg-danger{ margin-top:14px; border-top:1px solid rgba(255,90,74,0.35); padding-top:10px; }
+#cfg-abandon{ width:100%; appearance:none; cursor:pointer; pointer-events:auto; border:1px solid rgba(255,90,74,0.6);
+  background:rgba(255,90,74,0.12); color:#ff8a7a; font-size:11px; font-weight:900; letter-spacing:0.14em;
+  padding:10px 0; border-radius:10px; }
+#cfg-abandon:active{ transform:translateY(1px); }
+/* En el lobby el abandono no existe: no hay partida que abandonar */
+body:not(.playing) #cfg-danger{ display:none; }
+/* Confirmación de dos pasos: nunca un toque accidental abandona */
+#cfg-abandon-confirm{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+#cfg-abandon-confirm span{ flex:1; font-size:11px; font-weight:800; color:#ffd23f; letter-spacing:0.04em; }
+#cfg-abandon-confirm button{ appearance:none; cursor:pointer; pointer-events:auto; border:none; font-size:10.5px;
+  font-weight:900; letter-spacing:0.08em; padding:9px 10px; border-radius:8px; }
+#cfg-abandon-yes{ background:#ff5a4a; color:#fff; box-shadow:0 2px 0 #8a2318; }
+#cfg-abandon-no{ background:rgba(255,255,255,0.18); color:#06101e; }
 
 /* ═══ Skins del lobby (loadout global, gratis) — coloreado de swatches ═══ */
 .ls-swatch[data-skin="oro"]{ background:linear-gradient(135deg,#ffe9a0,#c8952a); }
