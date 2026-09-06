@@ -1,8 +1,9 @@
 // Suite de tests de BLOCKFIRE — ?runTests=1
-// Regla del proyecto: suite en headless SIN BAJAR de 25/25 o el cambio no vale.
-// Cada test protege un fix con nombre propio (ver detalle de cada assert).
-// Estructura: síncronos 1-23 + test 13 asíncrono (ventana real de respawn).
+// Regla del proyecto: TODOS los tests actuales en verde (el número canónico lo
+// dicta la propia suite — prohibido hardcodear un literal tipo "25/25").
+// Cada test protege un CONTRATO con nombre propio (ver detalle de cada assert).
 import * as THREE from '../lib/three.module.js';
+import { preferredDist } from '../bots/Bot.js';
 
 export function runTestSuite(game) {
   window.__TESTS__ = [];
@@ -282,7 +283,7 @@ export function runTestSuite(game) {
       game.weaponSystem.switchWeapon(1);
       const accentBefore = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
       const pistolBefore = game.weaponSystem._weaponModels.pistol.userData.parts.accent.color.getHexString();
-      game.skinsFor = { oro: { name: 'Oro', price: 0, accent: 0xffc93f, dark: 0x8a6a1f } };
+      game.skinsFor = { oro: { name: 'Oro', accent: 0xffc93f, dark: 0x8a6a1f } };
       game.setGlobalSkin('oro');
       const accentAfter = game.weaponSystem._weaponModels.rifle.userData.parts.accent.color.getHexString();
       const pistolAfter = game.weaponSystem._weaponModels.pistol.userData.parts.accent.color.getHexString();
@@ -304,7 +305,7 @@ export function runTestSuite(game) {
       game.player.team = 'ally';
       game.startRound(1);
       // R1: tienda in-match SOLO armas + skins en el lobby
-      game.skinsFor = game.skinsFor || { oro: { name: 'Oro', price: 0, accent: 0xffc93f, dark: 0x8a6a1f } };
+      game.skinsFor = game.skinsFor || { oro: { name: 'Oro', accent: 0xffc93f, dark: 0x8a6a1f } };
       game._renderLobbySkins();
       const r1ok = !document.getElementById('bp-tab-skins')
         && document.getElementById('bp-grid').children.length > 0
@@ -443,49 +444,150 @@ export function runTestSuite(game) {
       game.matchState = 'LOADING';
       game._resultShown = false;
 
+      // ── Test 30: Navigation.reset(botId) — CONTRATO por bot ──
+      // La reubicación de UN bot no puede borrar las rutas del resto; el
+      // reset() global solo existe para inicio de ronda/partida (regla §4).
+      const nav30 = game.navigation;
+      const botA30 = game.bots[0], botB30 = game.bots[1];
+      nav30.reset();
+      nav30.nextWaypoint(botA30, 0, 30);    // crea ruta A
+      nav30.nextWaypoint(botB30, 0, -30);   // crea ruta B
+      const bothCached30 = !nav30.repathNeeded(botA30) && !nav30.repathNeeded(botB30);
+      nav30.reset(botB30.id);               // SOLO B
+      const onlyB30 = nav30.repathNeeded(botB30) && !nav30.repathNeeded(botA30);
+      nav30.reset();                        // global
+      const all30 = nav30.repathNeeded(botA30) && nav30.repathNeeded(botB30);
+      log('30 NAVIGATION RESET(botId) CONTRACT', bothCached30 && onlyB30 && all30,
+        `cache ${bothCached30} · soloB ${onlyB30} · global ${all30}`);
+
+      // ── Test 31: PERCEPCIÓN — enemigo a <8u DETRÁS DE UN MURO no se
+      // adquiere (los bots NO tienen wallhack de proximidad). Control: sin
+      // muro, la misma línea SÍ se adquiere (la percepción funciona).
+      game.gameMode = 'squad';
+      game.player.team = 'ally';
+      const bot31 = game.bots.find(b => b.team === 'enemy');
+      const bot31Start = bot31.position.clone();
+      bot31.isAlive = true; bot31.health = bot31.maxHealth;
+      game.player.isAlive = true;
+      game.player.position.set(30, 1.65, 30);
+      bot31.position.set(30, 1.65, 25); // a 5u — dentro del viejo radio <8
+      const cand31 = [bot31, game.player]; // ÚNICO candidato: el jugador
+      // muro 6×3×1 entre ambos (Map.js: cajas con mesh null son válidas)
+      game.map.boxes.push({ min: new THREE.Vector3(27, 0, 26.5), max: new THREE.Vector3(33, 3, 27.5), mesh: null, x: 30, y: 0, z: 27, w: 6, h: 3, d: 1 });
+      bot31.update(0.016, game.player, cand31, game.map);
+      const wallHack31 = bot31.target === game.player; // NO debe adquirirlo
+      game.map.boxes.pop();
+      bot31._lastSeen = null; // sin memoria: percepción pura
+      bot31.update(0.016, game.player, cand31, game.map);
+      const seesFine31 = bot31.target === game.player;
+      log('31 BOT NO WALLHACK THROUGH WALL', !wallHack31 && seesFine31,
+        `trasMuro ${wallHack31 ? 'ADQUIRIDO (BUG)' : 'ignorado'} · lineaAbierta ${seesFine31 ? 'adquirido' : 'PERDIDO'}`);
+      bot31.respawn(bot31Start);
+
+      // ── Test 32: RANGO TÁCTICO SEGÚN ARMA (contrato, no valores exactos):
+      // mismo rol → shotgun cierra < smg < rifle; y el rol MODULA (un entry
+      // con rifle cierra más que un anchor con rifle).
+      const role32 = { prefDist: 11, aggro: 1, react: 0.2, laneBias: 0 };
+      const dShot32 = preferredDist(role32, 'shotgun');
+      const dSmg32 = preferredDist(role32, 'smg');
+      const dRifle32 = preferredDist(role32, 'rifle');
+      const ordered32 = dShot32 < dSmg32 && dSmg32 < dRifle32;
+      const roleMod32 = preferredDist({ ...role32, prefDist: 7 }, 'rifle') < dRifle32;
+      log('32 WEAPON RANGE DRIVES ENGAGEMENT', ordered32 && roleMod32,
+        `shotgun ${dShot32.toFixed(1)} < smg ${dSmg32.toFixed(1)} < rifle ${dRifle32.toFixed(1)} · rolModula ${roleMod32}`);
+
+      // ── Test 33: SHOTGUN SPREAD IS NOT COLLAPSED BY AIM ASSIST ──
+      // La asistencia mueve el CENTRO del patrón (el rifle central acierta)
+      // pero NO comprime el patrón: las postas al EXTREMO del cono de spread
+      // (0.058 rad ≈ 0.87 m a 15 u) fallan aunque haya objetivo delante.
+      // Determinista: Math.random stubbeado a 1 (todas las postas al extremo).
+      game.gameMode = 'squad';
+      game.phase = 'combat';
+      game.player.team = 'ally';
+      const bot33 = game.bots.find(b => b.team === 'enemy');
+      bot33.isAlive = true; bot33.health = bot33.maxHealth; bot33.immuneUntil = 0;
+      const start33 = bot33.position.clone();
+      game.immuneUntil = 0;
+      const camSave33 = game.camera.position.clone();
+      const rotSave33 = { x: game.camera.rotation.x, y: game.camera.rotation.y, z: game.camera.rotation.z };
+      const touchSave33 = game._isTouchPlatform;
+      game._isTouchPlatform = true; // cono de touch: donde el colapso era visible
+      const eye33 = new THREE.Vector3(42, 1.65, 42);
+      bot33.position.set(42, 1.65, 27); // 15u: dentro del rango 16 de la escopeta
+      game.player.position.copy(eye33);
+      const fire33 = (weaponKey, randFn) => {
+        game.weaponSystem.owned.add(weaponKey);
+        game.weaponSystem.switchWeapon({ rifle: 1, pistol: 2, shotgun: 3, smg: 4 }[weaponKey]);
+        const realRandom = Math.random;
+        Math.random = randFn;
+        game.camera.position.copy(eye33);
+        game.camera.rotation.order = 'YXZ';
+        game.camera.rotation.set(Math.atan2((1.65 - 0.62) - 1.65, 15), 0, 0); // al pecho
+        game.camera.updateMatrixWorld();
+        game.weaponSystem.fireCooldown = 0;
+        const r = game.weaponSystem.fire(game.player, [bot33], game.map);
+        Math.random = realRandom;
+        return r;
+      };
+      const centerHits33 = (() => { const r = fire33('rifle', () => 0.5); return !!(r && r.hits.some(h => h.target === bot33)); })();
+      const extreme33 = fire33('shotgun', () => 1);
+      const patternKept33 = !!extreme33 && extreme33.hits.length === 0;
+      bot33.respawn(start33);
+      game._isTouchPlatform = touchSave33;
+      game.camera.position.copy(camSave33);
+      game.camera.rotation.set(rotSave33.x, rotSave33.y, rotSave33.z);
+      game.camera.updateMatrixWorld();
+      game.weaponSystem.switchWeapon(1);
+      log('33 SHOTGUN SPREAD NOT COLLAPSED BY ASSIST', centerHits33 && patternKept33,
+        `centroAsistido(rifle) ${centerHits33} · postasExtremas(shotgun) ${patternKept33 ? 'FALLAN (patrón intacto)' : 'ACIERTAN (patrón colapsado)'}`);
+      game.matchState = 'LOADING';
+      game._resultShown = false;
+
     } catch(e){
       log('TEST ERROR', false, String(e).slice(0,120));
       console.error(e);
     }
 
-    // Test 29: DECOR DEL MAPA DESACOPLADO DE LA COLISIÓN (slice visual).
-    // Protege el contrato de la capa MapDecor: existe en ambos modos, NO añade
-    // colliders (gameplay/navegación de bots intactos), es ESCASO en draw
-    // calls (horneado por material) y sus landmarks altos quedan SIN oclusión
-    // por colliders desde la base (legibilidad "¿dónde estoy?").
+    // Test 29: DECOR DEL MAPA — CONTRATOS (sin números mágicos: el mapa puede
+    // evolucionar; lo que se protege es el contrato visual/colisión, regla §9):
+    //   a) decor existe y va HORNEADA (pocas meshes deco, muchas geometrías)
+    //   b) NINGÚN mesh decorativo es un collider (la decoración puramente
+    //      visual no registra colisión por accidente)
+    //   c) los props SÓLIDOS a nivel de jugador SÍ registran collider simple:
+    //      bidón, pila de cajas, contenedor apilado y base de grúa bloquean
+    //   d) los spawns de escuadra siguen libres
+    //   e) la navegación sigue disponible de base a base (los props no rompen A*)
+    //   f) las torres faro de base (landmarks SIN collider propio, Map.js)
+    //      siguen visibles desde la base aliada
     try {
       game.matchState = 'PLAYING';
       game.gameMode = 'squad';
       game.player.team = 'ally';
       game.startRound(1);
       const m29 = game.map, d29 = m29.decor;
-      const nBoxes29 = m29.boxes.length;
       const decoMeshes29 = [];
       m29.scene.traverse(o => { if (o.isMesh && o.userData.deco) decoMeshes29.push(o); });
-      // 1) decor construida y horneada: POCOS meshes (bake por material) con
-      //    muchos draw-units de geometría (los merged tienen cientos de verts)
-      const hasDecor = !!d29 && decoMeshes29.length >= 15 && decoMeshes29.length < 120;
-      // 2) la decoración NO toca la colisión: los boxes del mapa son los mismos
-      //    que en una construcción sin decor (71 en squad, 55 en ffa) y NINGÚN
-      //    mesh decorativo es un collider.
-      const boxesStable = nBoxes29 === (m29.mode === 'squad' ? 71 : 55)
-        && decoMeshes29.every(mesh => !m29.boxes.some(b => b.mesh === mesh));
-      // 3) spawns intactos: los puntos de escuadra siguen libres (snapClear
-      //    del flujo real ya pasó en startRound sin correcciones de emergencia)
+      const hasDecor29 = !!d29 && decoMeshes29.length >= 15 && decoMeshes29.length < 120;
+      const noDecoCollider29 = decoMeshes29.every(mesh => !m29.boxes.some(b => b.mesh === mesh));
+      // props sólidos canónicos de MapDecor (bidón mercado, cajas, contenedor E, grúa W)
+      const probe29 = new THREE.Vector3();
+      const solidAt29 = (x, z) => { probe29.set(x, 1.0, z); return m29.checkCollision(probe29, 0.4, 1.65); };
+      const solids29 = [[2.4, 10.8], [9.6, 16.2], [40, 0], [-32.5, 0]].map(([x, z]) => solidAt29(x, z));
+      const solidPropsOk29 = solids29.every(Boolean) && m29.boxes.some(b => b.mesh === null && b.h >= 1);
       const spawnClear29 = m29.squadSpawns.ally.every(p => m29.isSpawnClear(p.x, p.z))
         && m29.squadSpawns.enemy.every(p => m29.isSpawnClear(p.x, p.z));
-      // 4) landmarks con clímax ALTO sin oclusión de colliders (raycast del
-      //    mapa desde la base aliada): faros + grúa + contenedor apilado
+      const nav29 = game.navigation;
+      nav29.reset();
+      const path29 = nav29.findPath(0, m29.size * 0.42, 0, -m29.size * 0.42, []);
+      const navOk29 = Array.isArray(path29) && path29.length > 0;
       const eye29 = new THREE.Vector3(-4, 1.65, m29.size * 0.42);
-      const lmOk = [['beaconAlly', -m29.size * 0.36, 7.4, m29.size * 0.40],
-                    ['gruaW', -m29.size * 0.54, 8.5, 0],
-                    ['contE', m29.size * 0.665, 5.2, 0]].every(([, lx, ly, lz]) => {
+      const beaconsOk29 = [[-m29.size * 0.36, 7.4, m29.size * 0.40], [m29.size * 0.36, 7.4, -m29.size * 0.40]].every(([lx, ly, lz]) => {
         const dir = new THREE.Vector3(lx - eye29.x, ly - eye29.y, lz - eye29.z);
         const dist = dir.length(); dir.normalize();
         return !m29.raycast(eye29, dir, dist);
       });
-      log('29 MAP DECOR NO-COLLIDER', hasDecor && boxesStable && spawnClear29 && lmOk,
-        `decor ${decoMeshes29.length} meshes · boxes ${nBoxes29} (sin cambios) · spawns libres ${spawnClear29} · landmarks visibles ${lmOk}`);
+      log('29 MAP DECOR + SOLID PROP CONTRACT', hasDecor29 && noDecoCollider29 && solidPropsOk29 && spawnClear29 && navOk29 && beaconsOk29,
+        `decor ${decoMeshes29.length} meshes · deco≠collider ${noDecoCollider29} · sólidos ${solids29.filter(Boolean).length}/4 · spawns ${spawnClear29} · nav base-base ${navOk29} · faros visibles ${beaconsOk29}`);
       game.matchState = 'LOADING';
     } catch(e){
       log('TEST ERROR 29', false, String(e).slice(0,120));
@@ -515,6 +617,10 @@ export function runTestSuite(game) {
         game.bots.forEach(b => b.isAlive = false);
         game.applyDamage(game.player, 999, 'body', game.bots[0]); // die → stale timer +1800ms
         game.startMatch(); // immediate retry → spawn B (cancela el timer, regla §4)
+        // Test 36: los CONTROLES MÓVILES sobreviven al retry (body.playing +
+        // elemento de controles presentes tras la segunda partida consecutiva)
+        const mobileRetry36 = document.body.classList.contains('playing')
+          && !!document.getElementById('mobile-controls');
         game.bots.forEach(b => b.isAlive = false);
         const posB = game.player.position.clone();
         setTimeout(() => {
@@ -527,6 +633,8 @@ export function runTestSuite(game) {
             game.map.getRandomSpawn = realSpawn;
             game.bots.forEach((b, i) => b.isAlive = botsAlive[i]);
             game.matchState = 'LOADING';
+            log('36 MOBILE CONTROLS AFTER RETRY', mobileRetry36,
+              `body.playing ${document.body.classList.contains('playing')} · controls ${!!document.getElementById('mobile-controls')}`);
             runTest26();
           }
         }, 2100);
@@ -601,13 +709,50 @@ export function runTestSuite(game) {
         const rp26 = document.getElementById('playBtn').getBoundingClientRect();
         const d26 = rp26.width * rp26.height > maxSec26 * 1.5;
         const e26 = cam26.fov === 34;
-        log('26 LOBBY HERO FRAMING', a26 && b26 && c26 && d26 && e26,
-          `margins t/b/l/r ${m26.top.toFixed(0)}/${m26.bottom.toFixed(0)}/${m26.left.toFixed(0)}/${m26.right.toFixed(0)}px · fill ${(fill26 * 100).toFixed(0)}% · uiClear ${m26.left.toFixed(0)}≥${uiRight26.toFixed(0)}:${m26.left >= uiRight26 + 8} · play${(rp26.width * rp26.height).toFixed(0)}>1.5×${maxSec26.toFixed(0)}:${d26} · fov ${cam26.fov}`);
+        // f) SIN OCLUSIÓN: nada tapa al héroe. Rayo cámara→centro del héroe
+        // contra TODA la escena: la auditoría visual encontró el arco del MAPA
+        // (pilar de óxido en z=7.6) atravesando la línea cámara→héroe cuando
+        // el estudio vivía dentro de la arena. El estudio vive bajo el mapa
+        // (LOBBY_Y) y este raycast es el contrato permanente.
+        const chest26 = new THREE.Vector3(
+          (L26._heroBox.min.x + L26._heroBox.max.x) / 2,
+          (L26._heroBox.min.y + L26._heroBox.max.y) / 2,
+          (L26._heroBox.min.z + L26._heroBox.max.z) / 2
+        );
+        const dir26 = chest26.clone().sub(cam26.position);
+        const distHero26 = dir26.length();
+        dir26.normalize();
+        const ray26 = new THREE.Raycaster(cam26.position.clone(), dir26, 0.1, distHero26 - 0.05);
+        const isHeroPart26 = (o) => { while (o) { if (o === L26.hero.root) return true; o = o.parent; } return false; };
+        const occluders26 = ray26.intersectObjects(game.scene.children, true).filter(h => !isHeroPart26(h.object));
+        const f26 = occluders26.length === 0;
+        log('26 LOBBY HERO FRAMING', a26 && b26 && c26 && d26 && e26 && f26,
+          `margins t/b/l/r ${m26.top.toFixed(0)}/${m26.bottom.toFixed(0)}/${m26.left.toFixed(0)}/${m26.right.toFixed(0)}px · fill ${(fill26 * 100).toFixed(0)}% · uiClear ${m26.left.toFixed(0)}≥${uiRight26.toFixed(0)}:${m26.left >= uiRight26 + 8} · play${(rp26.width * rp26.height).toFixed(0)}>1.5×${maxSec26.toFixed(0)}:${d26} · fov ${cam26.fov} · sinOclusion ${f26}`);
         // restaurar el estado DOM que tocamos
         tbEl26.classList.toggle('hidden', tbWas26);
         rbEl26.classList.toggle('hidden', rbWas26);
       } catch(e){
         log('TEST ERROR 26', false, String(e).slice(0,120));
+        console.error(e);
+      }
+      pollGun34();
+    }
+
+    // ── Test 34: el arma del héroe del lobby es el GLB REAL (no el fallback
+    // blocky). El swap blocky→GLB es asíncrono (AssetRegistry): se SONDEA.
+    // Contrato: lobby.gun.userData.isGlb === true (marca de makeHeldWeaponGlb).
+    function pollGun34(attempt = 0) {
+      try {
+        const gun34 = game.lobby && game.lobby.gun;
+        if (gun34 && gun34.userData && gun34.userData.isGlb) {
+          log('34 LOBBY HERO GUN IS GLB', true, 'arma GLB real montada en el pivote del héroe');
+        } else if (attempt < 20) {
+          return setTimeout(() => pollGun34(attempt + 1), 500);
+        } else {
+          log('34 LOBBY HERO GUN IS GLB', false, 'el arma del héroe sigue en fallback blocky tras 10s');
+        }
+      } catch(e){
+        log('TEST ERROR 34', false, String(e).slice(0,120));
         console.error(e);
       }
       renderTests();

@@ -69,7 +69,7 @@ export class HUD {
     const r = document.getElementById('round-ind');
     if (a) a.textContent = ally;
     if (e) e.textContent = enemy;
-    if (r && round) r.textContent = `RONDA ${round} · 1º EN ${roundTarget || 4}`;
+    if (r && round) r.textContent = `RONDA ${round} · GANA A ${roundTarget || 4}`;
     const wrap = document.getElementById('squad-score');
     if (wrap) wrap.classList.add('show');
   }
@@ -118,12 +118,16 @@ export class HUD {
     wrap.classList.add('show');
   }
 
-  // Tienda in-match: SOLO armas [{key,name,price,owned}] + callbacks
+  // Tienda in-match: SOLO armas [{key,name,price,owned,equipped}] + callbacks
   showShop({ weapons, onBuyWeapon, getCoins }) {
     this._shopCallbacks = { onBuyWeapon, getCoins };
     this._shopData = { weapons };
     const panel = document.getElementById('buy-phase');
     if (panel) panel.classList.add('show');
+    // La mirada no participa en la compra: crosshair fuera mientras la tienda
+    // esté abierta (auditoría: la cruz quedaba activa sobre el panel).
+    const xh = document.getElementById('crosshair');
+    if (xh) xh.classList.add('hide');
     this._renderShop();
   }
 
@@ -143,7 +147,10 @@ export class HUD {
     const MAX = { dmg: 30, rate: 10, range: 90 };
     data.weapons.forEach((w, i) => {
       const card = document.createElement('button');
-      card.className = 'bp-item' + (w.owned ? ' owned' : '') + (!w.owned && coins >= w.price ? ' affordable' : '');
+      card.className = 'bp-item' + (w.owned ? ' owned' : '')
+        + (!w.owned && coins >= w.price ? ' affordable' : '')
+        + (!w.owned && coins < w.price ? ' cant' : '')
+        + (w.equipped ? ' equipped' : '');
       // Icono: data-URL del GLB real si ya está renderizada; glifo mientras.
       const iconUrl = this.weaponIcon(w.key);
       const icoHtml = iconUrl
@@ -155,7 +162,7 @@ export class HUD {
         <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, (wd.damage * (wd.pellets || 1)) / MAX.dmg))}%"></i></span>
         <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, (1 / wd.fireRate) / MAX.rate))}%"></i></span>
         <span class="bp-stat"><i style="width:${Math.round(100 * Math.min(1, wd.range / MAX.range))}%"></i></span>` : '';
-      card.innerHTML = `${icoHtml}<b>${w.name}</b>${bars}<span class="bp-price">${w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
+      card.innerHTML = `${icoHtml}<b>${w.name}</b>${bars}<span class="bp-price">${w.equipped ? 'EQUIPADA' : w.owned ? 'COMPRADA' : '🪙 ' + w.price}</span>`;
       card.onclick = () => { onBuyWeapon(i); };
       grid.appendChild(card);
     });
@@ -172,6 +179,8 @@ export class HUD {
   closeShop() {
     const panel = document.getElementById('buy-phase');
     if (panel && !panel.classList.contains('buy-locked')) panel.classList.remove('show');
+    const xh = document.getElementById('crosshair');
+    if (xh) xh.classList.remove('hide');
   }
 
   // tickSquad maneja el ESCUDO de inmunidad: cuenta atrás visible y desaparece.

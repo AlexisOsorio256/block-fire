@@ -72,14 +72,17 @@ export const WeaponData = {
   }
 };
 
-// Skins de armas (cosmético, compra con oro en la fase de compra).
-// accent/dark: colores que sustituyen los materiales de identidad del arma.
+// Skins de armas — DECISIÓN DE PRODUCTO: son cosmética gratuita del loadout,
+// se eligen en el LOBBY y persisten en localStorage. NO hay compra de skins
+// (el oro del Clash Squad solo compra armas); por eso no existe `price` aquí.
+// accent/dark: colores que sustituyen los materiales de identidad del arma
+// (null = Estándar: restaurar los materiales originales).
 export const WeaponSkins = {
-  none:    { name: 'Estándar', price: 0,    accent: null,      dark: null },
-  oro:     { name: 'Oro',      price: 2500, accent: 0xffc93f,  dark: 0x8a6a1f },
-  bosque:  { name: 'Bosque',   price: 1500, accent: 0x5d9c48,  dark: 0x2f4a2c },
-  hielo:   { name: 'Hielo',    price: 2000, accent: 0x7fd8ff,  dark: 0x2f5a78 },
-  carbon:  { name: 'Carbón',   price: 1800, accent: 0x39d7ff,  dark: 0x10131c },
+  none:    { name: 'Estándar', accent: null,      dark: null },
+  oro:     { name: 'Oro',      accent: 0xffc93f,  dark: 0x8a6a1f },
+  bosque:  { name: 'Bosque',   accent: 0x5d9c48,  dark: 0x2f4a2c },
+  hielo:   { name: 'Hielo',    accent: 0x7fd8ff,  dark: 0x2f5a78 },
+  carbon:  { name: 'Carbón',   accent: 0x39d7ff,  dark: 0x10131c },
 };
 
 // Arriba mundial compartido (cero allocs; nunca se muta)
@@ -599,18 +602,71 @@ export class WeaponSystem {
 
     // Raycast for each pellet
     let hits = [];
-    // Spread in SHOOTER space: world-space x/y offsets made the cone collapse
-    // to a line when facing ±X (east/west), so shotgun spread depended on
-    // where you were looking, not where you aimed. Jugador: ejes de cámara;
-    // bots: base ortonormal desde su aim explícito (sin secuestro de cámara).
-    let camRight, camUp;
-    if (aimDir) {
-      camRight = new THREE.Vector3().crossVectors(aimDir, UP).normalize();
-      camUp = new THREE.Vector3().crossVectors(camRight, aimDir).normalize();
-    } else {
-      camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-      camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+
+    // ── DIRECCIÓN BASE (una sola vez por disparo) ──
+    // Jugador: cámara. Bot: su puntería explícita. Sobre ESTA dirección actúa
+    // UNA única asistencia y a su alrededor se genera el spread — así el
+    // patrón de escopeta JAMÁS se comprime: la asistencia puede mover el
+    // CENTRO del patrón, no cerrar sus postas.
+    const baseDir = new THREE.Vector3();
+    if (aimDir) baseDir.copy(aimDir);
+    else this.camera.getWorldDirection(baseDir);
+
+    // ── AIM ASSIST (solo jugador): UNA fricción suave sobre la DIRECCIÓN BASE,
+    // ANTES del spread. Sin snap; la CABEZA es recompensa del input vertical
+    // REAL del jugador (levantar la mira), jamás de un pull automático. La
+    // asistencia decae con la distancia angular, cae a cero si el objetivo
+    // está tras cobertura, nunca actúa sobre aliados y es menor en PC que en
+    // touch. CADA PELLET NO EJECUTA SU PROPIA ASISTENCIA (order fix: antes el
+    // pull corría dentro del bucle y comprimía el patrón de la escopeta).
+    if (usesPlayerAmmo) {
+      const touch = this.game && this.game._isTouchPlatform;
+      const assistCone = (touch ? 0.11 : 0.07);      // mitad de cono (rad)
+      const maxPull = (touch ? 0.055 : 0.035);        // rotación máxima (rad)
+      let bestDev = Infinity;
+      let pullDir = null;
+      let pullStrength = 0;
+      for (const target of targets) {
+        if (target === shooter || !target.isAlive) continue;
+        // escuadras: jamás asistencia sobre ALIADOS
+        if (target.isBot && (target.team || 'enemy') === 'ally') continue;
+        if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
+        const th = target.height || 1.65;
+        const chest = target.position.clone(); chest.y -= th * 0.38;
+        const toChest = chest.clone().sub(origin);
+        const dist = toChest.length();
+        if (dist > weapon.range) continue;
+        toChest.normalize();
+        const dot = toChest.dot(baseDir);
+        if (dot <= Math.cos(assistCone)) continue;      // fuera del cono
+        // Oclusión: la asistencia muere si el torso está tras un muro
+        if (map) {
+          const mapBlock = map.raycast(origin, toChest, dist - 0.4);
+          if (mapBlock) continue;
+        }
+        // desviación angular del rayo crudo respecto al pecho
+        const dev = Math.acos(Math.min(1, dot));
+        if (dev < bestDev) {
+          bestDev = dev;
+          // dirección de jalado: del rayo crudo HACIA el pecho, escalada
+          // por cercanía al centro del cono (magnetismo progresivo)
+          pullStrength = maxPull * (1 - dev / assistCone);
+          pullDir = toChest;
+        }
+      }
+      if (pullDir) {
+        // Fricción: acerca UNA FRACCIÓN del hueco, nunca fija el objetivo.
+        baseDir.lerp(pullDir, Math.min(0.85, pullStrength / Math.max(0.02, bestDev))).normalize();
+      }
     }
+
+    // Spread en SHOOTER space alrededor de la dirección base YA asistida.
+    // World-space x/y offsets made the cone collapse to a line when facing
+    // ±X (east/west), so shotgun spread depended on where you were looking,
+    // not where you aimed. Jugador: ejes de la base; bots: base ortonormal
+    // desde su aim explícito (sin secuestro de cámara).
+    const camRight = new THREE.Vector3().crossVectors(baseDir, UP).normalize();
+    const camUp = new THREE.Vector3().crossVectors(camRight, baseDir).normalize();
     // Crouch steadies the aim: up to −15% spread at full crouch (classic
     // crouch-accuracy contract, matches the slower crouch speed).
     const crouchBonus = this.playerController ? 1 - (this.playerController.crouchBlend || 0) * 0.15 : 1;
@@ -624,61 +680,11 @@ export class WeaponSystem {
       const spreadX = (Math.random()-0.5) * weapon.spread * spreadScale;
       const spreadY = (Math.random()-0.5) * weapon.spread * spreadScale;
 
-      const direction = new THREE.Vector3();
-      if (aimDir) direction.copy(aimDir);
-      else this.camera.getWorldDirection(direction);
-      // Apply spread around the shooter's own axes
+      const direction = baseDir.clone();
+      // Apply spread around the shooter's own axes (SIN asistencia por posta:
+      // el patrón respeta el spread del arma, el centro ya fue asistido)
       direction.addScaledVector(camRight, spreadX).addScaledVector(camUp, spreadY);
       direction.normalize();
-
-      // ── AIM ASSIST (solo jugador): fricción + magnetismo SUAVE, sin snap ──
-      // Filosofía: la asistencia acerca el rayo al torso cuando pasa cerca,
-      // pero la CABEZA es recompensa del input vertical REAL del jugador
-      // (levantar la mira), jamás de un snap automático. La asistencia decae
-      // con la distancia angular, cae a cero si el objetivo está tras
-      // cobertura, nunca actúa sobre aliados y es menor en PC que en touch.
-      if (usesPlayerAmmo) {
-        const touch = this.game && this.game._isTouchPlatform;
-        const assistCone = (touch ? 0.11 : 0.07);      // mitad de cono (rad)
-        const maxPull = (touch ? 0.055 : 0.035);        // rotación máxima (rad)
-        let bestDev = Infinity;
-        let pullDir = null;
-        let pullStrength = 0;
-        for (const target of targets) {
-          if (target === shooter || !target.isAlive) continue;
-          // escuadras: jamás asistencia sobre ALIADOS
-          if (target.isBot && (target.team || 'enemy') === 'ally') continue;
-          if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
-          const th = target.height || 1.65;
-          const chest = target.position.clone(); chest.y -= th * 0.38;
-          const toChest = chest.clone().sub(origin);
-          const dist = toChest.length();
-          if (dist > weapon.range) continue;
-          toChest.normalize();
-          const dot = toChest.dot(direction);
-          if (dot <= Math.cos(assistCone)) continue;      // fuera del cono
-          // Oclusión: la asistencia muere si el torso está tras un muro
-          if (map) {
-            const mapBlock = map.raycast(origin, toChest, dist - 0.4);
-            if (mapBlock) continue;
-          }
-          // desviación angular del rayo crudo respecto al pecho
-          const dev = Math.acos(Math.min(1, dot));
-          if (dev < bestDev) {
-            bestDev = dev;
-            // dirección de jalado: del rayo crudo HACIA el pecho, escalada
-            // por cercanía al centro del cono (magnetismo progresivo)
-            pullStrength = maxPull * (1 - dev / assistCone);
-            pullDir = toChest;
-          }
-        }
-        if (pullDir) {
-          // Fricción: acerca UNA FRACCIÓN del hueco, nunca fija el objetivo.
-          // El rayo resultante se re-normaliza; spread se aplica después de
-          // esto, así la explosión de postas no se beneficia del pull.
-          direction.lerp(pullDir, Math.min(0.85, pullStrength / Math.max(0.02, bestDev))).normalize();
-        }
-      }
 
       this.raycaster.set(origin, direction);
       // Check against targets (players/bots + map)

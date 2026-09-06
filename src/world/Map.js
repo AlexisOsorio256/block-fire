@@ -104,6 +104,17 @@ export class Map {
     return mesh;
   }
 
+  // COLLIDER de prop visual (contrato "lo que parece sólido no es fantasma"):
+  // un prop de MapDecor a nivel de jugador (contenedor, bidón, pila de cajas,
+  // base de grúa) registra aquí un AABB simple — SIN mesh: el visual lo
+  // dibuja MapDecor. checkCollision/raycast/getGroundY y la rasterización de
+  // Navigation lo tratan igual que cualquier box del mapa.
+  addSolidProp(x, z, w, h, d) {
+    const min = new THREE.Vector3(x - w / 2, 0, z - d / 2);
+    const max = new THREE.Vector3(x + w / 2, h, z + d / 2);
+    this.boxes.push({ min, max, mesh: null, x, y: 0, z, w, h, d });
+  }
+
   _createWalls() {
     const s = this.size;
     const h = this.wallHeight;
@@ -411,11 +422,11 @@ export class Map {
     // ── LANDMARKS + DRESSING VISUAL (colliders intactos) ──
     // Lectura de "¿dónde estoy?" sin minimapa: cada base tiene una TORRE FARO
     // de color propio (verde aliado / rojo enemigo) — visible desde cualquier
-    // lane, orienta norte/sur de un vistazo. Los props finos (barriles, jardineras)
-    // NO llevan collider: no cambian gameplay, rompen la repetición AABB.
+    // lane, orienta norte/sur de un vistazo. El DRESSING vive en MapDecor
+    // (dueño único de la capa visual): los props sólidos que allí parecen
+    // sólidos registran su collider vía addSolidProp.
     this._beacon(-s*0.36, s*0.40, 0x2ee86e);   // base aliada
     this._beacon(s*0.36, -s*0.40, 0xff5a4a);   // base enemiga
-    this._dressClashSquad(s);
   }
 
   // Torre faro de base: mástil + cabeza luminosa del color del equipo.
@@ -441,40 +452,10 @@ export class Map {
     this.scene.add(lamp);
   }
 
-  // Dressing sin collider del mapa Clash Squad: barriles junto a contenedores,
-  // jardineras junto a casas, marcas de suelo en el centro. Solo visual.
-  _dressClashSquad(s) {
-    const scatter = (x, z, kind, col) => {
-      let m;
-      if (kind === 'barrel') {
-        m = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.0, 10),
-          new THREE.MeshStandardMaterial({ color: col, roughness: 0.6, metalness: 0.25 }));
-        m.position.set(x, 0.5, z);
-      } else { // jardinera: caja baja con verde encima
-        m = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 0.7),
-          new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 }));
-        m.position.set(x, 0.25, z);
-        const plant = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6),
-          new THREE.MeshStandardMaterial({ color: 0x3e7a3a, roughness: 0.9 }));
-        plant.position.set(x, 0.75, z);
-        plant.castShadow = true;
-        this.scene.add(plant);
-      }
-      m.castShadow = true;
-      this.scene.add(m);
-    };
-    // Barriles escoltando los contenedores (paleta industrial)
-    const rust = 0x7a4a30, teal = 0x2e5a5a, sand = 0xa08a54;
-    scatter(-s*0.16 + 2.0, -s*0.2 + 1.2, 'barrel', rust);
-    scatter(-s*0.16 - 1.6, -s*0.2 - 0.6, 'barrel', teal);
-    scatter(s*0.16 - 2.0, s*0.2 - 1.2, 'barrel', rust);
-    scatter(s*0.16 + 1.6, s*0.2 + 0.8, 'barrel', sand);
-    // Jardineras junto a las casas de las bases (vida sin gameplay)
-    scatter(-s*0.30, s*0.16, 'planter', 0x4a3a2a);
-    scatter(s*0.30, -s*0.16, 'barrel', teal);
-    scatter(s*0.30, s*0.05, 'planter', 0x4a3a2a);
-    scatter(-s*0.30, -s*0.05, 'planter', 0x4a3a2a);
-  }
+  // (el dressing del Clash Squad vive en MapDecor.buildClashSquad — dueño
+  // único de la capa visual. Antes existía aquí un scatter de barriles que
+  // DUPLICABAN los de MapDecor en las mismas posiciones: props inter-
+  // penetrados visibles en gameplay.)
 
   // Casa refugio axis-aligned (el contrato de colisión/raycast es AABB):
   // 8x8, muros h2.6 (el salto de 1.29 no los corona), puerta de 2.4 en `door`

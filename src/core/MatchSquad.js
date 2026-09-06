@@ -76,17 +76,38 @@ export class MatchSquad {
     g.weaponSystem.isReloading = false;
     g.hud.update({ health: g.playerController.maxHealth, ammo: g.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: `${g.roundWins.ally} — ${g.roundWins.enemy}`, timeLeft: g.ROUND_TIME, fps: 60, pos: g.player.position, botCount: g.bots.length });
     g.hud.updateTeamScore(g.roundWins.ally, g.roundWins.enemy, n, g.ROUND_TARGET);
+    // La compra manda en la pantalla: los controles táctiles se APAGAN
+    // visualmente (atenuados, no interactivos) mientras la tienda está abierta.
+    document.body.classList.add('buying');
     // TIENDA ANIMADA: se abre SOLA antes de cada ronda (estilo Free Fire)
     g.openShop();
   }
 
-  // La IA "compra": mezcla determinista por bot+ronda que sube de tier.
+  // La IA "compra": mezcla determinista por bot+ronda que sube de tier, pero
+  // COHERENTE con el ROL (entry cierra → escopeta/SMG, anchor controla → rifle):
+  // el patrón jamás contradice al arma del personaje (regla de producto).
   _botBuy(roundN, bot) {
     const roll = (bot.id * 7 + roundN * 3) % 10;
-    if (roundN === 1) return roll < 6 ? 'pistol' : 'smg';
-    if (roll < 4) return 'rifle';
-    if (roll < 6) return 'shotgun';
-    if (roll < 8) return 'smg';
+    const roleIdx = bot.id % 7;                 // mismos índices que ROLE_PARAMS
+    const isEntry = roleIdx === 0 || roleIdx === 3;
+    const isAnchor = roleIdx === 2 || roleIdx === 5;
+    if (roundN === 1) {
+      if (isEntry) return roll < 4 ? 'shotgun' : 'pistol';
+      return roll < 6 ? 'pistol' : 'smg';
+    }
+    if (isEntry) {           // agresivo: cierra distancia
+      if (roll < 5) return 'shotgun';
+      if (roll < 8) return 'smg';
+      return 'rifle';
+    }
+    if (isAnchor) {          // control: media distancia estable
+      if (roll < 6) return 'rifle';
+      if (roll < 8) return 'smg';
+      return 'shotgun';
+    }
+    if (roll < 4) return 'rifle'; // support: mezcla flexible
+    if (roll < 6) return 'smg';
+    if (roll < 8) return 'shotgun';
     return 'pistol';
   }
 
@@ -96,6 +117,7 @@ export class MatchSquad {
     g.phase = 'combat';
     g.phaseTime = g.ROUND_TIME;
     g._combatStarted = true;
+    document.body.classList.remove('buying');
     g.hud.closeShop();
     g.shopOpenFlag = false;
     g.hud.showRoundBanner('¡A LUCHAR!', `RONDA ${g.round}`, '#ffd23f');
@@ -119,6 +141,7 @@ export class MatchSquad {
     const g = this.g;
     if (g.phase === 'roundEnd') return;
     g.phase = 'roundEnd';
+    document.body.classList.remove('buying');
     g.hud.closeShop();
     g.shopOpenFlag = false;
     if (winner === 'ally') {

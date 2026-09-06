@@ -10,9 +10,12 @@ probar y pedir dirección humana. Prohibido inventar.
 BLOCKFIRE es un producto comercial en estabilización y pulido final: un FPS
 arcade con identidad propia (colorido, legible, rápido) cuyo núcleo —moverse,
 disparar, impactar, matar, morir, repetir— debe sentirse agresivo y justo.
-Referencia de *sensación*: shooters móviles arcade rápidos (Free Fire) en
-legibilidad, combate, lobby centrado en personaje y economía de ronda.
-Referencia de calidad y principios, **SI** material:
+Referencia de PRINCIPIOS: shooters móviles arcade rápidos (Free Fire) pueden
+usarse como referencia de calidad, legibilidad, ritmo, combate y sensación
+(lobby centrado en personaje, economía de ronda). JAMÁS copiar MATERIAL de
+terceros: ni mapas, ni layouts exactos, ni UI, ni nombres, ni personajes, ni
+assets, ni sonidos, ni branding, ni identidad, ni contenido. Ninguna lectura
+de estas reglas autoriza copiar material.
 
 Prioridades inmutables:
 

@@ -206,8 +206,8 @@ body:not(.playing) #mobile-controls{ display:none !important; }
 #playBtn:active, #retryBtn:active{ transform:translateY(4px); box-shadow: 0 2px 0 #8a5a00, 0 8px 18px rgba(0,0,0,0.45); }
 .tagline{ font-size:12px; letter-spacing:0.30em; font-weight:800; color:#9fb6e0; margin-top:14px; }
 #hint{ font-size:11px; color:rgba(160,180,220,0.65); margin-top:14px; letter-spacing:0.08em; }
-#title-block .credits{ font-size:9px; color:rgba(140,160,200,0.45); margin-top:6px; letter-spacing:0.04em; }
-#title-block .credits a{ color:rgba(160,180,220,0.6); text-decoration:underline; }
+#title-block .credits{ font-size:9px; color:rgba(170,190,225,0.72); margin-top:6px; letter-spacing:0.04em; }
+#title-block .credits a{ color:rgba(190,205,235,0.85); text-decoration:underline; }
 
 /* Secundarios bajo el CTA: modos + skins + stats/config, sin competir */
 #lobby-secondary{ margin-top:16px; display:flex; flex-direction:column; gap:12px; }
@@ -362,6 +362,14 @@ body:not(.playing) #squad-score{ display:none !important; }
 .bp-item.affordable .bp-price{ color:#7dff9a; }
 .bp-item.owned{ border-color:rgba(125,255,154,0.4); background:rgba(125,255,154,0.06); }
 .bp-item.owned .bp-price{ color:#7dff9a; }
+.bp-item.equipped{ border-color:#ffd23f; background:rgba(255,210,63,0.10); }
+.bp-item.equipped .bp-price{ color:#ffd23f; }
+.bp-item.cant{ opacity:0.55; }
+.bp-item.cant .bp-price{ color:#ff8a7a; }
+/* Compra abierta: los controles táctiles se retiran de la atención (auditoría
+   móvil: botones asomaban por los bordes del panel y confundían). */
+body.buying #mobile-controls{ opacity:0.25; pointer-events:none; }
+#crosshair.hide{ display:none; }
 .bp-item:active{ transform:scale(0.95); }
 .bp-item.skin .bp-ico{ width:26px; height:14px; border-radius:4px; background:#5a6a8a; }
 .bp-item.skin .bp-ico[data-skin="oro"]{ background:linear-gradient(135deg,#ffe9a0,#c8952a); }
@@ -371,13 +379,18 @@ body:not(.playing) #squad-score{ display:none !important; }
 .bp-foot{ margin-top:9px; font-size:9px; font-weight:800; letter-spacing:0.12em; color:#8fa4c8; text-align:center; }
 .bp-foot b{ color:#ffd23f; }
 
-/* Contador de compra compacto en landscape móvil */
+/* Contador de compra compacto en landscape móvil + objetivos táctiles del
+   lobby con mínimo tocable (auditoría: JUGAR 42px, skins 28px, config 21px). */
 @media (orientation: landscape) and (max-height: 500px){
   .bp-sheet{ padding:6px 12px 8px; }
   .bp-grid{ grid-template-columns:repeat(4, 1fr); gap:6px; margin-top:5px; }
   .bp-item{ padding:5px 4px; }
   .bp-foot{ margin-top:4px; font-size:8px; }
   #bp-count b{ font-size:16px; }
+  #playBtn, #retryBtn{ padding:14px 24px; font-size:22px; min-height:48px; }
+  .lobby-skin{ padding:8px 10px; min-height:44px; }
+  #btn-config{ min-height:44px; }
+  .lobby-mode{ padding:10px 14px; min-height:48px; }
 }
 
 #squad-immunity{ position:fixed; top:14%; left:50%; transform:translateX(-50%); z-index:40;

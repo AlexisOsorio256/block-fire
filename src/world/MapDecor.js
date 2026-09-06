@@ -4,10 +4,12 @@ import { mergeGeometries } from '../lib/BufferGeometryUtils.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // MapDecor — capa VISUAL del mapa, desacoplada de la COLISIÓN
 // ═══════════════════════════════════════════════════════════════════════════
-// Contrato de la slice (punto DÉCIMO del brief):
-//   · Los colliders (map.boxes) NO se tocan: nada de lo que añade este
-//     módulo entra en boxes → gameplay, navegación de bots (Navigation
-//     rasteriza desde Map.checkCollision) y TTK intactos. Props sin collider.
+// Contrato de la slice (punto DÉCIMO del brief) + clasificación §9:
+//   · El mapa NO cambia de estructura: los colliders estructurales (muros,
+//     casas, coberturas) siguen naciendo SOLO en Map.js. MapDecor añade
+//     colliders únicamente para sus PROPS SÓLIDOS a nivel de jugador
+//     (addSolidProp: AABB simple sin mesh) — lo que parece sólido no es un
+//     fantasma; el micro-dressing y los landmarks altos siguen atravesables.
 //   · Presupuesto Android (reglas §7): geometrías cacheadas (cada primitiva
 //     existe UNA vez), materiales compartidos por familia, pintura de suelo
 //     FUSIONADA en 1 mesh por material (mergeGeometries), CERO luces y
@@ -169,10 +171,21 @@ export class MapDecor {
     }
   }
 
-  // ═══════════════════ PROPS (decoración sin collider) ═══════════════════
+  // ═══════════════════ PROPS (clasificación visual/collider, regla §9) ════
+  // A. MICRO DRESSING (sin collider): plantas, señales, farolas, neumáticos
+  //    bajos, tubería — nada que el jugador espere chocar.
+  // B. OBSTÁCULO VISUAL (CON collider simple): bidón, pila de cajas,
+  //    contenedor, base de grúa — lo que parece sólido EN ZONA JUGABLE no es
+  //    un fantasma: registra AABB vía map.addSolidProp (sin mesh: el visual
+  //    es este módulo). Navigation y balas lo rasterizan igual que el jugador.
+  // D. LANDMARK LEJANO/ALTO (sin collider): torre de agua y valla — patas
+  //    finas por las que se puede pasar; el tanque/tablero viven por encima
+  //    del nivel de juego.
 
-  // Bidón industrial: cuerpo + aros + tapa.
+  // Bidón industrial: cuerpo + aros + tapa. OBSTÁCULO (collider 1.0: el
+  // filtro checkCollision de "debris" solo aplica a h<1).
   _drum(x, z, mat, ry = 0) {
+    this.map.addSolidProp(x, z, 0.62, 1.0, 0.62);
     this.box(0.6, 0.92, 0.6, mat, x, 0.46, z, ry);
     this.box(0.64, 0.1, 0.64, this.matMetalDk, x, 0.2, z, ry);
     this.box(0.64, 0.1, 0.64, this.matMetalDk, x, 0.72, z, ry);
@@ -319,8 +332,9 @@ export class MapDecor {
     }
   }
 
-  // Pila de cajas de mercado.
+  // Pila de cajas de mercado. OBSTÁCULO (collider del conjunto).
   _crateStack(x, z, ry = 0) {
+    this.map.addSolidProp(x, z, 0.95, 1.7, 0.95);
     const c = (dx, dy, dz, m) => this.box(0.85, 0.55, 0.85, m, x + dx, 0.275 + dy * 0.55, z + dz, ry);
     c(0, 0, 0, this.matWood);
     c(0.1, 1, -0.08, this.matWoodDk);
@@ -328,9 +342,11 @@ export class MapDecor {
   }
 
   // Contenedor 20' con nervios y puertas; y = altura de apilado.
+  // OBSTÁCULO (collider del nivel base; el apilado superior se apoya en él).
   _container(x, z, mat, ry = 0, y = 0) {
     const w = 6, h = 2.6, d = 2.5;
     const cos = Math.abs(Math.cos(ry)) > 0.5;
+    if (y === 0) this.map.addSolidProp(x, z, cos ? w : d, h, cos ? d : w);
     this.box(cos ? w : d, h, cos ? d : w, mat, x, y + h / 2, z);
     for (let i = -2; i <= 2; i++) {
       const t = i * 1.15;
@@ -395,9 +411,11 @@ export class MapDecor {
     this._container(x, z, this.matYellow, Math.PI / 2, 2.6);
   }
 
-  // LANDMARK: grúa de obra (torre amarilla + pluma + gancho).
+  // LANDMARK: grúa de obra (torre amarilla + pluma + gancho). OBSTÁCULO: la
+  // torre base es sólida a nivel de jugador.
   _crane(x, z) {
     const H = 9;
+    this.map.addSolidProp(x, z, 1.4, H, 1.4);
     this.box(1.4, H, 1.4, this.matYellow, x, H / 2, z);
     this.box(1.7, 0.5, 1.7, this.matMetalDk, x, H + 0.2, z);
     this.box(1.1, 1.1, 1.1, this.matTeal, x + 0.7, H + 0.75, z);

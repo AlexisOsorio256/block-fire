@@ -911,19 +911,16 @@ export class Game {
       if (this._hemiLight) this._hemiLight.intensity = 0.5;
       if (this._sunLight) this._sunLight.intensity = 0.35;
       this.lobby.tick(Math.min(dt, 0.033), t);
-      // Congelar bots SIN IA: en el lobby el héroe es el único actor. Su
-      // update() sin dt no integra velocidad ni dispara (equivalente a la
-      // fase de compra, donde los bots quedan firmes). Sus meshes van
-      // OCULTOS: quedan detrás del muro del set (oclusión) pero no deben
-      // asomar jamás en el frustum del estudio ("mapa de combate detrás").
-      const playerWasTargetable = this.player.isAlive;
-      this.player.isAlive = false;
+      // LOBBY = SIN IA (lobby ≠ gameplay invisible): los bots van OCULTOS
+      // (detrás del muro del set) y CONGELADOS — sin adquisición de targets,
+      // sin memoria, sin navegación, sin A*. update(0) hacía exactamente eso:
+      // con el jugador marcado muerto, aliados y enemigos se adquirían ENTRE
+      // ELLOS cada frame (raycasts de LOS + repath en el menú). Solo la
+      // animación de muerte pendiente sigue su curso visual.
       for (const bot of this.bots) {
         if (bot.mesh) bot.mesh.visible = false;
-        if (!bot.isAlive) { if (bot._dyingT > 0) bot._updateDying(Math.min(dt, 0.033)); continue; }
-        bot.update(0, this.player, this.bots, this.map);
+        if (!bot.isAlive && bot._dyingT > 0) bot._updateDying(Math.min(dt, 0.033));
       }
-      this.player.isAlive = playerWasTargetable;
       this.vfx.update(Math.min(dt, 0.033));
       // Hide first-person viewmodel while in menu
       if (this.weaponSystem && this.weaponSystem.weaponMesh) this.weaponSystem.weaponMesh.visible = false;
@@ -1062,7 +1059,6 @@ export class Game {
     }
 
     this.hud.tickSquad(dt, this.immuneUntil, this.matchTime);
-    if (Input.wasKeyPressedThisFrame === undefined) { /* guard */ }
 
     // ARSENAL: tecla B (PC). En móvil hay botón dedicado.
 
@@ -1071,7 +1067,7 @@ export class Game {
     for (const b of this.bots) if (b.isAlive) aliveBots++;
     const p = _hudPayload;
     p.score = this.gameMode === 'squad' ? `${this.roundWins.ally} — ${this.roundWins.enemy}` : `${this.teamScore.ally} — ${this.teamScore.enemy}`;
-    p.leader = this.gameMode === 'squad' ? this.round : Math.max(this.playerKills, this._maxBotKills());
+    p.leader = Math.max(this.playerKills, this._maxBotKills()); // líder por KILLS en ambos modos (antes la píldora mostraba la ronda en squad)
     p.timeLeft = timeLeft;
     p.health = this.playerController.health;
     p.ammo = this.weaponSystem.getAmmoText();

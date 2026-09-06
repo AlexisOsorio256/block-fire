@@ -1,5 +1,5 @@
 import * as THREE from '../lib/three.module.js';
-import { GLTFLoader } from '../lib/GLTFLoader.js';
+import { assets } from '../core/AssetRegistry.js';
 
 // ── WeaponIcons — iconos de la tienda renderizados desde el GLB real ──
 // Un render offscreen POR ARMA (no por frame): escena mínima, luz de tres
@@ -8,9 +8,9 @@ import { GLTFLoader } from '../lib/GLTFLoader.js';
 // al espacio de la cámara (fit exacto, sin márgenes arbitrarios). El arma
 // SIEMPRE apunta a la derecha (eje largo Z → +X en pantalla) y el resultado
 // se cachea en HUD._iconCache — coste único por partida, cero por frame.
+// La carga pasa por AssetRegistry (dueño único de GLB, regla §7).
 // Sin GLB (falloff de red) devuelve null: la tarjeta conserva el glifo ASCII.
 
-const _loader = new GLTFLoader();
 const _cache = new Map(); // url → Promise<dataURL|null>
 
 // Resolución interna 2x del tamaño CSS (64×40) para retina/nitidez.
@@ -23,26 +23,25 @@ const CAM_DIR = new THREE.Vector3(1, 0.35, 0).normalize();
 
 export function renderWeaponIcon(url) {
   if (_cache.has(url)) return _cache.get(url);
-  const p = new Promise((resolve) => {
-    _loader.load(url, (gltf) => {
-      try {
-        const obj = gltfSafeScene(gltf);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-        renderer.setSize(RENDER_W, RENDER_H);
-        renderer.setClearColor(0x000000, 0);
-        const scene = new THREE.Scene();
-        // Tres puntos: key cálida arriba-derecha, fill frío izquierda, rim trasero
-        scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-        const key = new THREE.DirectionalLight(0xfff2d0, 2.2); key.position.set(2, 3, 4); scene.add(key);
-        const fill = new THREE.DirectionalLight(0x8fb8ff, 1.1); fill.position.set(-3, 1, 2); scene.add(fill);
-        const rim = new THREE.DirectionalLight(0xffffff, 1.4); rim.position.set(0, 2, -4); scene.add(rim);
-        scene.add(obj);
-        renderer.render(scene, fitCamera(obj, renderer));
-        const dataUrl = renderer.domElement.toDataURL('image/png');
-        renderer.dispose();
-        resolve(dataUrl);
-      } catch (e) { console.warn('[WeaponIcons] render fail', e && e.message); resolve(null); }
-    }, undefined, () => resolve(null));
+  const p = assets.loadRaw(url).then((gltf) => {
+    if (!gltf) return null;
+    try {
+      const obj = gltfSafeScene(gltf);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      renderer.setSize(RENDER_W, RENDER_H);
+      renderer.setClearColor(0x000000, 0);
+      const scene = new THREE.Scene();
+      // Tres puntos: key cálida arriba-derecha, fill frío izquierda, rim trasero
+      scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+      const key = new THREE.DirectionalLight(0xfff2d0, 2.2); key.position.set(2, 3, 4); scene.add(key);
+      const fill = new THREE.DirectionalLight(0x8fb8ff, 1.1); fill.position.set(-3, 1, 2); scene.add(fill);
+      const rim = new THREE.DirectionalLight(0xffffff, 1.4); rim.position.set(0, 2, -4); scene.add(rim);
+      scene.add(obj);
+      renderer.render(scene, fitCamera(obj, renderer));
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      renderer.dispose();
+      return dataUrl;
+    } catch (e) { console.warn('[WeaponIcons] render fail', e && e.message); return null; }
   });
   _cache.set(url, p);
   return p;

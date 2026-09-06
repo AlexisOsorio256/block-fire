@@ -19,6 +19,7 @@ export class Shop {
       name: g.weaponData[k].name,
       price: g.weaponData[k].price || 0,
       owned: g.weaponSystem.owned.has(k),
+      equipped: g.weaponSystem.weapons[g.weaponSystem.currentIndex] === k,
       data: g.weaponData[k], // stats relativas para las barras de la tarjeta
     }));
     g.hud.showShop({

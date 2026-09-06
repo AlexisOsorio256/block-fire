@@ -1,5 +1,4 @@
 import * as THREE from '../lib/three.module.js';
-import { GLTFLoader } from '../lib/GLTFLoader.js';
 import * as SkeletonUtils from '../lib/SkeletonUtils.js';
 import { assets, WEAPON_MODELS } from '../core/AssetRegistry.js';
 
@@ -20,6 +19,12 @@ const TEAM_TINTS = {
   enemy: 0xff5a4a,
   hero:  0xffd23f,  // lobby
 };
+
+// Scratch del anclaje arma→mano (update): cero allocs por frame (reglas §6)
+const _gunAnchorM = new THREE.Matrix4();
+const _gunAnchorP = new THREE.Vector3();
+const _gunAnchorQ = new THREE.Quaternion();
+const _gunAnchorS = new THREE.Vector3();
 
 // ── OPERADORES: 7 identidades legibles (paleta del TRAJE, no del equipo) ──
 // El equipo NO se dice pintando el modelo entero de verde/rojo (ilegible y
@@ -47,36 +52,47 @@ export const AvatarLib = {
 
   load() {
     if (this.ready || this.failed) return Promise.resolve(this.ready);
-    return new Promise((resolve) => {
-      new GLTFLoader().load(
-        'assets/models/soldier.glb',
-        (gltf) => {
-          try {
-            const root = gltf.scene;
-            root.updateMatrixWorld(true);
-            this._template = root;
-            const clips = gltf.animations || [];
-            // BUG: se comparaba el nombre en minúsculas con 'Idle'/'Run'/'Walk'
-            // capitalizados → el match por nombre NUNCA acertaba y todo caía al
-            // fallback por posición (clips[0]/clips[1]). Funciona por suerte con
-            // este GLB, pero cualquier reorden lo rompe en silencio.
-            const byName = (n) => clips.find(c => c.name.toLowerCase() === n.toLowerCase());
-            this._idleClip = byName('idle')  || clips[0] || null;
-            this._runClip  = byName('run')   || clips[1] || null;
-            this._walkClip = byName('walk')  || this._runClip;
-            this.ready = true;
-            console.log('[AvatarLib] soldier.glb cargado — clips:', clips.map(c=>c.name).join(','));
-            resolve(true);
-          } catch (e) {
-            console.error('AvatarLib parse', e);
-            this.failed = true;
-            resolve(false);
-          }
-        },
-        undefined,
-        (err) => { console.error('[AvatarLib] fallo carga GLB:', err && err.message || err); this.failed = true; resolve(false); }
-      );
+    return assets.loadRaw('assets/models/soldier.glb').then((gltf) => {
+      if (!gltf) { this.failed = true; return false; }
+      try {
+        const root = gltf.scene;
+        root.updateMatrixWorld(true);
+        this._template = root;
+        const clips = gltf.animations || [];
+        // Match por nombre insensible a mayúsculas (con fallback posicional si
+        // el GLB reordena clips — comportamiento documentado, no suerte).
+        const byName = (n) => clips.find(c => c.name.toLowerCase() === n.toLowerCase());
+        this._idleClip = byName('idle')  || clips[0] || null;
+        this._runClip  = byName('run')   || clips[1] || null;
+        this._walkClip = byName('walk')  || this._runClip;
+        this._computeBoneFront(root);
+        this.ready = true;
+        console.log('[AvatarLib] soldier.glb cargado — clips:', clips.map(c=>c.name).join(','));
+        return true;
+      } catch (e) {
+        console.error('AvatarLib parse', e);
+        this.failed = true;
+        return false;
+      }
     });
+  },
+
+  // ── Referencia de FRENTE por hueso (datos, no conjetura) ──
+  // El visor del GLB está en la cara frontal de la cabeza: su posición
+  // expresada en el espacio local de Head/Spine2 da el eje "adelante" de cada
+  // hueso. Las piezas modulares (mochila) lo usan para anclarse a la ESPALDA
+  // sin adivinar la convención de ejes del rig Mixamo.
+  _computeBoneFront(root) {
+    this._boneFront = {};
+    const findBone = (re) => { let b = null; root.traverse(o => { if (o.isBone && re.test(o.name)) b = b || o; }); return b; };
+    let visor = null;
+    root.traverse(o => { if (o.isMesh && /visor/i.test(o.name || '')) visor = visor || o; });
+    if (!visor) return;
+    const p = visor.getWorldPosition(new THREE.Vector3());
+    for (const [key, re] of [['head', /Head$/i], ['spine', /Spine2$/i]]) {
+      const bone = findBone(re);
+      if (bone) this._boneFront[key] = bone.worldToLocal(p.clone());
+    }
   },
 
   // Banda de hombro del equipo: 1 caja emissive sobre el hombro izquierdo,
@@ -97,6 +113,49 @@ export const AvatarLib = {
       // Sin esqueleto conocido: pegado al torso a altura de hombro (fallback)
       band.position.set(-0.30, 1.32, 0);
       clone.add(band);
+    }
+  },
+
+  // ── Silueta modular del PERSONAJE (mismo rig, 3 variantes) ──
+  // Usa el color `gear` de cada operador en UNA pieza distintiva: casco /
+  // hombreras / mochila. PERSONAJE = silueta + outfit + paleta; el EQUIPO
+  // sigue leyéndose solo en visor + banda (jamás el traje entero teñido).
+  _addGearPiece(clone, opIdx) {
+    const op = OPERATORS[opIdx % OPERATORS.length];
+    const gearMat = new THREE.MeshStandardMaterial({ color: op.gear, roughness: 0.6, metalness: 0.2 });
+    const findBone = (re) => { let b = null; clone.traverse(o => { if (o.isBone && re.test(o.name)) b = b || o; }); return b; };
+    const variant = opIdx % 3;
+    if (variant === 0) {
+      // CASCO: cupola sobre el cráneo + visera corta (silueta "asalto")
+      const head = findBone(/Head$/i);
+      if (!head) return;
+      const dome = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.12, 0.30), gearMat);
+      dome.position.set(0, 0.06, 0);
+      head.add(dome);
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.035, 0.33), gearMat);
+      brim.position.set(0, 0.005, 0);
+      head.add(brim);
+    } else if (variant === 1) {
+      // HOMBRERAS: placas sobre ambos brazos (silueta "pesado")
+      for (const re of [/LeftArm$/i, /RightArm$/i]) {
+        const arm = findBone(re);
+        if (!arm) continue;
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.22), gearMat);
+        pad.position.set(0, -0.025, 0);
+        arm.add(pad);
+      }
+    } else {
+      // MOCHILA: placa a la ESPALDA usando la referencia de frente medida del
+      // rig (sin ella, la pieza podría acabar en el pecho — se omite mejor).
+      const spine = findBone(/Spine2$/i) || findBone(/Spine1$/i);
+      if (!spine) return;
+      const front = this._boneFront && this._boneFront.spine;
+      if (!front || front.lengthSq() < 1e-6) return;
+      const back = front.clone().normalize().multiplyScalar(-1);
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.36, 0.14), gearMat);
+      pack.position.copy(back.multiplyScalar(0.15));
+      pack.position.y += 0.02;
+      spine.add(pack);
     }
   },
 
@@ -162,20 +221,28 @@ export const AvatarLib = {
     clone.traverse((o) => {
       if (o.isBone && /RightHand$/i.test(o.name)) hand = o;
     });
+    let gunPivot = null;
     if (hand && opts.weapon) {
-      // Arma agarrada: cachelada en la mano, culata hacia atrás, cañón al frente.
-      // La mano mixamorig tiene +Y por los dedos; el arma va perpendicular.
-      const gunPivot = new THREE.Group();
+      // Arma agarrada: el pivote NO cuelga del esqueleto (bug medido): el rig
+      // mixamo escala 1/77 su subárbol y la compensación —calculada con el
+      // clone huérfano, antes del scale final— quedaba a merced del idle, que
+      // mueve los huesos DESPUÉS del bake (sonda: bbox vertical 25×79px,
+      // cañón a dot −0.95 del rayo al render). El pivote vive como HERMANO
+      // del esqueleto y update() lo ANCLA a la mano cada frame: la pose es
+      // exacta en el estado exacto del render (bots y héroe, mismo contrato).
+      gunPivot = new THREE.Group();
       gunPivot.add(opts.weapon);
-      opts.weapon.position.set(0, 0.13, 0.03);
+      opts.weapon.position.set(0, 0.13, 0.03); // agarre: offset en marco de mano
       opts.weapon.rotation.set(0, 0, 0);
-      hand.add(gunPivot);
+      clone.add(gunPivot);
     }
 
     return {
       root: clone,
       mixer,
       actions,
+      gunPivot, // pivote del arma (hermano del esqueleto; update() lo ancla)
+      _handBone: hand, // hueso de la mano derecha (ancla del arma por frame)
       _loco: 'idle',
       // Estado de locomoción: 'idle' | 'walk' | 'run'. Desconocidos → idle.
       setLocomotion(state) {
@@ -200,6 +267,35 @@ export const AvatarLib = {
         if (this._pulse > 0) this._pulse = Math.max(0, this._pulse - dt * 5);
         clone.rotation.x = -0.13 * this._pulse;
         mixer.update(dt);
+        // ANCLAJE DEL ARMA A LA MANO (estado de render exacto): tras el
+        // mixer.update los huesos ya tienen su pose ESTE frame — copiar
+        // posición+quaternion del hueso al pivote hermano reproduce el
+        // marco de la mano a escala real (el pivote es hijo directo del
+        // root, sin la escala 1/77 del rig). Sin esto, el arma no sigue
+        // la animación (o no aparece: matrices de hueso aún sin asentar).
+        if (gunPivot && this._handBone) {
+          clone.updateMatrixWorld(true);
+          // local = parentWorld⁻¹ · handWorld (pivote es hijo del root, que
+          // rota/traslada: copiar world→local directamente heredaría doble).
+          // Scratch de módulo: cero allocs por frame (reglas §6).
+          _gunAnchorM.copy(clone.matrixWorld).invert()
+            .multiply(this._handBone.matrixWorld);
+          _gunAnchorM.decompose(_gunAnchorP, _gunAnchorQ, _gunAnchorS);
+          gunPivot.position.copy(_gunAnchorP);
+          // offset de exhibición del llamador (Lobby._poseHeroGun): saca el
+          // arma del plano del cuerpo (móvil: "medio oculta tras el torso").
+          const restData = gunPivot.userData.rest;
+          if (restData && restData.pos) gunPivot.position.add(restData.pos);
+          // ancla (marco de la mano) · resto (pose de presentación persistida
+          // por el llamador — Lobby._poseHeroGun): el idle recompone la misma
+          // pose en el estado EXACTO de este frame, sin bakes que el siguiente
+          // update() descarte (bug medido: pose horneada → sobrescrita).
+          gunPivot.quaternion.copy(_gunAnchorQ);
+          const rest = gunPivot.userData.rest;
+          if (rest) gunPivot.quaternion.multiply(rest.quat);
+          // la escala extraída (≈1/77 del rig) se DESCARTA: el arma vive a
+          // escala real del root (1.0 local → 1.22 mundo en el héroe)
+        }
       },
     };
   },
@@ -252,6 +348,7 @@ export const AvatarLib = {
     const obj = await assets.instantiate(url);
     if (!obj) return null;
     const wrap = new THREE.Group();
+    wrap.userData.isGlb = true; // contrato: arma GLB real (tests de lobby/bots)
     // Normalización de mano: cañón a -Z, tamaño ~0.35-0.5u.
     // ORIENTACIÓN MEDIDA (análisis de vértices/Box3): los GLB de Kenney ya
     // apuntan el cañón a -Z; rotY: Math.PI los volteaba (culata al frente).

@@ -10,29 +10,37 @@ import { GLTFLoader } from '../lib/GLTFLoader.js';
 class AssetRegistry {
   constructor() {
     this._loader = new GLTFLoader();
-    this._cache = new Map();   // url -> Promise<Object3D|null> (template)
+    this._rawCache = new Map(); // url -> Promise<GLTF|null> (escena + clips)
     this.failed = new Set();
   }
 
-  // Carga y cachea el TEMPLATE (no añadir a escena jamás).
-  load(url) {
-    if (this._cache.has(url)) return this._cache.get(url);
+  // ── Carga y cachea el GLTF COMPLETO (escena + animaciones) ──
+  // DUEÑO ÚNICO de GLTFLoader (regla §7): AvatarLib, WeaponIcons y cualquier
+  // consumidor futuro pasan por aquí — UNA cache, UN registro de fallos, un
+  // solo warning por asset roto. Nadie más instancia loaders.
+  loadRaw(url) {
+    if (this._rawCache.has(url)) return this._rawCache.get(url);
     const p = new Promise((resolve) => {
       this._loader.load(url,
-        (gltf) => resolve(gltf.scene),
+        (gltf) => resolve(gltf),
         undefined,
         (err) => { console.warn(`[Assets] ${url} no cargó:`, err && err.message || err); this.failed.add(url); resolve(null); }
       );
     });
-    this._cache.set(url, p);
+    this._rawCache.set(url, p);
     return p;
   }
 
-  // Instancia lista para escena: clonado simple (armas no tienen esqueleto).
-  // Devuelve null si el asset no está disponible → el llamador usa fallback.
+  // Template (escena sin clonar): NO añadir a escena jamás — clónalo.
+  load(url) {
+    return this.loadRaw(url).then((g) => (g ? g.scene : null));
+  }
+
+  // Instancia lista para escena. Devuelve null si el asset no está
+  // disponible → el llamador usa fallback.
   async instantiate(url) {
-    const tpl = await this.load(url);
-    return tpl ? tpl.clone(true) : null;
+    const gltf = await this.loadRaw(url);
+    return gltf ? gltf.scene.clone(true) : null;
   }
 }
 

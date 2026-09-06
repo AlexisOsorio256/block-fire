@@ -106,18 +106,26 @@ versionan — regla §3. Para capturar estados: puppeteer headless con
   de COMPRA antes de cada ronda con oro ficticio, inmunidad de spawn que se
   rompe al disparar, sin respawn en ronda (estilo Free Fire)
 - **TODOS CONTRA TODOS (FFA)**: 8 jugadores, respawns, 20 kills gana
-- **7 bots** con outfit blocky propio (7 skins/siluetas) que usan el GLB de
-  soldado animado si carga (fallback blocky automático), navegación con
-  occupancy grid + A* (`src/bots/Navigation.js`): rodean obstáculos, memoria
-  corta del último enemigo, separación, distancia por arma, roles por
-  parámetros (entry/support/anchor) — sin trampas
+- **7 bots con identidad de operador** (paleta de traje propia + 3 siluetas
+  modulares sobre el mismo rig: casco / hombreras / mochila en el color `gear`
+  del operador; equipo = visor + banda, nunca el traje teñido) que usan el GLB
+  de soldado animado si carga (fallback blocky automático con 7 outfits
+  propios), navegación con occupancy grid + A* (`src/bots/Navigation.js`):
+  rodean obstáculos, memoria corta del último enemigo, separación,
+  **distancia táctica según el arma en la mano** (tabla `WEAPON_RANGE` en
+  `src/bots/Bot.js`, modulada por el rol entry/support/anchor — sin
+  wallhack: la percepción respeta oclusión real a cualquier distancia),
+  flanqueo lateral cuando no consiguen línea de tiro, compra coherente con el
+  rol — sin trampas
 - **4 armas (rifle, pistola, escopeta, SMG) con modelos GLB de Kenney (CC0,
   ver `assets/models/weapons/LICENSE-kenney.txt`)**, viewmodel en primera
   persona con brazos agarrando el arma, siluetas y sonidos propios, retroceso,
   recarga y cambio animados; fallback blocky si el GLB falla
 - **Aim assist tipo levantar-mira**: fricción moderada cerca del torso (sin
-  snap), la cabeza es recompensa del drag vertical real; no asiste tras muros
-  ni sobre aliados; menor en PC que en touch
+  snap), aplicada UNA VEZ sobre la dirección base ANTES del spread — mueve el
+  centro del patrón y jamás comprime el de la escopeta; la cabeza es
+  recompensa del drag vertical real; no asiste tras muros ni sobre aliados;
+  menor en PC que en touch
 - **Números de daño flotantes** (pool DOM, body/headshot/kill diferenciados,
   postas de escopeta acumuladas) + hitmarker + trazadoras + sangre
 - **Iconos de armas de la tienda renderizados desde el GLB real** (perfil
@@ -130,14 +138,21 @@ versionan — regla §3. Para capturar estados: puppeteer headless con
   fuego, agacharse, sprint fijo; sin estados táctiles pegados
 - Landscape obligatorio en móvil con instrucción ANTES del gameplay
 - Screen shake, vignette de daño, **indicador direccional de daño**, respawn en 2s
-- Mapa 120×120 con **capa decorativa separada de los colliders**:
+- Mapa 120×120 con **capa decorativa separada de los colliders estructurales**:
   color zoning por zonas, landmarks por lane (grúa, contenedores, arcos,
-  torre de agua), props horneados en 1 mesh por material (`src/world/MapDecor.js`)
-  — arena Clash Squad con bases espejo y centro; FFA con 6 casas y landmarks propios
+  torre de agua), props horneados en 1 mesh por material
+  (`src/world/MapDecor.js`) — **los props sólidos a nivel de jugador (bidones,
+  cajas, contenedores, grúa) registran collider simple: lo que parece sólido
+  no es un fantasma**; el micro-dressing y los landmarks altos sí son
+  atravesables por diseño — arena Clash Squad con bases espejo y centro; FFA
+  con 6 casas y landmarks propios
 - 60 FPS de presupuesto en PC y móviles modestos (resolución adaptativa)
+- **Skins de armas cosméticas y GRATIS**: se eligen en el lobby (persistente
+  en localStorage); el oro del Clash Squad solo compra armas
 - **Lobby de estudio**: héroe 3D encuadrado por Box3 (completo, ~68% de altura,
-  testeado), pedestal, luces de estudio, CTA JUGAR dominante, selector de modo
-  y de skin de armas, estadísticas locales y panel de configuración
+  testeado) **con arma GLB real** (el blocky solo existe mientras carga o si
+  el asset falla), pedestal, luces de estudio, CTA JUGAR dominante, selector
+  de modo y de skin de armas, estadísticas locales y panel de configuración
 
 ---
 

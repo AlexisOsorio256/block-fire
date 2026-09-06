@@ -226,9 +226,16 @@ export class Navigation {
     return wp;
   }
 
-  // invalidar todos los caminos (fin de ronda/reset: regla §4 — nada viejo)
-  reset() {
-    this._paths.clear();
+  // Invalidar rutas en cache.
+  //   reset(botId) → borra SOLO el path/cache de ese bot (reubicación local
+  //                  o respawn individual: los demás conservan su ruta).
+  //   reset()      → reset global (inicio de ronda/partida: regla §4, nada viejo).
+  reset(botId = null) {
+    if (botId === null || botId === undefined) {
+      this._paths.clear();
+      return;
+    }
+    this._paths.delete(botId);
   }
 
   tick(dt) { this._clock += dt; }

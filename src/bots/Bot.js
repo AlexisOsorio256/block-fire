@@ -34,6 +34,24 @@ const ROLE_PARAMS = [
   { prefDist: 9,  aggro: 1.0,  react: 0.22, laneBias: 0.0  }, // support
 ];
 
+// COMPORTAMIENTO DEL ARSENAL PARA BOTS (tabla única, sin clases por arma):
+// la distancia preferida y la agresividad NACEN del arma en la mano y las
+// MODULA el rol (entry empuja, anchor frena — ver preferredDist()).
+const WEAPON_RANGE = {
+  shotgun: { prefDist: 5.5, aggro: 1.35 }, // cierra a quemarropa
+  smg:     { prefDist: 9.0, aggro: 1.10 }, // presión móvil corto/medio
+  rifle:   { prefDist: 12,  aggro: 0.95 }, // medio: no se pega al enemigo
+  pistol:  { prefDist: 10,  aggro: 0.85 }, // conservadora/backup
+};
+
+// Distancia preferida efectiva: el arma pone la base, el rol modula
+// (prefDist del rol normalizado a 11 = neutro). El rol NUNCA sustituye al arma.
+// Exportada para la suite (contrato: distancia táctica según arma).
+export function preferredDist(role, weaponKey) {
+  const w = WEAPON_RANGE[weaponKey] || WEAPON_RANGE.rifle;
+  return w.prefDist * (role.prefDist / 11);
+}
+
 export class Bot {
   constructor(id, scene, map, position, navigation = null) {
     this.id = id;
@@ -82,7 +100,9 @@ export class Bot {
     this._lastSeen = null;       // {x,z,ttl}
     this._reactWait = 0;         // tiempo de reacción restante al adquirir objetivo
     this._noShootTime = 0;       // tiempo sin poder disparar con LOS → reubicarse
+    this._flankT = 0;            // reubicación lateral en curso (límite temporal)
     this._laneSeed = (id % 2 === 0) ? 1 : -1; // flanco preferido coherente por bot
+    this._flankDir = this._laneSeed; // lado del flanqueo (alterna por intento)
 
     // CLASH SQUAD: arma comprada por ronda (la IA "compra" en la fase de compra)
     this.weaponKey = 'pistol';
@@ -372,6 +392,7 @@ export class Bot {
     this._lastSeen = null;
     this._reactWait = 0;
     this._noShootTime = 0;
+    this._flankT = 0;
     if (this.navigation) this.navigation.reset(this.id);
     if (this._avatar) { this._avatar.setMoving(false); }
   }
@@ -403,7 +424,10 @@ export class Bot {
         S.dir.subVectors(S.chest, S.eye).normalize();
         const dist = S.eye.distanceTo(S.chest);
         const hit = map.raycast(S.eye, S.dir, dist);
-        if (!hit || d < 8) { nearest = c; nearestDist = d; }
+        // OCLUSIÓN REAL SIEMPRE (sin excepción de proximidad): un enemigo tras
+        // un muro NO se adquiere aunque esté a <8u — los bots no tienen
+        // wallhack. Corta distancia ≠ visión a través de geometría.
+        if (!hit) { nearest = c; nearestDist = d; }
       }
     }
     if (nearest) {
@@ -417,7 +441,9 @@ export class Bot {
     this.target = nearest;
 
     // ── State machine (con memoria: chase a la ÚLTIMA POSICIÓN VISTA) ──
-    if (nearest && nearestDist < role.prefDist + 8) {
+    // El umbral de ataque usa la distancia efectiva del ARMA+rol.
+    const prefDistNow = preferredDist(role, this.weaponKey);
+    if (nearest && nearestDist < prefDistNow + 8) {
       this.state = 'attack';
     } else if (nearest) {
       this.state = 'chase';
@@ -445,6 +471,15 @@ export class Bot {
     if (this.state === 'chase') {
       const g = nearest ? nearest.position : this._lastSeen;
       if (g) { goalX = g.x; goalZ = g.z; }
+    } else if (this.state === 'attack' && nearest && this._flankT > 0) {
+      // REPOSICIONAMIENTO LATERAL: punto perpendicular al objetivo (flanqueo
+      // corto por Navigation) — no empujar pared, no radar: moverse a un sitio
+      // con ángulo de tiro. Límite temporal: _flankT decae en el ataque.
+      const dx = nearest.position.x - this.position.x;
+      const dz = nearest.position.z - this.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      goalX = this.position.x + (-dz / len) * this._flankDir * 6;
+      goalZ = this.position.z + (dx / len) * this._flankDir * 6;
     } else if (this.state === 'wander') {
       // ALIADOS con ancla: reagruparse cerca del jugador pero en POSICIÓN
       // PROPIA (offset por rol/lane: no patitos, ocupan puntos distintos)
@@ -520,44 +555,61 @@ export class Bot {
 
     } else if (this.state === 'attack' && nearest) {
       lookAtTarget = true;
-      // Mantener la DISTANCIA PREFERIDA del rol (arma en la mano): shotgun
-      // cierra, rifle/SMG media, anchor respira. Reacción del rol antes del
-      // primer disparo; aggro escala la agresividad del avance.
+      // Mantener la DISTANCIA PREFERIDA del ARMA (modulada por el rol): shotgun
+      // cierra, rifle/SMG media, pistola conservadora. Reacción del rol antes
+      // del primer disparo; aggro del arma escala el avance.
       wantShoot = nearestDist < 24 && this._reactWait <= 0;
       if (this._reactWait > 0) this._reactWait -= dt;
       const toTarget = S.toT.subVectors(nearest.position, this.position);
       toTarget.y = 0; const dist = toTarget.length();
       toTarget.normalize();
-      const pref = role.prefDist;
-      if (dist > pref + 3) {
-        move.copy(toTarget).multiplyScalar(0.7 * role.aggro);
-      } else if (dist < pref - 3) {
-        move.copy(toTarget).multiplyScalar(-0.5);
-      } else {
-        if (this.strafeTimer <= 0) {
-          this.strafeDir = Math.random() > 0.5 ? 1 : -1;
-          this.strafeTimer = 0.4 + Math.random()*0.6;
+      if (this._flankT > 0) {
+        // Reubicación en curso: seguir el waypoint lateral (o strafe amplio si
+        // Navigation no tiene ruta) — se NO dispara mejor pegado a la pared.
+        this._flankT -= dt;
+        if (wp) {
+          S.wp.set(wp.x, 0, wp.z).sub(this.position); S.wp.y = 0;
+          if (S.wp.lengthSq() > 0.001) move.copy(S.wp).normalize(); else move.set(0, 0, 0);
+        } else {
+          move.copy(S.strafe.crossVectors(toTarget, UP).multiplyScalar(this._flankDir)).normalize();
         }
-        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir);
-        move.copy(strafe);
+        move.multiplyScalar(0.9);
+      } else {
+        const pref = prefDistNow;
+        const wr = WEAPON_RANGE[this.weaponKey] || WEAPON_RANGE.rifle;
+        if (dist > pref + 3) {
+          move.copy(toTarget).multiplyScalar(0.7 * role.aggro * wr.aggro);
+        } else if (dist < pref - 3) {
+          move.copy(toTarget).multiplyScalar(-0.5);
+        } else {
+          if (this.strafeTimer <= 0) {
+            this.strafeDir = Math.random() > 0.5 ? 1 : -1;
+            this.strafeTimer = 0.4 + Math.random()*0.6;
+          }
+          const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir);
+          move.copy(strafe);
+        }
+        if (this.strafeTimer > 0) {
+          const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir * 0.6);
+          move.add(strafe);
+        }
+        move.normalize();
+        move.multiplyScalar(0.85);
       }
-      if (this.strafeTimer > 0) {
-        const strafe = S.strafe.crossVectors(toTarget, UP).multiplyScalar(this.strafeDir * 0.6);
-        move.add(strafe);
-      }
-      move.normalize();
-      move.multiplyScalar(0.85);
       // Reubicarse si lleva demasiado sin poder disparar (cubierto/trabado):
-      // 2.5s con target a la vista sin abrir fuego → goal lateral nuevo
+      // 2.5s con target a la vista sin abrir fuego → FLANQUEO lateral con
+      // límite temporal. reset(SOLO este bot): los demás conservan su ruta.
       if (wantShoot) {
         this._noShootTime += dt;
       } else {
         this._noShootTime = 0;
       }
-      if (this._noShootTime > 2.5 && nav) {
-        nav.reset(this.id);
-        this.strafeDir = -this.strafeDir;
+      if (this._noShootTime > 2.5) {
+        this._flankT = 2.2;
+        this._flankDir = -this._flankDir; // alternar lado: impredecible, no zigzag eterno
         this._noShootTime = 0;
+        if (nav) nav.reset(this.id);
+        this.strafeDir = -this.strafeDir;
       }
     }
 
