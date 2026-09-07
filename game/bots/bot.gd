@@ -29,6 +29,7 @@ var navigation_safe_velocity: Vector3 = Vector3.ZERO
 var has_navigation_safe_velocity: bool = false
 var reposition_timer: float = 0.0
 var death_hide_timer: float = 0.0
+var last_damage_headshot: bool = false
 var rng := RandomNumberGenerator.new()
 
 func configure(context: Node, team_id: String, selected_operator: String, role_id: String, difficulty_bonus: float = 0.0) -> void:
@@ -226,6 +227,7 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 	if not can_use_combat() or spawn_immunity > 0.0:
 		return false
 	health = maxf(0.0, health - amount)
+	last_damage_headshot = headshot
 	if match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
 	if health <= 0.0:
@@ -239,7 +241,9 @@ func _die(killer: Node) -> void:
 	if not is_alive:
 		return
 	is_alive = false
-	death_hide_timer = 0.72
+	# Quaternius Death clip runs 0.77s; hiding at 0.72s cut the settle. 1.1s
+	# lets the clip finish plus a short hold before the body disappears.
+	death_hide_timer = 1.1
 	collision_layer = 0
 	collision_mask = 0
 	weapon.clear_combat_input()
@@ -262,6 +266,7 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	target_memory_position = Vector3.ZERO
 	target_memory_timer = 0.0
 	last_position = global_position
+	last_damage_headshot = false
 	reposition_timer = rng.randf_range(0.2, 1.0)
 	weapon.clear_combat_input()
 

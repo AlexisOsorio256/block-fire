@@ -15,6 +15,7 @@ var settings_popup: PanelContainer
 var ui_root: Control
 var profile_label: Label
 var armory_label: Label3D
+var weapon_display_root: Node3D
 
 const OPERATORS: Array[String] = ["BRAVO", "VULTURE", "TALON", "DUNE", "HAVOC"]
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
@@ -30,64 +31,77 @@ func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color("#07132b")
+	environment.background_color = Color("#0a1730")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = Color("#7998c4")
-	environment.ambient_light_energy = 0.76
+	environment.ambient_light_energy = 0.9
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment_node.environment = environment
 	add_child(environment_node)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-38, -32, 0)
+	sun.rotation_degrees = Vector3(-36, -28, 0)
 	sun.light_color = Color("#ffe0ab")
-	sun.light_energy = 1.18
+	sun.light_energy = 1.25
 	sun.shadow_enabled = true
 	add_child(sun)
+	# Cool rim light separates the hero from the backdrop like a store card.
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-12, 148, 0)
+	rim.light_color = Color("#6fd0ff")
+	rim.light_energy = 0.7
+	add_child(rim)
 
 	var camera := Camera3D.new()
-	camera.position = Vector3(0, 3.0, 8.8)
-	camera.fov = 32.0
+	camera.position = Vector3(0.2, 1.75, 5.6)
+	camera.fov = 42.0
 	camera.current = true
 	add_child(camera)
-	camera.look_at(Vector3(0, 1.5, 0), Vector3.UP)
+	camera.look_at(Vector3(1.1, 1.15, 0), Vector3.UP)
 
+	# Backdrop: dark wall panel + warm floor band, framing the hero card.
 	var backdrop := MeshInstance3D.new()
 	var backdrop_mesh := BoxMesh.new()
-	backdrop_mesh.size = Vector3(44, 16, 0.8)
+	backdrop_mesh.size = Vector3(30, 12, 0.8)
 	backdrop.mesh = backdrop_mesh
-	backdrop.position = Vector3(2, 5.0, -5.4)
-	backdrop.material_override = _material(Color("#162d54"))
+	backdrop.position = Vector3(2.5, 4.4, -4.6)
+	backdrop.material_override = _material(Color("#152a4e"))
 	add_child(backdrop)
-	var stripe := MeshInstance3D.new()
-	var stripe_mesh := BoxMesh.new()
-	stripe_mesh.size = Vector3(40, 0.25, 0.2)
-	stripe.mesh = stripe_mesh
-	stripe.position = Vector3(-1, 5.5, -4.9)
-	stripe.rotation_degrees.z = -7.0
-	stripe.material_override = _material(Color("#375b80"))
-	add_child(stripe)
+	var glow_panel := MeshInstance3D.new()
+	var glow_panel_mesh := BoxMesh.new()
+	glow_panel_mesh.size = Vector3(7.4, 9.0, 0.3)
+	glow_panel.mesh = glow_panel_mesh
+	glow_panel.position = Vector3(1.4, 4.4, -4.1)
+	glow_panel.material_override = _material(Color("#1e3c66"))
+	add_child(glow_panel)
+	var floor_band := MeshInstance3D.new()
+	var floor_band_mesh := BoxMesh.new()
+	floor_band_mesh.size = Vector3(30, 0.2, 6.0)
+	floor_band.mesh = floor_band_mesh
+	floor_band.position = Vector3(2.5, -0.1, 1.4)
+	floor_band.material_override = _material(Color("#223c5e"))
+	add_child(floor_band)
 
 	var pedestal := MeshInstance3D.new()
 	var pedestal_mesh := CylinderMesh.new()
-	pedestal_mesh.top_radius = 2.5
-	pedestal_mesh.bottom_radius = 2.9
-	pedestal_mesh.height = 0.28
+	pedestal_mesh.top_radius = 1.7
+	pedestal_mesh.bottom_radius = 2.0
+	pedestal_mesh.height = 0.3
 	pedestal.mesh = pedestal_mesh
 	pedestal.position = Vector3(1.4, 0.15, 0)
-	pedestal.material_override = _material(Color("#405a76"))
+	pedestal.material_override = _material(Color("#2d4666"))
 	add_child(pedestal)
 	var ring := MeshInstance3D.new()
 	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 2.72
-	ring_mesh.outer_radius = 2.86
+	ring_mesh.inner_radius = 1.86
+	ring_mesh.outer_radius = 1.98
 	ring.mesh = ring_mesh
-	ring.position = Vector3(1.4, 0.32, 0)
+	ring.position = Vector3(1.4, 0.1, 0)
 	ring.material_override = _material(Color("#ffb73e"))
 	add_child(ring)
 
 	hero = OperatorVisual.new()
-	hero.position = Vector3(1.4, 0.35, 0)
+	hero.position = Vector3(1.4, 0.3, 0)
 	# Kenney characters face -Z; keep the portrait looking toward the camera.
 	hero.rotation_degrees.y = 0.0
 	hero.configure(selected_operator, "ally", _operator_color(selected_operator))
@@ -101,33 +115,27 @@ func _create_weapon_display() -> void:
 	var display_base := MeshInstance3D.new()
 	display_base.name = "ArmoryPreviewBase"
 	var base_mesh := CylinderMesh.new()
-	base_mesh.top_radius = 0.58
-	base_mesh.bottom_radius = 0.68
-	base_mesh.height = 0.16
+	base_mesh.top_radius = 0.85
+	base_mesh.bottom_radius = 0.95
+	base_mesh.height = 0.18
 	display_base.mesh = base_mesh
-	display_base.position = Vector3(3.55, 0.28, 0.15)
-	display_base.material_override = _material(Color("#405a76"))
+	display_base.position = Vector3(4.15, 0.3, 0.7)
+	display_base.material_override = _material(Color("#2d4666"))
 	add_child(display_base)
 	var display_ring := MeshInstance3D.new()
 	display_ring.name = "ArmoryPreviewRing"
 	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 0.58
-	ring_mesh.outer_radius = 0.64
+	ring_mesh.inner_radius = 0.85
+	ring_mesh.outer_radius = 0.93
 	display_ring.mesh = ring_mesh
-	display_ring.position = Vector3(3.55, 0.38, 0.15)
+	display_ring.position = Vector3(4.15, 0.42, 0.7)
 	display_ring.material_override = _material(BlockfireTheme.GOLD)
 	add_child(display_ring)
-	var display := Node3D.new()
-	display.name = "ArmoryPreview"
-	display.position = Vector3(3.55, 0.78, 0.15)
-	display.rotation_degrees = Vector3(-8.0, 180.0, -24.0)
-	display.scale = Vector3.ONE * 1.05
-	display.add_child(packed.instantiate())
-	add_child(display)
+	weapon_display_root = _recreate_weapon_display()
 	armory_label = Label3D.new()
 	armory_label.name = "ArmoryPreviewLabel"
 	armory_label.text = "RIFLE  //  " + selected_skin.to_upper()
-	armory_label.position = Vector3(3.25, 2.65, 0.0)
+	armory_label.position = Vector3(4.15, 3.0, 0.7)
 	armory_label.font_size = 30
 	armory_label.pixel_size = 0.006
 	armory_label.modulate = BlockfireTheme.GOLD
@@ -136,6 +144,21 @@ func _create_weapon_display() -> void:
 	armory_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	armory_label.no_depth_test = true
 	add_child(armory_label)
+
+func _recreate_weapon_display() -> Node3D:
+	# La preview comparte la misma fuente de skin que el gameplay (WeaponSkin).
+	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
+	if packed == null:
+		return null
+	var display := Node3D.new()
+	display.name = "ArmoryPreview"
+	display.position = Vector3(4.15, 1.1, 0.7)
+	display.rotation_degrees = Vector3(-6.0, 196.0, -18.0)
+	display.scale = Vector3.ONE * 2.1
+	display.add_child(packed.instantiate())
+	WeaponSkin.apply(display, selected_skin)
+	add_child(display)
+	return display
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -281,6 +304,10 @@ func _select_skin(skin: String) -> void:
 		skin_buttons[key].modulate = Color.WHITE if key == skin else Color("#8292a8")
 	if armory_label != null:
 		armory_label.text = "RIFLE  //  " + skin.to_upper()
+	if is_instance_valid(weapon_display_root):
+		weapon_display_root.queue_free()
+		weapon_display_root = null
+	weapon_display_root = _recreate_weapon_display()
 
 func _on_play() -> void:
 	start_requested.emit(selected_mode, selected_operator, selected_skin)

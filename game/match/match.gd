@@ -27,6 +27,7 @@ var spectator_camera: Camera3D
 var spectator_index: int = 0
 var spectator_targets: Array[Node] = []
 var last_team: String = "enemy"
+var last_victim_headshot: bool = false
 var kills: Dictionary = {}
 var round_owned_weapons: Dictionary = {}
 var ffa_winner: Node
@@ -243,6 +244,7 @@ func _on_player_died(dead: Node, killer: Node) -> void:
 
 func _on_bot_died(dead: Node, killer: Node) -> void:
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "ally"
+	last_victim_headshot = bool(dead.get("last_damage_headshot")) if dead != null and dead.has_method("get_team") else false
 	if mode == "ffa":
 		if _register_ffa_kill(killer):
 			return
@@ -251,7 +253,7 @@ func _on_bot_died(dead: Node, killer: Node) -> void:
 			var id: int = killer.get_instance_id()
 			kills[id] = int(kills.get(id, 0)) + 1
 			if killer == player:
-				hud.show_kill()
+				hud.show_kill(last_victim_headshot)
 	if mode == "ffa":
 		_schedule_respawn(dead)
 	else:
@@ -261,7 +263,7 @@ func _register_ffa_kill(killer: Node) -> bool:
 	if not register_ffa_kill(killer):
 		return false
 	if killer == player:
-		hud.show_kill()
+		hud.show_kill(bool(last_victim_headshot))
 	hud.update_ffa_score(get_player_kills(), FfaRules.KILLS_TO_WIN)
 	if ffa_killer_reached_target(killer):
 		ffa_winner = killer

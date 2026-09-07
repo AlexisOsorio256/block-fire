@@ -92,6 +92,11 @@ func _test_player_and_operator_contracts() -> void:
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "operator rig exposes locomotion animation")
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "operator rig exposes death animation")
 	visual.free()
+	var victim := BlockfireBot.new()
+	_check(not victim.last_damage_headshot, "headshot kill flag starts false")
+	victim.last_damage_headshot = true
+	_check(victim.last_damage_headshot, "headshot kill flag is remembered by the victim")
+	victim.free()
 
 func _test_touch_contracts() -> void:
 	var controls := BlockfireMobileControls.new()

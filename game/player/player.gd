@@ -32,6 +32,7 @@ var crouch_speed: float = 3.7
 var acceleration: float = 32.0
 var assist_break_timer: float = 0.0
 var step_timer: float = 0.0
+var last_damage_headshot: bool = false
 
 func configure(context: Node, team_id: String, selected_operator: String, controls: Node = null) -> void:
 	match_context = context
@@ -140,6 +141,7 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 	if not can_use_combat() or spawn_immunity > 0.0:
 		return false
 	health = maxf(0.0, health - amount)
+	last_damage_headshot = headshot
 	health_changed.emit(health, max_health)
 	if match_context != null and match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
@@ -181,6 +183,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	assist_target = null
 	assist_break_timer = 0.0
 	camera_recoil = 0.0
+	last_damage_headshot = false
 	_play_feedback("res://assets/sfx/respawn.ogg")
 
 func break_spawn_immunity() -> void:

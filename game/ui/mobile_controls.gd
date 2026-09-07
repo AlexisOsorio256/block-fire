@@ -177,6 +177,10 @@ func qa_tap_aim() -> void:
 func qa_press_aim() -> void:
 	qa_tap_aim()
 
+func qa_press_reload() -> void:
+	reload_request = true
+	queue_redraw()
+
 func qa_release_aim() -> void:
 	# ADS is tap-to-latch. Releasing the finger must not clear it.
 	pass

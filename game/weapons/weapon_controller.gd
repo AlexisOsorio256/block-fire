@@ -41,6 +41,11 @@ var rng := RandomNumberGenerator.new()
 var arms_root: Node3D
 var viewmodel_base_position := Vector3(0.28, -0.22, -0.46)
 var viewmodel_base_rotation := Vector3(0.0, 180.0, 0.0)
+var ads_base_position := Vector3(0.12, -0.16, -0.56)
+var ads_base_rotation := Vector3(0.0, 180.0, 0.0)
+var viewmodel_scale := 0.36
+var muzzle_local := Vector3(0.0, 0.05, 0.4)
+var muzzle_flash_scale := 1.0
 var ads_weight: float = 0.0
 var recoil_amount: float = 0.0
 var viewmodel_time: float = 0.0
@@ -55,6 +60,12 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	if third_person:
 		viewmodel_base_position = Vector3(0.32, 1.28, -0.34)
 		viewmodel_base_rotation = Vector3(-8.0, 180.0, 0.0)
+		viewmodel_scale = 0.46
+	else:
+		viewmodel_base_position = Vector3(0.28, -0.22, -0.46)
+		viewmodel_base_rotation = Vector3(0.0, 180.0, 0.0)
+		viewmodel_scale = 0.36
+	_apply_definition_pose()
 	rng.randomize()
 	shot_audio = AudioStreamPlayer3D.new()
 	shot_audio.name = "WeaponSfx"
@@ -343,6 +354,7 @@ func _refresh_viewmodel() -> void:
 	viewmodel = null
 	muzzle_anchor = null
 	var definition := current_definition()
+	_apply_definition_pose()
 	var model_scene := load(definition.viewmodel_scene) as PackedScene
 	if model_scene != null:
 		viewmodel = model_scene.instantiate() as Node3D
@@ -351,18 +363,34 @@ func _refresh_viewmodel() -> void:
 	add_child(viewmodel)
 	viewmodel.position = viewmodel_base_position
 	viewmodel.rotation_degrees = viewmodel_base_rotation
-	viewmodel.scale = Vector3.ONE * (0.46 if third_person else 0.36)
+	viewmodel.scale = Vector3.ONE * viewmodel_scale
 	_create_muzzle_anchor()
 	_apply_weapon_skin()
+
+func _apply_definition_pose() -> void:
+	# Per-weapon first-person calibration from the WeaponDefinition resource;
+	# third-person keeps its own fixed rig pose.
+	var definition := current_definition()
+	if third_person:
+		return
+	viewmodel_base_position = definition.hip_position
+	viewmodel_base_rotation = definition.hip_rotation
+	ads_base_position = definition.ads_position
+	ads_base_rotation = definition.ads_rotation
+	muzzle_local = definition.muzzle_offset
+	muzzle_flash_scale = definition.muzzle_flash_scale
 
 func _create_muzzle_anchor() -> void:
 	if viewmodel == null or not is_instance_valid(viewmodel):
 		return
 	muzzle_anchor = Node3D.new()
 	muzzle_anchor.name = "MuzzleAnchor"
-	# All shipped weapon scenes use the same forward convention. Keeping the
-	# anchor under the animated weapon makes ADS/recoil move the flash with it.
-	muzzle_anchor.position = Vector3(0.0, 0.0, -0.92 if not third_person else -0.78)
+	# Weapon models are origin-centered with the barrel tip pointing +Z
+	# (rifle tip z=+0.43, shotgun +1.39, pistol/smg +0.32). Place the anchor
+	# at the real muzzle tip so the flash leaves the barrel, not the stock.
+	muzzle_anchor.position = muzzle_local
+	if third_person:
+		muzzle_anchor.position = Vector3(0.0, 0.0, -0.78)
 	viewmodel.add_child(muzzle_anchor)
 
 func _create_arms() -> void:
@@ -372,40 +400,65 @@ func _create_arms() -> void:
 	arms_root.name = "ArmsAndHands"
 	arms_root.position = viewmodel_base_position
 	arms_root.rotation_degrees = viewmodel_base_rotation
-	# Keep the first-person silhouette light and behind the weapon. The arm
-	# meshes are deliberately low-poly sleeves/gloves, not oversized debug blobs.
-	arms_root.scale = Vector3.ONE * 0.18
+	# Sleeve + worked glove hands reading as operator arms, not blobs.
+	arms_root.scale = Vector3.ONE * 0.30
 	add_child(arms_root)
-	_create_arm_segment("LeftSleeve", Vector3(-0.13, -0.18, 0.1), -32.0, Color("#263a5b"))
-	_create_arm_segment("RightSleeve", Vector3(0.22, -0.18, 0.12), 32.0, Color("#263a5b"))
-	_create_hand("LeftHand", Vector3(0.02, -0.09, -0.22))
-	_create_hand("RightHand", Vector3(0.32, -0.07, -0.2))
+	_create_sleeve("LeftSleeve", Vector3(0.02, -0.08, 0.16), Vector3(6.0, -14.0, -30.0), Vector3(0.10, 0.09, 0.30))
+	_create_sleeve("RightSleeve", Vector3(-0.14, -0.09, 0.20), Vector3(6.0, 12.0, 26.0), Vector3(0.10, 0.09, 0.30))
+	# Screen mapping (viewmodel yaw 180): local +x reads slightly screen-right,
+	# local +z reads screen-left toward the muzzle. Trigger hand at the grip,
+	# support hand forward under the barrel.
+	_create_hand("TriggerHand", Vector3(0.02, -0.02, -0.10), 12.0)
+	_create_hand("SupportHand", Vector3(-0.10, -0.10, 0.33), -12.0)
 
-func _create_arm_segment(node_name: String, position: Vector3, roll: float, color: Color) -> void:
-	var arm := MeshInstance3D.new()
-	arm.name = node_name
+func _create_sleeve(node_name: String, position: Vector3, rotation: Vector3, size: Vector3) -> void:
+	var sleeve := MeshInstance3D.new()
+	sleeve.name = node_name
+	# Tapered sleeve built from a capsule-like cylinder: shoulder wide, wrist narrow.
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.055
-	mesh.bottom_radius = 0.085
-	mesh.height = 0.58
-	mesh.radial_segments = 8
-	mesh.rings = 2
-	arm.mesh = mesh
-	arm.position = position
-	arm.rotation_degrees.z = roll
-	arm.material_override = _arm_material(color)
-	arms_root.add_child(arm)
+	mesh.top_radius = minf(size.x, size.y) * 0.55
+	mesh.bottom_radius = maxf(size.x, size.y) * 0.62
+	mesh.height = size.z
+	mesh.radial_segments = 10
+	mesh.rings = 1
+	sleeve.mesh = mesh
+	sleeve.position = position
+	sleeve.rotation_degrees = rotation
+	sleeve.rotation_degrees.x += 90.0
+	sleeve.material_override = _arm_material(Color("#2c4468"))
+	arms_root.add_child(sleeve)
+	# Cuff ring near the wrist to break the silhouette.
+	var cuff := MeshInstance3D.new()
+	var cuff_mesh := TorusMesh.new()
+	cuff_mesh.inner_radius = maxf(size.x, size.y) * 0.5
+	cuff_mesh.outer_radius = maxf(size.x, size.y) * 0.78
+	cuff.mesh = cuff_mesh
+	cuff.position = Vector3(0.0, -size.z * 0.42, 0.0)
+	cuff.rotation_degrees = Vector3(0.0, 0.0, 0.0)
+	cuff.material_override = _arm_material(Color("#1d2c45"))
+	sleeve.add_child(cuff)
 
-func _create_hand(node_name: String, position: Vector3) -> void:
+func _create_hand(node_name: String, position: Vector3, roll: float) -> void:
 	var hand := MeshInstance3D.new()
 	hand.name = node_name
-	var mesh := PrismMesh.new()
-	mesh.size = Vector3(0.14, 0.10, 0.18)
-	mesh.left_to_right = 0.34
-	hand.mesh = mesh
+	# Gloved fist: tapered palm + wrapped thumb knuckle over the grip.
+	var palm_mesh := PrismMesh.new()
+	palm_mesh.size = Vector3(0.13, 0.11, 0.15)
+	palm_mesh.left_to_right = 0.18
+	hand.mesh = palm_mesh
 	hand.position = position
+	hand.rotation_degrees = Vector3(-14.0, 0.0, roll)
 	hand.material_override = _arm_material(Color("#d99873"))
 	arms_root.add_child(hand)
+	# Wrap thumb block overlapping the palm toward the grip.
+	var knuckle := MeshInstance3D.new()
+	var knuckle_mesh := BoxMesh.new()
+	knuckle_mesh.size = Vector3(0.115, 0.055, 0.075)
+	knuckle.mesh = knuckle_mesh
+	knuckle.position = Vector3(0.0, 0.045, -0.045)
+	knuckle.rotation_degrees.x = 24.0
+	knuckle.material_override = _arm_material(Color("#c9855f"))
+	hand.add_child(knuckle)
 
 func _arm_material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -429,15 +482,19 @@ func _animate_viewmodel(delta: float) -> void:
 		0.0
 	)
 	var sway := Vector3(sin(viewmodel_time * 1.35) * 0.006, cos(viewmodel_time * 1.7) * 0.005, 0.0)
-	var ads_position := Vector3(0.12, -0.16, -0.56)
-	var target_position := viewmodel_base_position.lerp(ads_position, ads_weight) + bob + sway
-	var target_rotation := viewmodel_base_rotation
+	var target_position := viewmodel_base_position.lerp(ads_base_position, ads_weight) + bob + sway
+	var target_rotation := viewmodel_base_rotation.lerp(ads_base_rotation, ads_weight)
 	target_rotation.x -= recoil_amount * 54.0
 	target_rotation.z += sin(viewmodel_time * 8.0) * 1.5 * move_amount
 	if reload_timer > 0.0:
-		target_position += Vector3(-0.06, -0.14, 0.10)
-		target_rotation.x += 10.0
-		target_rotation.z += 24.0
+		# Two-phase reload: drop and roll the gun out (first 45%), then bring it
+		# back up to seated (rest). Keeps hands near grip/foregrip the whole time.
+		var definition := current_definition()
+		var phase := clampf(1.0 - reload_timer / definition.reload_time, 0.0, 1.0)
+		var pull := sin(clampf(phase / 0.45, 0.0, 1.0) * PI) if phase < 0.45 else sin(clampf((phase - 0.45) / 0.55, 0.0, 1.0) * PI) * 0.35
+		target_position += Vector3(-0.04 * pull, (-0.16 + 0.03 * sin(phase * PI)) * pull + 0.02 * pull, 0.10 * pull)
+		target_rotation.x += 14.0 * pull
+		target_rotation.z += (26.0 - 10.0 * sin(phase * PI)) * pull
 	if switching_timer > 0.0:
 		var switch_weight := clampf(switching_timer / 0.34, 0.0, 1.0)
 		target_position += Vector3(0.03, -sin(switch_weight * PI) * 0.20, switch_weight * 0.12)
@@ -459,30 +516,7 @@ func _apply_weapon_skin() -> void:
 		return
 	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 	var skin := str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
-	var tint: Color = {
-		"Estándar": Color.WHITE,
-		"Oro": Color("#e4bd62"),
-		"Bosque": Color("#78a77d"),
-		"Hielo": Color("#82bfe2"),
-		"Carbón": Color("#777d91")
-	}.get(skin, Color.WHITE)
-	if tint == Color.WHITE:
-		return
-	for candidate: Node in viewmodel.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := candidate as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-			var source := mesh_instance.get_active_material(surface_index)
-			if source is StandardMaterial3D:
-				var material := source.duplicate() as StandardMaterial3D
-				material.albedo_color = Color(
-					material.albedo_color.r * tint.r,
-					material.albedo_color.g * tint.g,
-					material.albedo_color.b * tint.b,
-					material.albedo_color.a
-				)
-				mesh_instance.set_surface_override_material(surface_index, material)
+	WeaponSkin.apply(viewmodel, skin)
 
 func _fallback_weapon(id: String) -> Node3D:
 	var root := Node3D.new()
@@ -520,25 +554,48 @@ func _show_muzzle_flash() -> void:
 		return
 	if not is_instance_valid(muzzle_flash):
 		muzzle_flash = MeshInstance3D.new()
-		var mesh := CylinderMesh.new()
-		mesh.top_radius = 0.012
-		mesh.bottom_radius = 0.11
-		mesh.height = 0.28
-		muzzle_flash.mesh = mesh
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color("#ffd45a")
-		material.emission_enabled = true
-		material.emission = Color("#ff8d30")
-		material.emission_energy_multiplier = 3.0
-		muzzle_flash.material_override = material
+		# Cheap billboard quad + short cone: reads as a flash in a single frame
+		# on Mobile renderer, much lighter than particles.
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.34, 0.34)
+		var flash_mesh := ArrayMesh.new()
+		flash_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, quad.get_mesh_arrays())
+		muzzle_flash.mesh = flash_mesh
+		muzzle_flash.material_override = _muzzle_flash_material()
 		muzzle_anchor.add_child(muzzle_flash)
-		muzzle_flash.position = Vector3.ZERO
-		muzzle_flash.rotation_degrees.x = 90.0
+		muzzle_flash.position = Vector3(0.0, 0.0, 0.02)
+		var spike := MeshInstance3D.new()
+		spike.name = "MuzzleSpike"
+		var cone := CylinderMesh.new()
+		cone.top_radius = 0.004
+		cone.bottom_radius = 0.045
+		cone.height = 0.26
+		cone.radial_segments = 6
+		spike.mesh = cone
+		spike.material_override = _muzzle_flash_material()
+		spike.rotation_degrees.x = -90.0
+		spike.position = Vector3(0.0, 0.0, 0.15)
+		muzzle_flash.add_child(spike)
+	var flash_scale := maxf(0.6, muzzle_flash_scale)
+	muzzle_flash.scale = Vector3.ONE * flash_scale
+	muzzle_flash.rotation_degrees.z = rng.randf_range(0.0, 360.0)
 	muzzle_flash.visible = true
 	get_tree().create_timer(0.045).timeout.connect(func() -> void:
 		if is_instance_valid(muzzle_flash):
 			muzzle_flash.visible = false
 	)
+
+func _muzzle_flash_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color("#ffd45a")
+	material.emission_enabled = true
+	material.emission = Color("#ff8d30")
+	material.emission_energy_multiplier = 3.4
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color.a = 0.9
+	return material
 
 func _play_shot(weapon_id: String) -> void:
 	if shot_audio == null:
