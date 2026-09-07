@@ -77,7 +77,7 @@ export class Input {
     const sprint = document.getElementById('btn-sprint');
     const crouch = document.getElementById('btn-crouch');
     if (aim) { aim.classList.remove('active'); }
-    if (sprint) sprint.classList.remove('active');
+    if (sprint) { sprint.classList.remove('active'); sprint.setAttribute('aria-pressed', 'false'); }
     if (crouch) crouch.classList.remove('active');
     const mc = document.getElementById('mobile-controls');
     if (mc) mc.classList.remove('aiming');
@@ -325,6 +325,7 @@ export class Input {
         e.preventDefault();
         this.sprintLock = !this.sprintLock;
         btnSprint.classList.toggle('active', this.sprintLock);
+        btnSprint.setAttribute('aria-pressed', String(this.sprintLock));
       });
     }
 
@@ -343,7 +344,9 @@ export class Input {
       if (!el) return;
       el.addEventListener('pointerdown', e => {
         if (controlLayout.editMode) return;
-        e.preventDefault(); onDown();
+        e.preventDefault();
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+        onDown();
       });
       const up = e => { e.preventDefault(); onUp(); };
       el.addEventListener('pointerup', up);
@@ -355,7 +358,9 @@ export class Input {
       if (this._jumpTimer) clearTimeout(this._jumpTimer);
       this._jumpTimer = setTimeout(() => { this.jump = false; this._jumpTimer = null; }, 120);
     }, () => {});
-    bindButton(btnReload, () => this.reload = true, () => this.reload = false);
+    // Reload/switch are one-frame intents. Clearing reload on pointerup made
+    // quick taps disappear before the next rAF on real touch hardware.
+    bindButton(btnReload, () => this.reload = true, () => {});
     // 'next' cycles rifle → pistol → shotgun; a fixed slot (pistol) made the
     // button a dead end for mobile players on the other two weapons.
     bindButton(btnSwitch, () => this.switchWeapon = 'next', () => {});

@@ -13,6 +13,7 @@ export class Map {
     // Real CC0 textures (Kenney, see CREDITS.md). If a file fails to load the
     // material keeps its flat color — the map never breaks, just degrades.
     const loader = new THREE.TextureLoader();
+    const white = new THREE.Color(0xffffff);
     const loadTex = (file, repeatX, repeatY, fallbackColor) => {
       const tex = loader.load(`assets/textures/${file}`, undefined, undefined, () => {});
       if (tex) {
@@ -21,10 +22,17 @@ export class Map {
         tex.anisotropy = 8; // sharper textures at grazing angles (floor!)
         tex.colorSpace = THREE.SRGBColorSpace;
       }
+      // Texture maps already carry their own mid-tone palette. Multiplying a
+      // dark team tint by those pixels was crushing the value range (the
+      // arena read as a muddy gray slab, especially on mobile). Keep the
+      // identity tint, but lift it before the texture multiplication so seams,
+      // bolts and the three zone palettes remain readable under PBR light.
+      const color = new THREE.Color(fallbackColor);
+      if (tex) color.lerp(white, 0.68);
       return new THREE.MeshStandardMaterial({
-        color: fallbackColor,
+        color,
         map: tex || null,
-        roughness: 0.85,
+        roughness: 0.76,
         metalness: 0.05
       });
     };
@@ -263,6 +271,9 @@ export class Map {
 
   // Highest walkable surface at (x,z) whose top is reachable from feetY
   // (within stepUp). Platforms above the entity's head are ceilings, not floor.
+  // A non-positive stepUp is an explicit airborne query: raised surfaces are
+  // ignored until the falling pass, so jumping past a crate cannot snap the
+  // capsule upward as if it were glued to its side.
   getGroundY(x, z, feetY = Infinity, stepUp = 0.5) {
     let best = 0;
     for(const box of this.boxes){
@@ -274,6 +285,7 @@ export class Map {
       // sobre muros.
       if(box.h >= 1 && feetY === Infinity) continue; // spawn-context only
       if(box.max.y <= 0.5) continue;
+      if(stepUp <= 0 && box.max.y > 0.5) continue; // no raised floor while rising
       if(box.max.y > feetY + stepUp) continue; // above feet: not ground for this entity
       if(x > box.min.x && x < box.max.x && z > box.min.z && z < box.max.z){
         if(box.max.y > best) best = box.max.y;
@@ -288,11 +300,15 @@ export class Map {
     const minY = pos.y - height, maxY = pos.y;
 
     for(const box of this.boxes){
-      if(maxX < box.min.x || minX > box.max.x) continue;
-      if(maxZ < box.min.z || minZ > box.max.z) continue;
-      if(maxY < box.min.y || minY > box.max.y) continue;
-      // Skip walkable platforms when standing on top — they are floors, not walls
-      if(box.h < 1 && minY >= box.max.y - 0.05) continue;
+      // Tangency is not penetration. This tiny geometric distinction prevents
+      // an axis from being zeroed one frame early when the player skims a wall.
+      if(maxX <= box.min.x || minX >= box.max.x) continue;
+      if(maxZ <= box.min.z || minZ >= box.max.z) continue;
+      if(maxY <= box.min.y || minY >= box.max.y) continue;
+      // Every top surface is a floor when the capsule is already above it —
+      // including a 1u cover box. The old h<1 exception made a player who
+      // landed on a tall prop remain colliding forever at its top edge.
+      if(minY >= box.max.y - 0.04) continue;
       // Thin ground debris not collidable (defensive)
       if(box.min.y === 0 && box.max.y < 1) continue;
       return true;

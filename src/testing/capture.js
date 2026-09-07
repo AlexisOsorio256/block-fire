@@ -246,11 +246,14 @@ export function setupCapture(game, mode) {
           touchAssist: !!game._isTouchPlatform,
         };
         // ORIENTACIÓN (datos, no conjetura): el cañón del arma apunta a −Z
-        // LOCAL del wrap (normalización makeHeldWeaponGlb). Dirección MUNDIAL
-        // del cañón vs el frente esperado: dot ≈ +1 correcto, ≈ −1 volteado.
+        // LOCAL del nodo de arma (normalización makeHeldWeaponGlb). Dirección
+        // MUNDIAL del cañón vs el frente esperado: dot ≈ +1 correcto, ≈ −1
+        // volteado. El pivote puede tener una orientación de mano distinta.
         const barrelDot = (avatar, expected) => {
           if (!avatar || !avatar.gunPivot || !expected) return null;
-          const barrel = avatar.gunPivot.getWorldDirection(new THREE.Vector3()).negate();
+          const held = avatar.gunPivot.children[0];
+          const barrelNode = held && held.userData.isGlb && held.children[0] ? held.children[0] : avatar.gunPivot;
+          const barrel = barrelNode.getWorldDirection(new THREE.Vector3()).negate();
           return +barrel.dot(expected).toFixed(3);
         };
         if (mode === 'combatprobe') {

@@ -54,3 +54,11 @@ export const WEAPON_MODELS = {
   shotgun: 'assets/models/weapons/shotgun.glb',
   smg:     'assets/models/weapons/smg.glb',
 };
+
+// Variante de PRESENTACIÓN: el lobby necesita una silueta más abierta y
+// reconocible que el rifle compacto del viewmodel. No sustituye al asset de
+// gameplay: solo evita que el escaparate herede una pose/apretura de cámara
+// pensada para primera persona.
+export const LOBBY_WEAPON_MODELS = {
+  rifle: 'assets/models/weapons/rifle-alt.glb',
+};

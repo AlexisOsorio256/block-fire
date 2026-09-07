@@ -284,6 +284,7 @@ body:not(.playing) #btn-settings, body:not(.playing) #btn-fullscreen{ display:no
 #hint{ font-size:11px; color:rgba(160,180,220,0.65); margin-top:14px; letter-spacing:0.08em; }
 #title-block .credits{ font-size:9px; color:rgba(170,190,225,0.72); margin-top:6px; letter-spacing:0.04em; }
 #title-block .credits a{ color:rgba(190,205,235,0.85); text-decoration:underline; }
+.lobby-attribution{ margin-top:6px; font-size:8px; letter-spacing:0.05em; color:rgba(170,190,225,0.42); }
 
 /* Secundarios bajo el CTA: modos + skins + stats/config, sin competir */
 #lobby-secondary{ margin-top:16px; display:flex; flex-direction:column; gap:12px; }
@@ -307,6 +308,29 @@ body:not(.playing) #btn-settings, body:not(.playing) #btn-fullscreen{ display:no
 .lobby-skin:active{ transform:scale(0.95); }
 .ls-swatch{ width:34px; height:18px; border-radius:5px; background:#5a6a8a;
   border:1px solid rgba(255,255,255,0.25); }
+
+/* Operadores: cinco siluetas cromáticas pequeñas, tocables y distintas. El
+   visor/emblema comunica identidad sin pintar el traje entero como equipo. */
+#lobby-loadout{ display:flex; flex-direction:column; gap:8px; }
+#lobby-operators-wrap{ display:flex; flex-direction:column; gap:5px; align-items:flex-start; }
+#lobby-operators{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
+.lobby-operator{ appearance:none; cursor:pointer; display:grid; grid-template-columns:26px minmax(0,1fr); grid-template-rows:auto auto;
+  align-items:center; column-gap:5px; width:78px; min-width:0; min-height:48px; padding:5px 6px; border-radius:9px;
+  border:1px solid rgba(255,255,255,0.13); background:rgba(255,255,255,0.045); color:#cdd8ee; text-align:left;
+  transition:transform .12s, border-color .12s, background .12s, box-shadow .12s; }
+.lobby-operator:hover{ background:rgba(255,255,255,0.10); }
+.lobby-operator:active{ transform:scale(.96); }
+.lobby-operator.on{ border-color:#ffd23f; background:rgba(255,210,63,0.12); color:#ffd23f; box-shadow:0 0 14px rgba(255,210,63,0.20); }
+.lobby-operator strong{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; font-weight:900; letter-spacing:.08em; }
+.lobby-operator small{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:6.5px; font-weight:800; letter-spacing:.08em; color:#8fa4c8; }
+.lobby-operator.on small{ color:#f0d879; }
+.op-emblem{ position:relative; grid-row:1 / span 2; width:30px; height:32px; overflow:hidden; border-radius:9px 9px 5px 5px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--op-gear) 72%, #0b1425), var(--op-body));
+  border:1px solid color-mix(in srgb, var(--op-visor) 60%, rgba(255,255,255,.2)); box-shadow:inset 0 -7px 0 rgba(0,0,0,.18); }
+.op-emblem:before{ content:""; position:absolute; left:8px; top:4px; width:14px; height:13px; border-radius:50% 50% 42% 42%; background:var(--op-body); border:1px solid rgba(255,255,255,.18); }
+.op-emblem:after{ content:""; position:absolute; left:6px; top:13px; width:18px; height:5px; border-radius:3px; background:var(--op-visor); box-shadow:0 0 8px var(--op-visor); }
+.op-emblem i{ position:absolute; left:3px; right:3px; bottom:4px; height:7px; border-radius:5px 5px 2px 2px; background:var(--op-gear); opacity:.95; }
+.op-emblem b{ position:absolute; left:50%; bottom:7px; width:4px; height:4px; border-radius:50%; transform:translateX(-50%); background:var(--op-visor); box-shadow:0 0 5px var(--op-visor); }
 
 /* Stats + config en una línea, al pie del panel */
 #lobby-meta{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -334,6 +358,9 @@ body:not(.playing) #btn-settings, body:not(.playing) #btn-fullscreen{ display:no
 #cfg-reset:active, #cfg-close:active{ transform:translateY(2px); }
 .cfg-note{ margin-top:10px; font-size:9.5px; color:rgba(140,160,200,0.5); letter-spacing:0.05em; }
 #cfg-note{ margin-top:10px; font-size:9.5px; color:rgba(140,160,200,0.5); letter-spacing:0.05em; }
+.cfg-legal{ display:flex; flex-direction:column; gap:3px; margin-top:12px; padding-top:9px; border-top:1px solid rgba(255,255,255,.08); font-size:9px; line-height:1.25; color:rgba(170,190,225,.68); }
+.cfg-legal b{ color:#ffd23f; font-size:8px; letter-spacing:.18em; }
+.cfg-legal a{ color:#a8c9ff; text-decoration:underline; pointer-events:auto; }
 #result-block h2{ font-size: clamp(34px, 9vw, 56px); font-weight:900; color:#ffd23f; text-shadow:0 0 22px rgba(255,210,60,0.5); }
 #result-stats{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:18px; }
 #result-stats div{ background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.09); border-radius:12px; padding:12px 6px; }
@@ -367,9 +394,20 @@ body:not(.playing) #btn-settings, body:not(.playing) #btn-fullscreen{ display:no
   #lobby-meta{ gap:8px; }
   #lobby-menu{ gap:5px; }
   .menu-chip{ padding:5px 8px; font-size:8px; border-radius:8px; }
-  /* On short landscape the hint + credits are secondary: hide them instead of
+  /* On short landscape the hint + attribution are secondary: hide them instead of
      clipping the interactive menu chips at the screen edge. */
-  #hint, #title-block .credits{ display:none; }
+  #hint, .lobby-attribution, #title-block .credits{ display:none; }
+  #lobby-loadout{ gap:4px; }
+  #lobby-operators-wrap{ gap:3px; }
+  #lobby-operators{ gap:4px; flex-wrap:nowrap; }
+  .lobby-operator{ grid-template-columns:22px 1fr; column-gap:3px; min-width:0; width:62px; min-height:38px; padding:3px 3px; border-radius:7px; }
+  .op-emblem{ width:22px; height:25px; border-radius:6px 6px 4px 4px; }
+  .op-emblem:before{ left:6px; top:3px; width:10px; height:10px; }
+  .op-emblem:after{ left:4px; top:10px; width:14px; height:4px; }
+  .op-emblem i{ left:2px; right:2px; bottom:3px; height:6px; }
+  .op-emblem b{ bottom:5px; width:3px; height:3px; }
+  .lobby-operator strong{ font-size:6.5px; letter-spacing:.04em; }
+  .lobby-operator small{ font-size:5.2px; letter-spacing:.03em; }
   #result-block h2{ font-size: clamp(22px, 7vh, 34px); }
   #result-stats{ margin-top:6px; }
   #result-stats div{ padding:6px 4px; }
@@ -533,6 +571,7 @@ body.squad-mode #score-chip{ display:none; }
 #btn-arsenal, #btn-fullscreen, #btn-settings{ width:38px; height:38px; padding:0; display:grid; place-items:center; border-radius:11px; border:1px solid rgba(255,255,255,.16); color:#dce9ff; background:rgba(7,14,27,.66); box-shadow:0 3px 13px rgba(0,0,0,.2); }
 #btn-arsenal{ top:calc(9px + var(--sat)); right:calc(58px + var(--sar)); z-index:35; }
 #btn-arsenal svg{ width:20px; height:20px; color:#ffd45c; }
+body:not(.playing) #btn-arsenal{ display:none !important; pointer-events:none; }
 #btn-fullscreen{ top:calc(9px + var(--sat)); right:calc(10px + var(--sar)); }
 #btn-fullscreen.is-fullscreen{ color:#ffd45c; border-color:rgba(255,212,92,.52); }
 #btn-settings{ top:calc(9px + var(--sat)); left:calc(10px + var(--sal)); }

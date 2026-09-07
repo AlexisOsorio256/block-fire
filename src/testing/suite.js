@@ -29,6 +29,8 @@ export function runTestSuite(game) {
       try { game.weaponSystem.fire(game.player, []); } catch(e){ console.error('fire err',e); }
       const ammoAfter = game.weaponSystem.ammoInMag;
       log('3 WEAPON FIRE', ammoAfter < ammoBefore, `ammo ${ammoBefore} -> ${ammoAfter}`);
+      const reserveOk = game.weaponSystem.reserveAmmo === 333;
+      log('3b RESERVE AMMO CONTRACT', reserveOk, `reserva ${game.weaponSystem.reserveAmmo}`);
       // Test 4: Bots exist
       log('4 BOTS', game.bots.length === 7, `bots ${game.bots.length}`);
       const maxHealthOk = game.playerController.maxHealth === 200
@@ -234,6 +236,28 @@ export function runTestSuite(game) {
       aimDown();
       const aimOff = game.input.aim === false && !btnAim.classList.contains('active');
       log('15 ADS TOGGLE LATCH', aimOn && aimOff, `on:${aimOn} off:${aimOff}`);
+
+      // Test 46: CORRER móvil es un latch real (no solo un estilo CSS) y
+      // eleva de forma visible la velocidad que consume PlayerController.
+      const btnSprint46 = document.getElementById('btn-sprint');
+      const pos46 = game.player.position.clone();
+      game.input._releaseAll();
+      game.input._keys.add('KeyW');
+      game.input.sprintLock = false;
+      btnSprint46.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 902, bubbles: true, cancelable: true }));
+      game.input.update();
+      const sprintOn46 = game.input.sprint === true && game.input.sprintLock === true
+        && btnSprint46.classList.contains('active') && btnSprint46.getAttribute('aria-pressed') === 'true';
+      const speedGap46 = game.playerController.sprintSpeed >= game.playerController.moveSpeed * 1.25;
+      btnSprint46.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 903, bubbles: true, cancelable: true }));
+      game.input.update();
+      const sprintOff46 = game.input.sprint === false && game.input.sprintLock === false
+        && !btnSprint46.classList.contains('active');
+      game.input._releaseAll();
+      game.player.position.copy(pos46);
+      game.playerController.velocity.set(0, 0, 0);
+      log('46 MOBILE SPRINT LATCH', sprintOn46 && speedGap46 && sprintOff46,
+        `on:${sprintOn46} +${game.playerController.sprintSpeed - game.playerController.moveSpeed}u/s off:${sprintOff46}`);
 
       // Test 16: crouch — blend rises, eye lowers, feet stay planted.
       game.input.crouch = true;
@@ -643,6 +667,34 @@ export function runTestSuite(game) {
       const roleMod32 = preferredDist({ ...role32, prefDist: 7 }, 'rifle') < dRifle32;
       log('32 WEAPON RANGE DRIVES ENGAGEMENT', ordered32 && roleMod32,
         `shotgun ${dShot32.toFixed(1)} < smg ${dSmg32.toFixed(1)} < rifle ${dRifle32.toFixed(1)} · rolModula ${roleMod32}`);
+
+      // Test 47: Navigation no puede reutilizar el mismo camino cuando cambia
+      // la posición objetivo; y una cápsula que aterriza sobre una cobertura
+      // alta debe quedar libre, mientras la consulta ascendente no la pega al
+      // lateral del objeto.
+      const nav47 = game.navigation;
+      const bot47 = game.bots[0];
+      nav47.reset(bot47.id);
+      nav47.nextWaypoint(bot47, 42, 42);
+      const recA47 = nav47._paths.get(bot47.id);
+      const destA47 = recA47 && recA47.destX === 42 && recA47.destZ === 42;
+      nav47.nextWaypoint(bot47, -42, -42);
+      const recB47 = nav47._paths.get(bot47.id);
+      const destB47 = recB47 && recB47.destX === -42 && recB47.destZ === -42;
+      const synthetic47 = {
+        min: new THREE.Vector3(51, 0, 51), max: new THREE.Vector3(53, 1, 53),
+        mesh: null, x: 52, y: 0, z: 52, w: 2, h: 1, d: 2,
+      };
+      game.map.boxes.push(synthetic47);
+      const top47 = new THREE.Vector3(52, 2.65, 52);
+      const topClear47 = !game.map.checkCollision(top47, 0.35, 1.65);
+      const risingGround47 = game.map.getGroundY(52, 52, 0, -1) === 0;
+      game.map.boxes.pop();
+      nav47.reset(bot47.id);
+      const ranges47 = game.weaponData.rifle.range >= 120 && game.weaponData.pistol.range >= 90
+        && game.weaponData.shotgun.range >= 24 && game.weaponData.smg.range >= 75;
+      log('47 RANGE + NAV DESTINATION + TOP COLLISION', ranges47 && destA47 && destB47 && recA47 === recB47 && topClear47 && risingGround47,
+        `alcance:${ranges47} destA:${destA47} destB:${destB47} cacheReusa:${recA47 === recB47} topLibre:${topClear47} subidaSinPegamento:${risingGround47}`);
 
       // ── Test 33: SHOTGUN SPREAD IS NOT COLLAPSED BY AIM ASSIST ──
       // La asistencia mueve el CENTRO del patrón (el rifle central acierta)

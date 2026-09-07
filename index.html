@@ -151,9 +151,15 @@
             <label>8 JUGADORES · 20 KILLS</label>
           </button>
         </div>
-        <div id="lobby-skins-wrap">
-          <span class="ls-label">SKINS DE ARMAS</span>
-          <div id="lobby-skins"></div>
+        <div id="lobby-loadout">
+          <div id="lobby-operators-wrap">
+            <span class="ls-label">OPERADORES</span>
+            <div id="lobby-operators"></div>
+          </div>
+          <div id="lobby-skins-wrap">
+            <span class="ls-label">SKINS DE ARMAS</span>
+            <div id="lobby-skins"></div>
+          </div>
         </div>
         <div id="lobby-meta">
           <div id="lobby-stats"></div>
@@ -162,8 +168,8 @@
           </div>
         </div>
       </div>
+      <p class="lobby-attribution">Audio: Jesús Lastra · CC-BY 3.0</p>
       <p class="hint" id="hint">PC: WASD + RATÓN · MÓVIL: JOYSTICK</p>
-      <p class="credits">Audio: Kenney (CC0) · Disparos: Jesús Lastra (CC-BY 3.0)</p>
     </div>
 
     <div id="result-block" class="hidden">
@@ -228,6 +234,12 @@
     <div class="cfg-actions">
       <button id="cfg-reset">RESTAURAR</button>
       <button id="cfg-close">CERRAR</button>
+    </div>
+    <div class="cfg-legal">
+      <b>LEGAL</b>
+      <span>Disparos: Jesús Lastra · CC-BY 3.0</span>
+      <span>Modelos de armas: Kenney · CC0</span>
+      <a href="CREDITS.md" target="_blank" rel="noreferrer">Ver atribuciones completas</a>
     </div>
     <!-- Zona destructiva: solo visible EN PARTIDA, con confirmación previa -->
     <div id="cfg-danger">

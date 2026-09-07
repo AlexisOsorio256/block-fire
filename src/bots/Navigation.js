@@ -138,7 +138,10 @@ export class Navigation {
   _nearestOpen(idx) {
     const d = this.dim;
     const i0 = idx % d, j0 = (idx / d) | 0;
-    for (let r = 1; r <= 3; r++) {
+    // A flank/recovery target can land inside a 2–3 cell cover cluster. Search
+    // a little farther before declaring the route dead; this is still a
+    // failure-only O(r²) query and prevents bots from camping at a blocked goal.
+    for (let r = 1; r <= 6; r++) {
       for (let dj = -r; dj <= r; dj++) {
         for (let di = -r; di <= r; di++) {
           const i = i0 + di, j = j0 + dj;
@@ -223,13 +226,22 @@ export class Navigation {
   nextWaypoint(bot, toX, toZ) {
     let rec = this._paths.get(bot.id);
     if (!rec) {
-      rec = { path: [], at: -9, i: 0, failures: 0 };
+      rec = { path: [], at: -9, i: 0, failures: 0, destX: NaN, destZ: NaN };
       this._paths.set(bot.id, rec);
     }
-    if (this._clock - rec.at >= 0.9 || rec.i >= rec.path.length) {
+    const destDeltaSq = !Number.isFinite(rec.destX) ? Infinity
+      : (toX - rec.destX) * (toX - rec.destX) + (toZ - rec.destZ) * (toZ - rec.destZ);
+    const destMoved = destDeltaSq > 2.25;
+    const destUpdateReady = destMoved && (destDeltaSq > 36 || this._clock - rec.at >= 0.35);
+    // A route that was valid for the previous flank/last-seen point is not
+    // valid for the new one. The old cache only used time, so a bot could keep
+    // following a stale corner behind a wall for almost a second at a time.
+    if (destUpdateReady || this._clock - rec.at >= 0.9 || rec.i >= rec.path.length) {
       const p = this.findPath(bot.position.x, bot.position.z, toX, toZ, rec.path);
       rec.at = this._clock;
       rec.i = 0;
+      rec.destX = toX;
+      rec.destZ = toZ;
       if (!p) { rec.failures++; return null; }
     }
     const wp = rec.path[rec.i];

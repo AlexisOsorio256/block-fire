@@ -72,9 +72,7 @@ export class MatchSquad {
       // LA COMPRA DE LOS BOTS: cada ronda mejoran arma (IA de economía)
       bot.setWeapon(this._botBuy(n, bot));
     }
-    g.weaponSystem.ammoInMag = g.weaponSystem.currentWeapon.magazineSize;
-    g.weaponSystem.reserveAmmo = g.weaponSystem.currentWeapon.magazineSize * 3;
-    g.weaponSystem.isReloading = false;
+    g.weaponSystem.resetAmmo();
     g.hud.update({ health: g.playerController.maxHealth, ammo: g.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: `${g.roundWins.ally} — ${g.roundWins.enemy}`, timeLeft: g.ROUND_TIME, fps: 60, pos: g.player.position, botCount: g.bots.length });
     g.hud.updateTeamScore(g.roundWins.ally, g.roundWins.enemy, n, g.ROUND_TARGET);
     // La compra manda en la pantalla: los controles táctiles se APAGAN

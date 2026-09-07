@@ -11,8 +11,8 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 - **Autor**: Jesús Lastra
 - **Fuente**: Sonniss.com — Game Audio GDL ("Gun Sounds Pack")
 - **Licencia**: Creative Commons Attribution 3.0 (CC-BY 3.0)
-- **Requisito**: atribución en la pantalla de créditos del juego (ya presente
-  en `index.html`, sección `.credits` del lobby). Si estos samples se
+- **Requisito**: atribución visible dentro del juego (presente de forma
+  discreta en `index.html`, `.lobby-attribution`, y en Ajustes → Legal). Si estos samples se
   reemplazan por propios/CC0, este bloque y su mención pueden retirarse.
 
 ## Texturas del mapa — CC0

@@ -21,6 +21,7 @@ npx esbuild src/main.js \
 sed -e 's|<script type="module" src="src/main.js"></script>|<script src="bundle.js"></script>|' index.html > www/index.html
 cp style.css www/
 cp -r assets/* www/assets/
+cp CREDITS.md www/
 
 BUNDLE_KB=$(du -k www/bundle.js | cut -f1)
 echo "www/ listo: $(du -sh www | cut -f1) — bundle ${BUNDLE_KB}KB — BUILD_ID=$BUILD_ID"

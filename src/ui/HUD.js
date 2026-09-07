@@ -174,7 +174,7 @@ export class HUD {
     const data = this._shopData || { weapons: [] };
     const icons = { rifle: '⌐', pistol: '¬', shotgun: '⋔', smg: '∥' };
     // Máximos para las barras relativas (daño por disparo global, no por posta)
-    const MAX = { dmg: 30, rate: 10, range: 90 };
+    const MAX = { dmg: 30, rate: 10, range: 120 };
     data.weapons.forEach((w, i) => {
       const card = document.createElement('button');
       card.className = 'bp-item' + (w.owned ? ' owned' : '')

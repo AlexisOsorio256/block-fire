@@ -32,14 +32,14 @@ const _gunAnchorS = new THREE.Vector3();
 // identidad ALIADO/ENEMIGO vive en dos piezas consistentes — el VISOR con
 // glow del color de equipo y la BANDA de hombro. Lectura <1s: silueta+paleta
 // = personaje, visor/banda = equipo.
-const OPERATORS = [
-  { name: 'BRAVO',  body: 0x8a4a3a, gear: 0x3d4557, visor: 0x39d7ff }, // asalto azul-hielo
-  { name: 'VULTURE',body: 0x5a6b80, gear: 0x2b3038, visor: 0xff8329 }, // urbano naranja
-  { name: 'TALON',  body: 0x4a5d4a, gear: 0x556b52, visor: 0x9dff3d }, // táctico lima
-  { name: 'DUNE',   body: 0xb08d52, gear: 0x6e5a34, visor: 0xffd23f }, // desierto oro
-  { name: 'HAVOC',  body: 0x5a3a4a, gear: 0x6e2f3c, visor: 0xff3d71 }, // pesado magenta
-  { name: 'ROOK',   body: 0x39445c, gear: 0x8a44d9, visor: 0x8844ff }, // violeta
-  { name: 'GHOST',  body: 0x2a3242, gear: 0x181d28, visor: 0x4dffd2 }, // nocturno turquesa
+export const OPERATORS = [
+  { name: 'BRAVO',   role: 'ASALTO',    body: 0x8a4a3a, gear: 0x3d4557, visor: 0x39d7ff }, // asalto azul-hielo
+  { name: 'VULTURE', role: 'URBANO',    body: 0x5a6b80, gear: 0x2b3038, visor: 0xff8329 }, // urbano naranja
+  { name: 'TALON',   role: 'TÁCTICO',   body: 0x4a5d4a, gear: 0x556b52, visor: 0x9dff3d }, // táctico lima
+  { name: 'DUNE',    role: 'EXPLORADOR',body: 0xb08d52, gear: 0x6e5a34, visor: 0xffd23f }, // desierto oro
+  { name: 'HAVOC',   role: 'PESADO',    body: 0x5a3a4a, gear: 0x6e2f3c, visor: 0xff3d71 }, // pesado magenta
+  { name: 'ROOK',    role: 'DEFENSA',   body: 0x39445c, gear: 0x8a44d9, visor: 0x8844ff }, // violeta
+  { name: 'GHOST',   role: 'NOCTURNO',  body: 0x2a3242, gear: 0x181d28, visor: 0x4dffd2 }, // nocturno turquesa
 ];
 
 export const AvatarLib = {
@@ -406,19 +406,22 @@ export const AvatarLib = {
 
   // ── Arma GLB REAL en la mano (ruta principal; fallback técnico) ──
   // Async: resuelve al llegar el asset; el llamador ya montó la malla simple y
-  // esta la reemplaza en el mismo pivote. Escala de mano ~0.5.
-  async makeHeldWeaponGlb(key) {
-    const url = WEAPON_MODELS[key];
+  // esta la reemplaza en el mismo pivote. `sourceUrl` permite al lobby usar
+  // una variante de exhibición sin cambiar el arma que ve el jugador en FPS.
+  async makeHeldWeaponGlb(key, sourceUrl = WEAPON_MODELS[key]) {
+    const url = sourceUrl || WEAPON_MODELS[key];
     if (!url) return null;
     const obj = await assets.instantiate(url);
     if (!obj) return null;
     const wrap = new THREE.Group();
     wrap.userData.isGlb = true; // contrato: arma GLB real (tests de lobby/bots)
     // Normalización de mano: cañón a -Z, tamaño ~0.35-0.5u.
-    // ORIENTACIÓN MEDIDA (análisis de vértices/Box3): los GLB de Kenney ya
-    // apuntan el cañón a -Z; rotY: Math.PI los volteaba (culata al frente).
+    // ORIENTACIÓN MEDIDA (cargador hacia -Z, cañón hacia +Z): los GLB de
+    // Kenney llegan con la culata al frente del pivote; PI los alinea con el
+    // eje de disparo del rig. Sin este giro, los bots llevaban el arma al
+    // revés aunque el jugador y el raycast siguieran apuntando correctamente.
     const S = { rifle: 0.55, pistol: 0.45, shotgun: 0.32, smg: 0.45 }[key] || 0.5;
-    obj.rotation.y = 0;
+    obj.rotation.y = Math.PI;
     obj.scale.setScalar(S);
     // Recentro por Box3: la escopeta nace con origen en la boca (zmin=0) y el
     // pivote de la mano debe quedar en el cuerpo del arma, no en un extremo.

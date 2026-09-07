@@ -9,7 +9,7 @@ import { HUD } from '../ui/HUD.js';
 import { AudioManager } from '../audio/AudioManager.js';
 import { settings } from './Settings.js';
 import { controlLayout } from './ControlLayout.js';
-import { AvatarLib } from '../characters/SoldierAvatar.js';
+import { AvatarLib, OPERATORS } from '../characters/SoldierAvatar.js';
 import { VfxSystem } from '../fx/VfxSystem.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 import { MatchSquad } from './MatchSquad.js';
@@ -87,7 +87,10 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // AgX preserves saturated team accents and rolls the bright sky/metal
+    // highlights more naturally than the previous ACES curve. It is built
+    // into this Three.js bundle, so there is no post-process cost.
+    this.renderer.toneMapping = THREE.AgXToneMapping;
     this.container.appendChild(this.renderer.domElement);
     this._isMobile = isMobile;
     // Plataforma táctil (para el aim assist: asistencia mayor en touch que PC)
@@ -166,10 +169,14 @@ export class Game {
     // automático si el asset no está)
     AvatarLib.load().then((ok) => {
       console.log('[Avatars] GLB listo:', ok, '— aplicando a', this.bots.length, 'bots');
+      // The operator picker is useful even while the GLB is still being
+      // resolved (and remains available on the documented fallback path).
+      if (this.lobby) this.lobby.renderOperators();
       if (!ok) return;
       try {
         for (const b of this.bots) b.attachAvatar();
         this.lobby.buildHero();
+        this.lobby.renderOperators();
         console.log('[Lobby] héroe construido:', !!this.lobby.hero);
       } catch (e) { console.error('[Avatars] error:', e && e.message, e && e.stack && e.stack.split('\n')[1]); }
     });
@@ -205,6 +212,11 @@ export class Game {
     try {
       const gs = localStorage.getItem('bf_skin_global') || 'none';
       if (gs) this.globalSkin = gs;
+    } catch(e) {}
+    this.heroOperator = 3;
+    try {
+      const op = parseInt(localStorage.getItem('bf_operator') || '3', 10);
+      if (Number.isFinite(op)) this.heroOperator = Math.max(0, Math.min(6, op));
     } catch(e) {}
     this.playerKills = 0;
     this.playerDeaths = 0;
@@ -263,7 +275,7 @@ export class Game {
   _setupLights() {
     // Luz diurna arcade: mapas y operadores se separan por valor y color,
     // sin usar un postproceso caro como sustituto de materiales legibles.
-    this.renderer.toneMappingExposure = 1.24;
+    this.renderer.toneMappingExposure = 1.12;
 
     const ambient = new THREE.HemisphereLight(0xc7e8ff, 0x607b86, 1.38);
     this.scene.add(ambient);
@@ -283,8 +295,10 @@ export class Game {
     this.scene.add(dir);
     this._sunLight = dir; // el lobby la atenúa (estudio de retrato)
 
-    // Cool fill from opposite side — separates bots from walls
-    const fill = new THREE.DirectionalLight(0x80c2ff, 0.62);
+    // Cool fill from opposite side — separates bots from walls, especially
+    // on the dark north/east lanes where a backlit opponent used to collapse
+    // into the cover silhouette on touch screens.
+    const fill = new THREE.DirectionalLight(0x80c2ff, 0.82);
     fill.position.set(-12, 14, -18);
     this.scene.add(fill);
   }
@@ -590,9 +604,7 @@ export class Game {
       bot.immuneUntil = this.matchTime + 5.0; // mismo escudo que el jugador
       bot.setWeapon('rifle');
     }
-    this.weaponSystem.ammoInMag = this.weaponSystem.currentWeapon.magazineSize;
-    this.weaponSystem.reserveAmmo = this.weaponSystem.currentWeapon.magazineSize * 3;
-    this.weaponSystem.isReloading = false;
+    this.weaponSystem.resetAmmo();
     this.hud.update({ health: this.playerController.maxHealth, ammo: this.weaponSystem.getAmmoText(), kills: 0, deaths: 0, score: '0 - 0', timeLeft: this.matchDuration, fps: 60, pos: this.player.position, botCount: this.bots.length });
   }
 
@@ -736,6 +748,17 @@ export class Game {
         maxTouchPoints: Number(navigator.maxTouchPoints) || 0,
         pointerEvent: !!window.PointerEvent,
       },
+      movement: {
+        speed: this.playerController ? Math.hypot(this.playerController.velocity.x, this.playerController.velocity.z) : null,
+        walkSpeed: this.playerController ? this.playerController.moveSpeed : null,
+        sprintSpeed: this.playerController ? this.playerController.sprintSpeed : null,
+        sprintInput: !!(this.input && this.input.sprint),
+        sprintLock: !!(this.input && this.input.sprintLock),
+        onGround: !!(this.playerController && this.playerController.onGround),
+      },
+      weaponRanges: this.weaponData
+        ? Object.fromEntries(Object.entries(this.weaponData).map(([key, data]) => [key, data.range]))
+        : null,
     };
   }
 
@@ -770,6 +793,22 @@ export class Game {
     if (this.audio) this.audio.play('ui');
     this.lobby.renderSkins();
     this.lobby.paintHeroGun();
+  }
+
+  // El operador es una selección de identidad del lobby, no un skin de
+  // equipo: se persiste localmente y se reconstruye el héroe sin tocar la
+  // lógica de equipos de la partida.
+  setHeroOperator(operator) {
+    const max = OPERATORS.length - 1;
+    const next = Math.max(0, Math.min(max, Number(operator) || 0));
+    if (this.heroOperator === next && this.lobby && this.lobby.hero) {
+      this.lobby.renderOperators();
+      return;
+    }
+    this.heroOperator = next;
+    try { localStorage.setItem('bf_operator', String(next)); } catch(e) {}
+    if (this.audio) this.audio.play('ui');
+    if (this.lobby) this.lobby.setOperator(next);
   }
 
   // Chips de skins del lobby (delegado: el pintado vive en Lobby)
@@ -1180,6 +1219,13 @@ export class Game {
     if (savedMove && this.input) {
       this.input.move = savedMove.m; this.input.jump = savedMove.j;
       this.input.sprint = savedMove.s; this.input.crouch = savedMove.c;
+    }
+
+    // Touch gets the familiar progressive pull only after the player has
+    // already put an enemy near the crosshair; PC keeps raw aim. Applying it
+    // here lets the same corrected camera feed ADS, recoil and the raycast.
+    if (this.player.isAlive && this.weaponSystem.applyAimAssist) {
+      this.weaponSystem.applyAimAssist(dt, this._allTargets(), this.map);
     }
 
     // ADS is a camera zoom + weapon centering: one aim input, one feel.

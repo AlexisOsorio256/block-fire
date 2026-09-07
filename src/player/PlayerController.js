@@ -34,10 +34,10 @@ export class PlayerController {
     this.sensitivity = 0.0022;
 
     // Fast arcade FPS feel. Measured baseline was 6.0 m/s (crossing the 96m
-    // map took 16s — the #1 "feels heavy" complaint). 7.2 base / 8.6 sprint
-    // keeps ~2x the bots' speed for dodge-ability without outrunning the map.
+    // map took 16s — the #1 "feels heavy" complaint). 7.2 base / 9.6 sprint
+    // makes the mobile CORRER latch unmistakable without outrunning the map.
     this.moveSpeed = 7.2;
-    this.sprintSpeed = 8.6;
+    this.sprintSpeed = 9.6;
     this.jumpForce = 8.2;
     this.gravity = 26;
 
@@ -194,8 +194,14 @@ export class PlayerController {
     // Apply movement with simple collision against map
     const nextPos = S.nextPos.copy(this.player.position).addScaledVector(this.velocity, dt);
 
-    // Ground resolve BEFORE wall checks: know the floor under the full next position
-    const groundY = this.map ? this.map.getGroundY(nextPos.x, nextPos.z, nextPos.y - this.height) : 0;
+    // Ground resolve BEFORE wall checks. While rising, ignore raised tops; the
+    // falling pass can land on them, but the side of a crate cannot pull the
+    // capsule upward during a jump.
+    const currentFeet = this.player.position.y - this.height;
+    const landingPass = this.velocity.y <= 0.05;
+    const groundY = this.map
+      ? this.map.getGroundY(nextPos.x, nextPos.z, currentFeet, landingPass ? 0.5 : -1)
+      : 0;
 
     // Axis-separated movement resolution: try each axis independently from
     // the CURRENT position; an axis only moves if its result is collision-free.
@@ -286,9 +292,18 @@ export class PlayerController {
   }
 
   respawn(pos) {
+    // Respawn always starts from a clean standing capsule. Keeping the
+    // crouched height from the previous life made the next physics frame
+    // raise the player by 0.5u, which looked like a stale teleport.
+    this.crouchBlend = 0;
+    this.height = this.standHeight;
     const gy = this.map ? this.map.getGroundY(pos.x, pos.z) : 0;
     this.player.position.set(pos.x, gy + this.height, pos.z);
     this.velocity.set(0,0,0);
+    // A respawn is already snapped to a walkable floor. Marking the capsule
+    // grounded here preserves the first jump tap after spawn; waiting for a
+    // later physics frame used to swallow quick mobile taps at round start.
+    this.onGround = true;
     this.health = this.maxHealth;
     this.player.isAlive = true;
   }

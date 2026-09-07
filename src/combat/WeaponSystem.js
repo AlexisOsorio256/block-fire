@@ -13,11 +13,11 @@ export const WeaponData = {
     reloadTime: 1.6,
     spread: 0.012,
     recoil: 0.6,
-    range: 90,
+    range: 120,
     pellets: 1,
     automatic: true,
     bulletSpeed: 0, // hitscan
-    falloffStart: 35,
+    falloffStart: 42,
     falloffMin: 0.7,
   },
   pistol: {
@@ -30,11 +30,11 @@ export const WeaponData = {
     reloadTime: 1.1,
     spread: 0.006,
     recoil: 0.35,
-    range: 70,
+    range: 90,
     pellets: 1,
     automatic: false,
     bulletSpeed: 0,
-    falloffStart: 25,
+    falloffStart: 30,
     falloffMin: 0.75,
   },
   shotgun: {
@@ -47,11 +47,11 @@ export const WeaponData = {
     reloadTime: 1.9,
     spread: 0.082,
     recoil: 1.1,
-    range: 16,
+    range: 24,
     pellets: 6,
     automatic: false,
     bulletSpeed: 0,
-    falloffStart: 7,
+    falloffStart: 9,
     falloffMin: 0.2,
   },
   smg: {
@@ -63,15 +63,19 @@ export const WeaponData = {
     reloadTime: 1.8,
     spread: 0.018,
     recoil: 0.4,
-    range: 55,
+    range: 75,
     pellets: 1,
     automatic: true,
     bulletSpeed: 0,
-    falloffStart: 20,
+    falloffStart: 26,
     falloffMin: 0.65,
     price: 1800,
   }
 };
+
+// Reserva disponible del jugador. El cargador sigue siendo el tamaño de cada
+// arma; esta cifra es la munición almacenada que aparece a la derecha del `/`.
+export const RESERVE_AMMO = 333;
 
 // Skins de armas — DECISIÓN DE PRODUCTO: son cosmética gratuita del loadout,
 // se eligen en el LOBBY y persisten en localStorage. NO hay compra de skins
@@ -88,6 +92,14 @@ export const WeaponSkins = {
 
 // Arriba mundial compartido (cero allocs; nunca se muta)
 const UP = new THREE.Vector3(0, 1, 0);
+// Scratch del aim assist persistente (se consulta una vez por frame en touch;
+// no crea vectores mientras el jugador arrastra la cámara).
+const AIM = {
+  forward: new THREE.Vector3(),
+  toTarget: new THREE.Vector3(),
+  point: new THREE.Vector3(),
+  head: new THREE.Vector3(),
+};
 const RELOAD_SEQUENCE = {
   rifle:   { marks: [0.16, 0.42, 0.72, 0.90], sounds: ['reload_mag_out', 'reload_mag_in', 'reload_bolt', 'equip'] },
   pistol:  { marks: [0.20, 0.52, 0.78, 0.92], sounds: ['reload_mag_out', 'reload_mag_in', 'reload_slide', 'equip'] },
@@ -118,7 +130,7 @@ export class WeaponSystem {
     this.currentWeapon = WeaponData[this.weapons[this.currentIndex]];
     
     this.ammoInMag = this.currentWeapon.magazineSize;
-    this.reserveAmmo = this.currentWeapon.magazineSize * 3;
+    this.reserveAmmo = RESERVE_AMMO;
     this.isReloading = false;
     this.reloadTimer = 0;
     this.fireCooldown = 0;
@@ -130,6 +142,8 @@ export class WeaponSystem {
     this._switchStage = -1;
     this._actionStage = -1;
     this._viewmodelVisible = false;
+    this._assistTarget = null;
+    this._assistLost = 0;
     this._vmOffset = new THREE.Vector3();
     this._actionPose = {
       x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, scale: 1,
@@ -666,6 +680,93 @@ export class WeaponSystem {
     this._adsBlend = THREE.MathUtils.lerp(this._adsBlend || 0, target, Math.min(1, dt * 12));
   }
 
+  // Magnetismo móvil persistente: el tiro no espera a que el jugador
+  // mantenga exactamente el píxel correcto. Solo trabaja con un enemigo
+  // cercano al centro, visible y dentro del cono de intención; nunca gira la
+  // cámara hacia objetivos fuera de pantalla ni a través de cobertura.
+  applyAimAssist(dt, targets, map) {
+    const g = this.game;
+    const pc = this.playerController;
+    const input = g && g.input;
+    if (!g || !pc || !g._isTouchPlatform || !g.player || !g.player.isAlive || !input) {
+      this._assistTarget = null;
+      this._assistLost = 0;
+      return;
+    }
+    const engaged = !!(input.aim || input.fire || (input._touchLook && input._touchLook.active)
+      || (input._firePointers && input._firePointers.size));
+    if (!engaged) return;
+
+    const weapon = this.currentWeapon || WeaponData.rifle;
+    const current = this._assistTarget;
+    const forward = this.camera.getWorldDirection(AIM.forward);
+    let best = null;
+    let bestScore = -Infinity;
+    const acquireCos = Math.cos(0.23); // ~13°: near the crosshair, not radar
+    const keepCos = Math.cos(0.35);    // stickiness survives a small thumb slip
+
+    for (const target of targets || []) {
+      if (!target || target === g.player || !target.isAlive) continue;
+      if (target.isBot && target.team === 'ally') continue;
+      if (target.team && g.player.team && target.team === g.player.team) continue;
+      const h = target.height || 1.65;
+      AIM.point.copy(target.position);
+      AIM.point.y -= h * 0.36;
+      AIM.head.copy(target.position);
+      AIM.head.y -= 0.10;
+      // Upper-chest bias: the assist helps tracking without manufacturing
+      // headshots for a player who has not raised the reticle.
+      AIM.point.lerp(AIM.head, 0.14);
+      AIM.toTarget.subVectors(AIM.point, this.camera.position);
+      const dist = AIM.toTarget.length();
+      if (dist < 0.8 || dist > weapon.range) continue;
+      AIM.toTarget.normalize();
+      const dot = forward.dot(AIM.toTarget);
+      const limit = target === current ? keepCos : acquireCos;
+      if (dot < limit) continue;
+      if (map && map.raycast(this.camera.position, AIM.toTarget, dist - 0.4)) continue;
+      const score = dot + (target === current ? 0.018 : 0);
+      if (score > bestScore) {
+        best = target;
+        bestScore = score;
+      }
+    }
+
+    if (!best) {
+      if (current) {
+        this._assistLost += dt;
+        if (this._assistLost > 0.18) this._assistTarget = null;
+      }
+      return;
+    }
+    this._assistTarget = best;
+    this._assistLost = 0;
+
+    const h = best.height || 1.65;
+    AIM.point.copy(best.position);
+    AIM.point.y -= h * 0.36;
+    AIM.head.copy(best.position);
+    AIM.head.y -= 0.10;
+    AIM.point.lerp(AIM.head, 0.14);
+    AIM.toTarget.subVectors(AIM.point, this.camera.position).normalize();
+    const desiredYaw = Math.atan2(-AIM.toTarget.x, -AIM.toTarget.z);
+    const desiredPitch = Math.asin(Math.max(-1, Math.min(1, -AIM.toTarget.y)));
+    let yawGap = desiredYaw - pc.yaw;
+    while (yawGap > Math.PI) yawGap -= Math.PI * 2;
+    while (yawGap < -Math.PI) yawGap += Math.PI * 2;
+    const pitchGap = desiredPitch - pc.pitch;
+    // ADS gets a firmer magnetic pull; firing from the hip remains assisted
+    // but needs more tracking. Both are progressive, never an instant snap.
+    const follow = input.aim ? 8.5 : 6.2;
+    const blend = Math.min(0.24, dt * follow);
+    pc.yaw += yawGap * blend;
+    pc.pitch += pitchGap * blend;
+    pc.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pc.pitch));
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = pc.yaw;
+    this.camera.rotation.x = pc.pitch;
+  }
+
   canFire(usesPlayerAmmo = true, shooter = null) {
     // isReloading is exclusively the player's state (bots never reload). It
     // must NOT gate bots: probing showed every bot went silent for the whole
@@ -803,8 +904,8 @@ export class WeaponSystem {
     // pull corría dentro del bucle y comprimía el patrón de la escopeta).
     if (usesPlayerAmmo) {
       const touch = this.game && this.game._isTouchPlatform;
-      const assistCone = (touch ? 0.11 : 0.07);      // mitad de cono (rad)
-      const maxPull = (touch ? 0.055 : 0.035);        // rotación máxima (rad)
+      const assistCone = (touch ? 0.18 : 0.07);      // touch: ayuda evidente, no radar
+      const maxPull = (touch ? 0.11 : 0.035);        // rotación máxima (rad)
       let bestDev = Infinity;
       let bestDist = 0;
       let pullDir = null;
@@ -815,7 +916,9 @@ export class WeaponSystem {
         if (target.isBot && (target.team || 'enemy') === 'ally') continue;
         if (target.isBot && shooter.team && (target.team || 'enemy') === shooter.team) continue;
         const th = target.height || 1.65;
-        const chest = target.position.clone(); chest.y -= th * 0.38;
+        const chest = target.position.clone(); chest.y -= th * 0.36;
+        const head = target.position.clone(); head.y -= 0.10;
+        chest.lerp(head, 0.14); // upper chest, con sesgo de headshot ligero
         const toChest = chest.clone().sub(origin);
         const dist = toChest.length();
         if (dist > weapon.range) continue;
@@ -850,9 +953,9 @@ export class WeaponSystem {
         // drag vertical REAL del jugador siempre puede ganar y llevar el
         // tiro a la cabeza — el assist crea espacio, no lo consume.
         const gapClosed = Math.min(
-          Math.min(0.85, pullStrength / Math.max(0.02, bestDev)),
-          bestDev * 0.5,
-          0.30 / Math.max(2, bestDist)
+          Math.min(touch ? 0.72 : 0.85, pullStrength / Math.max(0.02, bestDev)),
+          bestDev * (touch ? 0.68 : 0.5),
+          (touch ? 0.50 : 0.30) / Math.max(2, bestDist)
         );
         baseDir.lerp(pullDir, gapClosed).normalize();
       }
@@ -928,9 +1031,12 @@ export class WeaponSystem {
         hits.push(closestHit);
       } else {
         if (this.vfx) {
+          // The tracer/impact must travel to the same endpoint as the
+          // gameplay ray. The old fixed 45u visual made long-range rifles
+          // look like they stopped halfway across the arena.
           const missPoint = mapHit
             ? mapHit.point
-            : origin.clone().addScaledVector(direction, 45);
+            : origin.clone().addScaledVector(direction, weapon.range);
           this.vfx.impact(missPoint, null);
           if (!tracerTo) tracerTo = missPoint;
         }
@@ -1039,6 +1145,13 @@ export class WeaponSystem {
     if (this.audio) this.audio.play('reloadStart', this.currentWeapon.name);
   }
 
+  resetAmmo() {
+    this.ammoInMag = this.currentWeapon.magazineSize;
+    this.reserveAmmo = RESERVE_AMMO;
+    this.isReloading = false;
+    this.reloadTimer = 0;
+  }
+
   // dir: 1-3 selects a slot, -1 cycles to the previous weapon, 'next' cycles
   // forward (KeyE / mobile switch button — a fixed slot would trap mobile
   // players on the pistol).
@@ -1067,10 +1180,9 @@ export class WeaponSystem {
     if (idx === this.currentIndex) return;
     this.currentIndex = idx;
     this.currentWeapon = WeaponData[this.weapons[this.currentIndex]];
-    // Fresh mag on switch keeps the loop simple; ammo economy is not a goal.
-    this.ammoInMag = this.currentWeapon.magazineSize;
-    this.reserveAmmo = this.currentWeapon.magazineSize * 3;
-    this.isReloading = false;
+    // Fresh mag on switch keeps the loop simple; the reserve is a fixed
+    // player-facing contract, independent of the magazine size.
+    this.resetAmmo();
     this.fireCooldown = 0.2;
     // Visible switch animation: unequip → swap → equip → ready. The previous
     // model stays visible until the handoff phase, so a switch never pops
@@ -1121,6 +1233,8 @@ export class WeaponSystem {
     this.fireCooldown = 0;
     this._finishSwitch();
     this._actionStage = -1;
+    this._assistTarget = null;
+    this._assistLost = 0;
     this._resetActionPose();
     this._displayWeaponKey = this.weapons[this.currentIndex];
     this._updateWeaponMesh();

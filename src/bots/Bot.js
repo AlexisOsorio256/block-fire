@@ -39,10 +39,10 @@ const ROLE_PARAMS = [
 // la distancia preferida y la agresividad NACEN del arma en la mano y las
 // MODULA el rol (entry empuja, anchor frena — ver preferredDist()).
 const WEAPON_RANGE = {
-  shotgun: { prefDist: 5.5, aggro: 1.35 }, // cierra a quemarropa
-  smg:     { prefDist: 9.0, aggro: 1.10 }, // presión móvil corto/medio
-  rifle:   { prefDist: 12,  aggro: 0.95 }, // medio: no se pega al enemigo
-  pistol:  { prefDist: 10,  aggro: 0.85 }, // conservadora/backup
+  shotgun: { prefDist: 5.5, aggro: 1.35, range: 24 }, // cierra a quemarropa
+  smg:     { prefDist: 9.0, aggro: 1.10, range: 75 }, // presión móvil corto/medio
+  rifle:   { prefDist: 12,  aggro: 0.95, range: 120 }, // medio: no se pega al enemigo
+  pistol:  { prefDist: 10,  aggro: 0.85, range: 90 }, // conservadora/backup
 };
 
 // Distancia preferida efectiva: el arma pone la base, el rol modula
@@ -115,6 +115,7 @@ export class Bot {
     this._flankDir = this._laneSeed; // lado del flanqueo (alterna por intento)
     this._recoveryGoal = new THREE.Vector3();
     this._recoveryT = 0;
+    this._blockedT = 0;
     this._navDebug = { waypoint: null, pathFailures: 0, collisionAttempts: 0, stuckRecoveries: 0, distanceWindow: 0, effectiveSpeed: 0 };
 
     // CLASH SQUAD: arma comprada por ronda (la IA "compra" en la fase de compra)
@@ -416,6 +417,7 @@ export class Bot {
     this._stuckT = 0;
     this._stuckAnchor = null;
     this._recoveryT = 0;
+    this._blockedT = 0;
     this._navDebug.waypoint = null;
     this._navDebug.distanceWindow = 0;
     this._navDebug.effectiveSpeed = 0;
@@ -438,6 +440,39 @@ export class Bot {
     this._flankT = 1.0;
     this._flankDir = -this._flankDir;
     if (this.navigation) this.navigation.reset(this.id);
+  }
+
+  // Choose a short escape whose entire segment is clear. Recovery goals used
+  // to be a single lateral point that could itself be behind the same wall;
+  // Navigation then faithfully routed the bot back into the trap.
+  _startRecovery(map) {
+    if (this.navigation) this.navigation.reset(this.id);
+    this.strafeDir = -this.strafeDir;
+    this._flankT = 1.2;
+    this._flankDir = -this._flankDir;
+    this._recoveryT = 1.15;
+    const side = this._flankDir;
+    let found = false;
+    for (let option = 0; option < 4 && !found; option++) {
+      let angle, distance;
+      if (option === 0) { angle = this.yaw + Math.PI * 0.5 * side; distance = 4.2; }
+      else if (option === 1) { angle = this.yaw - Math.PI * 0.5 * side; distance = 4.2; }
+      else if (option === 2) { angle = this.yaw + Math.PI; distance = 3.0; }
+      else { angle = this.yaw; distance = 2.0; }
+      let clear = true;
+      for (let step = 1; step <= 4; step++) {
+        const t = distance * step / 4;
+        S.axis.set(this.position.x + Math.sin(angle) * t, this.position.y, this.position.z + Math.cos(angle) * t);
+        if (map && map.checkCollision(S.axis, this.radius, this.height)) { clear = false; break; }
+      }
+      if (clear) {
+        this._recoveryGoal.set(this.position.x + Math.sin(angle) * distance, 0, this.position.z + Math.cos(angle) * distance);
+        found = true;
+      }
+    }
+    if (!found) this._recoveryGoal.set(this.position.x, 0, this.position.z);
+    this._blockedT = 0;
+    this._navDebug.stuckRecoveries++;
   }
 
   // Snapshot DEV explícito: permite observar el comportamiento real sin
@@ -464,6 +499,11 @@ export class Bot {
     this.shootCooldown = Math.max(0, this.shootCooldown - dt);
     this.strafeTimer -= dt;
     const role = ROLE_PARAMS[this.id % ROLE_PARAMS.length];
+    const weaponProfile = WEAPON_RANGE[this.weaponKey] || WEAPON_RANGE.pistol;
+    // Bots can notice a real, unobstructed opponent farther away now that the
+    // weapons support it, but contact remains bounded so they do not become a
+    // map-wide radar. Shotguns still force a close encounter.
+    const contactRange = Math.min(48, Math.max(24, weaponProfile.range * 0.75));
 
     // ── ADQUISICIÓN DE OBJETIVO (con memoria corta y reacción) ──
     // SOLO el equipo contrario (Duelo de Escuadras). Búsqueda por LOS como
@@ -478,7 +518,7 @@ export class Bot {
     if (player !== this && player.isAlive && myTag(player) !== this.team) CANDIDATES.push(player);
     for (const c of CANDIDATES) {
       const d = this.position.distanceTo(c.position);
-      if (d < nearestDist && d < 28) {
+      if (d < nearestDist && d < contactRange) {
         S.eye.copy(this.position); S.eye.y -= 0.12;
         S.chest.copy(c.position); S.chest.y -= 0.35;
         S.dir.subVectors(S.chest, S.eye).normalize();
@@ -521,7 +561,8 @@ export class Bot {
     }
     if (this._tacticalGoal && (nearest || this._lastSeen)) this._tacticalGoal = null;
 
-    if (nearest && nearestDist < prefDistNow + 8) {
+    const shootRange = Math.min(contactRange, weaponProfile.range * 0.92);
+    if (nearest && nearestDist < Math.max(prefDistNow + 8, shootRange)) {
       this.state = 'attack';
     } else if (nearest) {
       this.state = 'chase';
@@ -693,7 +734,7 @@ export class Bot {
       // Mantener la DISTANCIA PREFERIDA del ARMA (modulada por el rol): shotgun
       // cierra, rifle/SMG media, pistola conservadora. Reacción del rol antes
       // del primer disparo; aggro del arma escala el avance.
-      wantShoot = nearestDist < 24 && this._reactWait <= 0;
+      wantShoot = nearestDist < shootRange && this._reactWait <= 0;
       if (this._reactWait > 0) this._reactWait -= dt;
       const toTarget = S.toT.subVectors(nearest.position, this.position);
       toTarget.y = 0; const dist = toTarget.length();
@@ -711,7 +752,7 @@ export class Bot {
         move.multiplyScalar(0.9);
       } else {
         const pref = prefDistNow;
-        const wr = WEAPON_RANGE[this.weaponKey] || WEAPON_RANGE.rifle;
+        const wr = weaponProfile;
         if (dist > pref + 3) {
           move.copy(toTarget).multiplyScalar(0.7 * role.aggro * wr.aggro);
         } else if (dist < pref - 3) {
@@ -767,15 +808,26 @@ export class Bot {
       } else {
         this._navDebug.collisionAttempts++;
         // Try slide axis-separated (same contract as the player)
+        const oldX = this.position.x, oldZ = this.position.z;
         const tryX = S.axis.copy(this.position); tryX.x = nextPos.x; tryX.y = nextPos.y;
         if (!map.checkCollision(tryX, this.radius, this.height)) this.position.x = tryX.x;
         const tryZ = S.axis.copy(this.position); tryZ.z = nextPos.z; tryZ.y = nextPos.y;
         if (!map.checkCollision(tryZ, this.radius, this.height)) this.position.z = tryZ.z;
+        const slid = Math.hypot(this.position.x - oldX, this.position.z - oldZ);
+        if (slid < 0.002) {
+          this._blockedT += dt;
+          // Do not wait for the 2.5s watchdog when the body is visibly
+          // pressing a wall: invalidate the route and choose a tested escape
+          // direction before the bot can settle into a corner.
+          if (this._blockedT >= 0.24) this._startRecovery(map);
+        } else {
+          this._blockedT = 0;
+        }
         // Blocked head-on: cut velocity so the bot doesn't push into walls
         this.velocity.multiplyScalar(0.4);
       }
     }
-    // STUCK-BREAKER (P0): quiere moverse y NO GANA TERRENO en ~2.5s →
+    // STUCK-BREAKER (P0): quiere moverse y NO GANA TERRENO en ~1.6s →
     // nueva ruta y lateral corto. Mide desplazamiento desde la ANCLA: si en
     // ese tiempo no se alejó >1.5u, es atasco (la micro-oscilación entre dos
     // waypoints inalcanzables también cuenta). FUERA del gate de velocidad.
@@ -783,19 +835,12 @@ export class Bot {
     {
       const anchor = this._stuckAnchor || (this._stuckAnchor = new THREE.Vector3());
       this._stuckT += dt;
-      if (this._stuckT > 2.5) {
+      if (this._stuckT > 1.6) {
         const traveled = this.position.distanceTo(anchor);
         this._navDebug.distanceWindow = traveled;
         this._navDebug.effectiveSpeed = traveled / this._stuckT;
         if (moveMag0 > 0.0002 && traveled < 1.5) {
-          if (nav) nav.reset(this.id);
-          this.strafeDir = -this.strafeDir;
-          this._flankT = 1.2;
-          this._flankDir = -this._flankDir;
-          this._recoveryT = 1.35;
-          const angle = this.yaw + Math.PI * 0.5 * this._flankDir;
-          this._recoveryGoal.set(this.position.x + Math.sin(angle) * 4.2, 0, this.position.z + Math.cos(angle) * 4.2);
-          this._navDebug.stuckRecoveries++;
+          this._startRecovery(map);
         }
         this._stuckT = 0;
         anchor.copy(this.position);

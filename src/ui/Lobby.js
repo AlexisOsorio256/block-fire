@@ -1,5 +1,6 @@
 import * as THREE from '../lib/three.module.js';
-import { AvatarLib } from '../characters/SoldierAvatar.js';
+import { AvatarLib, OPERATORS } from '../characters/SoldierAvatar.js';
+import { LOBBY_WEAPON_MODELS } from '../core/AssetRegistry.js';
 
 // ── Lobby — ESTUDIO DE PERSONAJE, no "mapa detrás del panel": pedestal +
 // héroe GLB + bóveda de estudio + 3 luces de retrato. Dueña exclusiva de la
@@ -41,6 +42,7 @@ export class Lobby {
     this.ringMat = null;
     this.heroVisible = true;
     this._buildSet();
+    this.renderOperators();
   }
 
   // ── SET DE ESTUDIO (profundidad propia: nada de arena de combate detrás) ──
@@ -178,12 +180,17 @@ export class Lobby {
   // Encuadre POR Box3 REAL (invariantes numéricos antes que capturas): se
   // mide el modelo montado, se alinean los pies al pedestal y se derivan las
   // métricas que consume applyCameraPose(). Nada de números a ojo.
-  buildHero() {
+  buildHero(operator = this.g.heroOperator ?? 3) {
+    if (this.hero && this.hero.root) this.group.remove(this.hero.root);
+    this.hero = null;
+    this.gun = null;
     // Fallback inmediato para que el héroe NUNCA aparezca desarmado…
     const gun = AvatarLib.makeHeldWeapon('rifle', 0xffd23f);
-    // Operador 3 = DUNE (paleta desierto/oro): el héroe comparte la paleta
-    // dorada de la marca; sin tinte de equipo (no hay bando en el lobby).
-    const av = AvatarLib.create({ team: 'hero', weapon: gun, operator: 3 });
+    const op = Math.max(0, Math.min(OPERATORS.length - 1, Number(operator) || 0));
+    this.operatorIndex = op;
+    // La paleta y la pieza de equipo pertenecen al operador, no al bando:
+    // el lobby muestra la diferencia real que luego se ve en la partida.
+    const av = AvatarLib.create({ team: 'hero', weapon: gun, operator: op });
     if (!av) { console.error('[Lobby] avatar no creado'); return; }
     this.hero = av;
     this.gun = gun;
@@ -191,24 +198,23 @@ export class Lobby {
     // …y ARMA GLB REAL en el mismo pivote en cuanto AssetRegistry la traiga:
     // el escaparate más importante del juego no exhibe el arma fallback.
     if (av.gunPivot) {
-      AvatarLib.makeHeldWeaponGlb('rifle').then((glb) => {
+      AvatarLib.makeHeldWeaponGlb('rifle', LOBBY_WEAPON_MODELS.rifle).then((glb) => {
         if (!glb || !this.hero || this.hero !== av || !av.gunPivot) return;
         const pivot = av.gunPivot;
         while (pivot.children.length) pivot.remove(pivot.children[0]);
-        // ESCALA DE EXHIBICIÓN (juez ronda 2): el rifle normalizado (0.59u de
-        // mundo) medía ~15-20% del torso en pantalla; un rifle de verdad en
-        // low-ready pide ~40% — dimensión larga 0.85-1.0u. glb.scale es la
-        // palanca única (0.55 → 0.82): la caja de la sonda crece en PROPORCIÓN
-        // y el anclaje/pose no se tocan.
-        // ESCALA DE EXHIBICIÓN (juez ronda 3: 25-30% del torso → ~40%):
-        // 0.55 × 1.9 ≈ 1.05 local → caja larga ~1.1-1.2u de mundo (root 1.22).
-        glb.scale.multiplyScalar(1.9);
+        // La variante de exhibición es algo más larga y deja leer cañón,
+        // cuerpo y cargador sin confundirse con una pistola cuadrada.
+        glb.scale.multiplyScalar(1.28);
         pivot.add(glb);
         this.gun = glb;
         // El restyle de legibilidad vive AQUÍ (no en create): el swap async
         // trae los materiales PBR OSCUROS de fábrica — medidos en (30,32,53)
         // bajo la key del estudio, idénticos al muro (29,31,51): invisible.
         this._restyleHeroGun(glb);
+        // El GLB tiene su propio giro de normalización; recalcular la pose
+        // después del swap mantiene el cañón apuntando al mismo low-ready que
+        // el fallback y evita que el arma quede invertida al terminar la carga.
+        this._poseHeroGun(av);
         this.paintHeroGun(); // skin global elegida manda sobre el restyle
       });
     }
@@ -243,39 +249,46 @@ export class Lobby {
     this.paintHeroGun(); // skin global del lobby también en su arma
   }
 
+  setOperator(operator) {
+    const next = Math.max(0, Math.min(OPERATORS.length - 1, Number(operator) || 0));
+    if (next === this.operatorIndex && this.hero) return;
+    this.g.heroOperator = next;
+    this.buildHero(next);
+    this.renderOperators();
+  }
+
   // ── LEGIBILIDAD DEL ARMA DEL HÉROE (medido, no estético) ──
-  // El aldabón PBR de Kenney rinde (30,32,53) bajo la key del estudio — casi
-  // el MISMO rgb que el muro (29,31,51): el rifle de 0.6u renderizaba
-  // INVISIBLE aunque proyectaba 79px (sonda magenta: bbox 25×79px ilegible).
-  // Acero claro + acento dorado de marca (cargador): recorte de silueta
-  // garantizado a 6u. Se llama en el swap GLB y tras cambiar de skin.
+  // El atlas original del asset es correcto para el icono/viewmodel, pero en
+  // el set cálido del lobby convertía el rifle en un bloque blanco-violeta.
+  // La presentación usa materiales de estudio por PIEZA: acero azul oscuro
+  // para que la silueta tenga volumen y naranja solo en el cargador/identidad.
+  // La geometría GLB, la mano y el arma de gameplay siguen siendo las mismas.
   // SOLO HÉROE: los bots combaten bajo sol de arena (raster distinto).
   _restyleHeroGun(gun) {
     if (!gun) return;
-    // CONTRASTE INTERNO (juez ronda 3: "blanco/crema desaturada"): el acero
-    // claro 0xb8c4d8 se lavaba a blanco plano bajo la key cálida (380) +
-    // exposure 1.15. Acero MEDIO (0x7a8794) con metalness 0.3: lee metálico
-    // bajo la key cálida sin matarse a negro (metalness 0.55 sin envMap = negro,
-    // medido en ronda 1). Cargador emissive NARANJA-dorado saturado e
-    // intenso: parsea cuerpo vs cargador bajo tonemapping.
-    const steel = new THREE.MeshStandardMaterial({ color: 0x7a8796, roughness: 0.4, metalness: 0.3 });
-    const accentGold = new THREE.MeshStandardMaterial({
-      color: 0xffa21f, roughness: 0.35, metalness: 0.1,
-      emissive: 0xff9500, emissiveIntensity: 2.6, side: THREE.DoubleSide,
+    const steel = new THREE.MeshStandardMaterial({
+      color: 0x50647d, roughness: 0.42, metalness: 0.28,
+      emissive: 0x0b1422, emissiveIntensity: 0.08,
+    });
+    const accent = new THREE.MeshStandardMaterial({
+      color: 0xffa21f, roughness: 0.34, metalness: 0.18,
+      emissive: 0x5a2c00, emissiveIntensity: 0.42,
     });
     gun.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true;
-      if (o.name && /magazine/i.test(o.name)) {
-        o.material = accentGold;
-        // SACA el cargador del cuerpo (juez: que quede en el lado visible):
-        // desplazamiento local −Z (hacia la boca) + abajo, fuera del lote del
-        // cuerpo: asoma entero a cámara con cualquier roll razonable.
-        o.position.z -= 0.10;
-        o.position.y -= 0.03;
-        return;
-      }
-      o.material = steel; // cuerpo/empuñadura en acero: silueta garantizada
+      o.receiveShadow = true;
+      const isMagazine = /magazine|mag|clip/i.test(o.name || '');
+      // GLB materials can carry an emissive channel for their atlas. Only the
+      // named accent piece participates in lobby weapon skins; otherwise the
+      // Oro/Bosque/etc. swatch would repaint the entire rifle body.
+      o.userData._heroSkinAccent = isMagazine;
+      // En el lobby se elimina el atlas porque su paleta clara aplana el
+      // rifle contra la luz de estudio; la malla y sus normales siguen dando
+      // los paneles/volumen del GLB y la identidad vuelve por el cargador.
+      o.material = Array.isArray(o.material)
+        ? o.material.map(() => isMagazine ? accent : steel)
+        : (isMagazine ? accent : steel);
     });
   }
 
@@ -315,7 +328,12 @@ export class Lobby {
     // 97% perpendicular al rayo + 24% hacia la cámara: el cañón cruza el
     // encuadre y su punta queda apenas delante (dot a cámara ≈ 0.24).
     const target = screenRight.multiplyScalar(0.83).addScaledVector(toCam, 0.56).normalize();
-    const cur = pivot.getWorldDirection(new THREE.Vector3()).negate().setY(0);
+    // El pivote describe la mano, no necesariamente el cañón: los GLB reales
+    // llevan un nodo hijo con la corrección de importación. Medir ese nodo
+    // evita orientar el arma usando la culata como si fuera la boca.
+    const held = pivot.children[0];
+    const barrelNode = held && held.userData.isGlb && held.children[0] ? held.children[0] : pivot;
+    const cur = barrelNode.getWorldDirection(new THREE.Vector3()).negate().setY(0);
     if (cur.lengthSq() < 1e-6) return;
     cur.normalize();
     // Corrección mundial cur→target, PERSISTIDA como "rest" del pivote: el
@@ -343,7 +361,9 @@ export class Lobby {
     // DELANTE del plano del cuerpo — sin esto el antebrazo tapa media arma en
     // móvil ("medio oculta tras el torso", juez ronda 3). −Z local del root
     // (el héroe mira a cámara) + leve descenso: cuelga delante del muslo.
-    rest.pos = rest.pos || new THREE.Vector3(0, -0.04, -0.22);
+    // Bajo la mano derecha y ligeramente al frente: el cañón cruza el torso
+    // en low-ready y la empuñadura queda visiblemente dentro de la mano.
+    rest.pos = rest.pos || new THREE.Vector3(0.02, 0.12, -0.18);
     // Deja el pivote YA en ancla·rest (coherente sin esperar al próximo tick)
     pivot.quaternion.copy(anchorQ).multiply(rest.quat);
     pivot.position.add(rest.pos);
@@ -361,6 +381,7 @@ export class Lobby {
       if (o.isMesh) {
         (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
           if (!m.emissive || m.emissiveIntensity < 0.2) return;
+          if (this.gun.userData && this.gun.userData.isGlb && !o.userData._heroSkinAccent) return;
           if (!o.userData._origGun) o.userData._origGun = { color: m.color.getHex(), emissive: m.emissive.getHex() };
           const orig = o.userData._origGun;
           if (sk.accent !== null && sk.accent !== undefined) {
@@ -388,6 +409,22 @@ export class Lobby {
       b.addEventListener('click', () => g.setGlobalSkin(key));
       wrap.appendChild(b);
     }
+  }
+
+  renderOperators() {
+    const wrap = document.getElementById('lobby-operators');
+    if (!wrap) return;
+    const hex = (value) => `#${Number(value).toString(16).padStart(6, '0')}`;
+    wrap.replaceChildren();
+    OPERATORS.slice(0, 5).forEach((op, index) => {
+      const b = document.createElement('button');
+      b.className = 'lobby-operator' + (index === (this.operatorIndex ?? this.g.heroOperator) ? ' on' : '');
+      b.dataset.operator = String(index);
+      b.setAttribute('aria-label', `${op.name}, ${op.role}`);
+      b.innerHTML = `<span class="op-emblem" style="--op-body:${hex(op.body)};--op-gear:${hex(op.gear)};--op-visor:${hex(op.visor)}"><i></i><b></b></span><strong>${op.name}</strong><small>${op.role}</small>`;
+      b.addEventListener('click', () => this.g.setHeroOperator(index));
+      wrap.appendChild(b);
+    });
   }
 
   // El estudio es decorado del lobby: en partida se oculta TODO (grupo +
