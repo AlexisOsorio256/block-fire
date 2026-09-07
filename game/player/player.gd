@@ -395,6 +395,8 @@ func _create_collision() -> void:
 
 func _create_visual() -> void:
 	visual = OperatorVisual.new()
+	# El avatar del jugador no depende del operator_id deprecado: la ropa
+	# viene del loadout persistido en SettingsStore (claves cosmetic_*).
 	visual.configure(operator_id, team, _team_color())
 	visual.visible = false
 	add_child(visual)

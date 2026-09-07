@@ -13,8 +13,32 @@ var values: Dictionary = {
 	"operator": "BRAVO",
 	"weapon_skin": "Estándar",
 	"quality": "mobile",
-	"control_layout": {}
+	"control_layout": {},
+	# Apariencia del avatar (cosmética, sin stats). Claves por slot de
+	# CosmeticCatalog; "" = sin accesorio en ese slot.
+	"cosmetic_head": "head_swat",
+	"cosmetic_headwear": "",
+	"cosmetic_eyewear": "",
+	"cosmetic_mask": "",
+	"cosmetic_top": "top_swat",
+	"cosmetic_bottom": "bottom_swat",
+	"cosmetic_shoes": "shoes_swat",
+	"cosmetic_skin": "skin_light"
 }
+
+
+func cosmetic_loadout() -> Dictionary:
+	## Loadout actual del jugador (slot -> id de CosmeticItem).
+	var loadout: Dictionary = {}
+	for key: String in values.keys():
+		if key.begins_with("cosmetic_"):
+			loadout[key.trim_prefix("cosmetic_")] = values[key]
+	return loadout
+
+
+func set_cosmetic_slot(slot: String, item_id: String) -> void:
+	values["cosmetic_" + slot] = item_id
+	_save()
 
 func _ready() -> void:
 	_load()

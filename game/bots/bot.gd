@@ -51,6 +51,8 @@ func _ready() -> void:
 	collision_mask = 1
 	_create_collision()
 	visual = OperatorVisual.new()
+	# El operator_id ya no elige un héroe: solo alimenta la variación
+	# determinista de ropa (CosmeticCatalog.bot_loadout_for).
 	visual.configure(operator_id, team, _team_color())
 	add_child(visual)
 	feedback_audio = AudioStreamPlayer3D.new()

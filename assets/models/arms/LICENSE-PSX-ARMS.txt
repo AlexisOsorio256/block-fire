@@ -1,0 +1,12 @@
+PSX First Person Arms (free, "Low-Poly First Person Arms Rig in PS1/PS2 Graphics Style")
+Author: Drillimpact (drillimpact.itch.io)
+Source: https://drillimpact.itch.io/psx-first-person-arms-free
+License: CC0 (Public Domain) — verbatim from the asset page at download time:
+
+  "License:
+   This asset is released under CC0 (Public Domain).
+   If you experience any issues with the model, please let me know"
+
+Files used in this project:
+  assets/models/arms/arms_rig.glb   (arms mesh + skin + 18 animations, 512x512 texture embedded)
+Downloaded: 2026-09-07 (itch.io upload id 17774675, "psx-first-person-arms-free-game-assets.zip" v1.1.0)

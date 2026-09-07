@@ -398,67 +398,101 @@ func _create_arms() -> void:
 		arms_root.queue_free()
 	arms_root = Node3D.new()
 	arms_root.name = "ArmsAndHands"
-	arms_root.position = viewmodel_base_position
+	# Real operator arms: CC0 PSX First Person Arms rig (see CREDITS.md). The rig
+	# is authored at human scale with the camera bone near y=1.74, so we anchor
+	# the camera bone at the viewmodel pose and scale down to weapon proportions.
+	arms_root.position = viewmodel_base_position + Vector3(0.0, 0.0, 0.08)
 	arms_root.rotation_degrees = viewmodel_base_rotation
-	# Sleeve + worked glove hands reading as operator arms, not blobs.
-	arms_root.scale = Vector3.ONE * 0.30
+	# Rig units are ~6.6x weapon GLB units (rig span 1.68 vs gun 0.80 at their
+	# respective scales); 0.17 * 0.026 maps rig meters onto weapon proportions.
+	arms_root.scale = Vector3.ONE * 0.17
 	add_child(arms_root)
-	_create_sleeve("LeftSleeve", Vector3(0.02, -0.08, 0.16), Vector3(6.0, -14.0, -30.0), Vector3(0.10, 0.09, 0.30))
-	_create_sleeve("RightSleeve", Vector3(-0.14, -0.09, 0.20), Vector3(6.0, 12.0, 26.0), Vector3(0.10, 0.09, 0.30))
-	# Screen mapping (viewmodel yaw 180): local +x reads slightly screen-right,
-	# local +z reads screen-left toward the muzzle. Trigger hand at the grip,
-	# support hand forward under the barrel.
-	_create_hand("TriggerHand", Vector3(0.02, -0.02, -0.10), 12.0)
-	_create_hand("SupportHand", Vector3(-0.10, -0.10, 0.33), -12.0)
+	var packed := load(ARMS_SCENE) as PackedScene
+	var arms_model: Node3D = packed.instantiate() as Node3D if packed != null else null
+	if arms_model == null:
+		push_warning("WeaponController: arms rig not available, falling back to minimal sleeves")
+		_arms_skeleton = null
+		return
+	arms_model.name = "ArmsRig"
+	arms_root.add_child(arms_model)
+	# The rig's camera bone sits at y=1.743; place the root so that point lands
+	# on the arms_root origin (slightly behind/below the weapon).
+	arms_model.position = Vector3(0.0, -1.743, 0.10)
+	_arms_animation = null
+	for candidate: Node in arms_model.find_children("*", "AnimationPlayer", true, false):
+		_arms_animation = candidate as AnimationPlayer
+		break
+	_arms_skeleton = null
+	for candidate: Node in arms_model.find_children("*", "Skeleton3D", true, false):
+		_arms_skeleton = candidate as Skeleton3D
+		break
+	_pose_arms_for_weapon()
 
-func _create_sleeve(node_name: String, position: Vector3, rotation: Vector3, size: Vector3) -> void:
-	var sleeve := MeshInstance3D.new()
-	sleeve.name = node_name
-	# Tapered sleeve built from a capsule-like cylinder: shoulder wide, wrist narrow.
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = minf(size.x, size.y) * 0.55
-	mesh.bottom_radius = maxf(size.x, size.y) * 0.62
-	mesh.height = size.z
-	mesh.radial_segments = 10
-	mesh.rings = 1
-	sleeve.mesh = mesh
-	sleeve.position = position
-	sleeve.rotation_degrees = rotation
-	sleeve.rotation_degrees.x += 90.0
-	sleeve.material_override = _arm_material(Color("#2c4468"))
-	arms_root.add_child(sleeve)
-	# Cuff ring near the wrist to break the silhouette.
-	var cuff := MeshInstance3D.new()
-	var cuff_mesh := TorusMesh.new()
-	cuff_mesh.inner_radius = maxf(size.x, size.y) * 0.5
-	cuff_mesh.outer_radius = maxf(size.x, size.y) * 0.78
-	cuff.mesh = cuff_mesh
-	cuff.position = Vector3(0.0, -size.z * 0.42, 0.0)
-	cuff.rotation_degrees = Vector3(0.0, 0.0, 0.0)
-	cuff.material_override = _arm_material(Color("#1d2c45"))
-	sleeve.add_child(cuff)
+const ARMS_SCENE := "res://assets/models/arms/arms_rig.glb"
+var _arms_skeleton: Skeleton3D
+var _arms_animation: AnimationPlayer
 
-func _create_hand(node_name: String, position: Vector3, roll: float) -> void:
-	var hand := MeshInstance3D.new()
-	hand.name = node_name
-	# Gloved fist: tapered palm + wrapped thumb knuckle over the grip.
-	var palm_mesh := PrismMesh.new()
-	palm_mesh.size = Vector3(0.13, 0.11, 0.15)
-	palm_mesh.left_to_right = 0.18
-	hand.mesh = palm_mesh
-	hand.position = position
-	hand.rotation_degrees = Vector3(-14.0, 0.0, roll)
-	hand.material_override = _arm_material(Color("#d99873"))
-	arms_root.add_child(hand)
-	# Wrap thumb block overlapping the palm toward the grip.
-	var knuckle := MeshInstance3D.new()
-	var knuckle_mesh := BoxMesh.new()
-	knuckle_mesh.size = Vector3(0.115, 0.055, 0.075)
-	knuckle.mesh = knuckle_mesh
-	knuckle.position = Vector3(0.0, 0.045, -0.045)
-	knuckle.rotation_degrees.x = 24.0
-	knuckle.material_override = _arm_material(Color("#c9855f"))
-	hand.add_child(knuckle)
+## Poses both hands on the weapon via skeleton global pose overrides: trigger
+## hand at the grip, support hand under the foregrip. Elbows are pulled toward
+## natural lowered positions so forearms read correctly from the camera.
+func _pose_arms_for_weapon() -> void:
+	if _arms_skeleton == null or not is_instance_valid(_arms_skeleton):
+		return
+	# Rig-local grip targets. The rig hands rest at x=+-0.66, y=1.31, z=-0.05;
+	# arm bone lengths are ~0.20 (upper) + ~0.32 (forearm). The hand bones bind
+	# only the wrist ring (fingers bind to finger bones), so the whole chain
+	# upper_arm -> forearm -> hand must move together: we rotate the upper arm
+	# forward (pitch toward the gun) and translate the forearm + hand.
+	# Rig -Z faces the same screen direction as the gun muzzle (controller +Z).
+	var pitch := deg_to_rad(-78.0)  # arms swing forward-up toward the weapon
+	# Rig-local grip targets (rig space, meters; rig -Z = screen into the gun).
+	# X grows toward screen-left. Hip pose: hands below screen center, near the
+	# gun body; ADS centers the gun (see _animate_viewmodel arms offset below).
+	var grip_rig := Vector3(0.10, 1.26, -0.18)
+	var foregrip_rig := Vector3(0.14, 1.24, 0.26)
+	var elbow_r_rig := Vector3(0.26, 1.42, -0.04)
+	var elbow_l_rig := Vector3(0.34, 1.40, 0.24)
+	_pose_arm("R", grip_rig, elbow_r_rig, pitch, deg_to_rad(10.0))
+	_pose_arm("L", foregrip_rig, elbow_l_rig, pitch, deg_to_rad(-8.0))
+	if _arms_animation != null and is_instance_valid(_arms_animation):
+		# A neutral in-between pose: keep the base layer quiet, overrides do the work.
+		if _arms_animation.has_animation("relax"):
+			_arms_animation.play("relax")
+			_arms_animation.seek(0.0, true)
+			_arms_animation.pause()
+
+## Places one arm onto the weapon: rotates the upper arm forward (pitch), then
+## overrides forearm and hand global poses so the whole chain reaches the grip.
+## Fingers keep their rest curl; the wrist ring lands on the gun.
+func _pose_arm(side: String, hand_rig: Vector3, elbow_rig: Vector3, pitch: float, roll: float) -> void:
+	if _arms_skeleton == null or not is_instance_valid(_arms_skeleton):
+		return
+	# 1) Upper arm: swing forward around local X so the elbow rises toward the gun.
+	var upper := _arms_skeleton.find_bone("upper_arm." + side)
+	if upper >= 0:
+		var upper_pose := _arms_skeleton.get_bone_global_pose(upper)
+		upper_pose.basis = upper_pose.basis * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.UP, roll)
+		_arms_skeleton.set_bone_global_pose_override(upper, upper_pose, 1.0, true)
+	# 2) Forearm: global pose aligned from its (moved) shoulder toward the elbow target.
+	var forearm := _arms_skeleton.find_bone("forearm." + side)
+	if forearm >= 0 and upper >= 0:
+		var shoulder := _arms_skeleton.get_bone_global_pose(upper).origin
+		var dir := (elbow_rig - shoulder)
+		var length := clampf(dir.length(), 0.15, 0.34)
+		var forearm_pose := Transform3D(Basis(), shoulder + dir.normalized() * length)
+		_arms_skeleton.set_bone_global_pose_override(forearm, forearm_pose, 1.0, true)
+	# 3) Hand: global pose at the grip with a slight tilt so the wrist follows.
+	var index := _arms_skeleton.find_bone("hand." + side)
+	if index >= 0:
+		var pose := _arms_skeleton.get_bone_global_pose(index)
+		var basis := Basis()
+		if side == "R":
+			basis = Basis(Vector3.RIGHT, deg_to_rad(-24.0)) * Basis(Vector3.UP, deg_to_rad(12.0))
+		else:
+			basis = Basis(Vector3.RIGHT, deg_to_rad(-18.0)) * Basis(Vector3.UP, deg_to_rad(-14.0))
+		pose.basis = basis
+		pose.origin = hand_rig
+		_arms_skeleton.set_bone_global_pose_override(index, pose, 1.0, true)
 
 func _arm_material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -502,7 +536,12 @@ func _animate_viewmodel(delta: float) -> void:
 	viewmodel.position = viewmodel.position.lerp(target_position, clampf(delta * 18.0, 0.0, 1.0))
 	viewmodel.rotation_degrees = viewmodel.rotation_degrees.lerp(target_rotation, clampf(delta * 18.0, 0.0, 1.0))
 	if is_instance_valid(arms_root):
-		arms_root.position = viewmodel.position
+		# Hands stay glued to the grip: arms follow the gun transform every frame.
+		# In ADS the gun moves to screen center; the arms keep the hip anchor so
+		# the hands stay on the grip instead of teleporting with the weapon.
+		var arms_pos := viewmodel_base_position.lerp(ads_base_position, ads_weight * 0.35) + Vector3(0.0, 0.0, 0.08)
+		arms_pos += viewmodel.position - (viewmodel_base_position.lerp(ads_base_position, ads_weight))
+		arms_root.position = arms_pos
 		arms_root.rotation_degrees = viewmodel.rotation_degrees
 		if reload_timer > 0.0:
 			# The gun drops into the reload pose while the hands stay close to
@@ -554,36 +593,59 @@ func _show_muzzle_flash() -> void:
 		return
 	if not is_instance_valid(muzzle_flash):
 		muzzle_flash = MeshInstance3D.new()
-		# Cheap billboard quad + short cone: reads as a flash in a single frame
-		# on Mobile renderer, much lighter than particles.
-		var quad := QuadMesh.new()
-		quad.size = Vector2(0.34, 0.34)
-		var flash_mesh := ArrayMesh.new()
-		flash_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, quad.get_mesh_arrays())
-		muzzle_flash.mesh = flash_mesh
+		muzzle_flash.name = "MuzzleFlash"
+		# Irregular 6-point star flash built from triangles: no flat rectangle,
+		# reads as a burst from any angle. Two crossed fans scale per weapon.
+		muzzle_flash.mesh = _muzzle_flash_mesh()
 		muzzle_flash.material_override = _muzzle_flash_material()
+		muzzle_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		muzzle_anchor.add_child(muzzle_flash)
-		muzzle_flash.position = Vector3(0.0, 0.0, 0.02)
-		var spike := MeshInstance3D.new()
-		spike.name = "MuzzleSpike"
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.004
-		cone.bottom_radius = 0.045
-		cone.height = 0.26
-		cone.radial_segments = 6
-		spike.mesh = cone
-		spike.material_override = _muzzle_flash_material()
-		spike.rotation_degrees.x = -90.0
-		spike.position = Vector3(0.0, 0.0, 0.15)
-		muzzle_flash.add_child(spike)
+		muzzle_flash.position = Vector3(0.0, 0.0, 0.03)
 	var flash_scale := maxf(0.6, muzzle_flash_scale)
 	muzzle_flash.scale = Vector3.ONE * flash_scale
-	muzzle_flash.rotation_degrees.z = rng.randf_range(0.0, 360.0)
+	# Random roll around the barrel axis so each shot reads unique.
+	muzzle_flash.rotation = Vector3(0.0, 0.0, rng.randf_range(0.0, TAU))
 	muzzle_flash.visible = true
-	get_tree().create_timer(0.045).timeout.connect(func() -> void:
+	muzzle_flash.transparency = 0.0
+	var tween := create_tween()
+	tween.tween_property(muzzle_flash, "transparency", 0.85, 0.045)
+	tween.tween_callback(func() -> void:
 		if is_instance_valid(muzzle_flash):
 			muzzle_flash.visible = false
 	)
+
+## Star-shaped flash: petals in the barrel plane (XY) + forward petal along +Z.
+func _muzzle_flash_mesh() -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var center := verts.size()
+	verts.append(Vector3(0, 0, 0.0))
+	var petals := 5
+	for i: int in range(petals * 2):
+		var angle := TAU * float(i) / float(petals * 2)
+		var radius := 0.16 if i % 2 == 0 else 0.06
+		verts.append(Vector3(cos(angle) * radius, sin(angle) * radius, 0.0))
+	for i: int in range(petals):
+		indices.append(center)
+		indices.append(center + 1 + i * 2)
+		indices.append(center + 1 + ((i * 2 + 2) % (petals * 2)))
+	# Forward petal: three thin triangles pointing +Z (out of the barrel).
+	var forward := verts.size()
+	verts.append(Vector3(0, 0, 0.34))
+	for i: int in range(3):
+		var a := deg_to_rad(-40.0 + 40.0 * i)
+		verts.append(Vector3(cos(a) * 0.045, sin(a) * 0.045, 0.02))
+	for i: int in range(3):
+		indices.append(forward)
+		indices.append(forward + 1 + i)
+		indices.append(forward + 1 + ((i + 1) % 3))
+	var arrays_mesh := ArrayMesh.new()
+	var arrays_data := []
+	arrays_data.resize(Mesh.ARRAY_MAX)
+	arrays_data[Mesh.ARRAY_VERTEX] = verts
+	arrays_data[Mesh.ARRAY_INDEX] = indices
+	arrays_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_data)
+	return arrays_mesh
 
 func _muzzle_flash_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -592,8 +654,10 @@ func _muzzle_flash_material() -> StandardMaterial3D:
 	material.emission = Color("#ff8d30")
 	material.emission_energy_multiplier = 3.4
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	material.albedo_color.a = 0.9
 	return material
 

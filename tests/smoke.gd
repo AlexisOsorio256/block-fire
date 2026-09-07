@@ -79,24 +79,76 @@ func _test_player_and_operator_contracts() -> void:
 	_check(player.max_health == 200.0, "player starts at 200 HP")
 	_check(player.has_method("get_mobile_assisted_direction"), "player exposes mobile aim assist")
 	player.free()
-	var roster: Array[OperatorDefinition] = OperatorDefinition.roster()
-	_check(roster.size() == 5, "operator roster has five entries")
-	var model_paths: Array[String] = []
-	for definition: OperatorDefinition in roster:
-		model_paths.append(definition.model_scene)
-	_check(model_paths.all(func(path: String) -> bool: return path == OperatorDefinition.SHARED_CHARACTER_SCENE), "operators share one animated rig source")
-	_check(ResourceLoader.exists(roster[0].model_scene), "operator model asset imports")
-	var visual := OperatorVisual.new()
-	visual.configure("BRAVO", "ally", roster[0].accent)
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Idle"), "operator rig exposes idle animation")
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "operator rig exposes locomotion animation")
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "operator rig exposes death animation")
-	visual.free()
+	_test_cosmetic_catalog()
+	await _test_visual_in_tree()
 	var victim := BlockfireBot.new()
 	_check(not victim.last_damage_headshot, "headshot kill flag starts false")
 	victim.last_damage_headshot = true
 	_check(victim.last_damage_headshot, "headshot kill flag is remembered by the victim")
 	victim.free()
+
+func _test_visual_in_tree() -> void:
+	## El rig modular necesita el árbol para resolver SettingsStore y animar.
+	var visual := OperatorVisual.new()
+	get_root().add_child(visual)
+	await process_frame
+	visual.configure("BRAVO", "ally", Color("#ff9d50"))
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Idle"), "avatar rig exposes idle animation")
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "avatar rig exposes locomotion animation")
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "avatar rig exposes death animation")
+	_check(visual.model_root != null, "avatar visual builds a model root")
+	_check(visual.skeleton != null, "avatar keeps a shared Skeleton3D")
+	var visible_meshes := 0
+	if visual.model_root != null:
+		for node: Node in visual.model_root.find_children("*", "MeshInstance3D", true, false):
+			if (node as MeshInstance3D).visible:
+				visible_meshes += 1
+	_check(visible_meshes == 5, "avatar shows head+top+bottom+shoes plus the team band")
+	var attachments := 0
+	if visual.skeleton != null:
+		for node: Node in visual.skeleton.get_children():
+			if node is BoneAttachment3D:
+				attachments += 1
+	_check(attachments >= 1, "team band rides a BoneAttachment3D")
+	visual.queue_free()
+	var bot := BlockfireBot.new()
+	bot.name = "SmokeBot"
+	bot.configure(null, "enemy", "VULTURE", "support")
+	get_root().add_child(bot)
+	await process_frame
+	_check(bot.visual != null and bot.visual.model_root != null, "bot builds its own visual")
+	var bot_meshes := 0
+	if bot.visual != null and bot.visual.model_root != null:
+		for node: Node in bot.visual.model_root.find_children("*", "MeshInstance3D", true, false):
+			if (node as MeshInstance3D).visible:
+				bot_meshes += 1
+	_check(bot_meshes >= 4 and bot_meshes <= 7, "bot avatar resolves a deterministic loadout")
+	bot.get_parent().remove_child(bot)
+	bot.free()
+
+func _test_cosmetic_catalog() -> void:
+	var items := CosmeticCatalog.items()
+	for slot: String in ["head", "top", "bottom", "shoes"]:
+		_check(_slot_count(items, slot) >= 1, "cosmetic slot has at least one outfit piece: " + slot)
+	for slot: String in ["headwear", "eyewear", "mask", "skin"]:
+		_check(_slot_count(items, slot) >= 1, "cosmetic slot has at least one item: " + slot)
+	var swat := CosmeticCatalog.item_for("top", "top_swat")
+	_check(swat != null and swat.mesh_node == "Swat_Body", "swat top maps to its modular mesh")
+	_check(ResourceLoader.exists("res://assets/models/quaternius_modular/avatar_rig.gltf"), "modular avatar asset imports")
+	var loadout := CosmeticCatalog.default_loadout()
+	for slot: String in ["head", "top", "bottom", "shoes", "skin"]:
+		_check(String(loadout.get(slot, "")).length() > 0, "default loadout fills slot " + slot)
+	var bot_loadout := CosmeticCatalog.bot_loadout_for("VULTURE", "support", 1234)
+	_check(String(bot_loadout.get("top", "")).length() > 0 and String(bot_loadout.get("bottom", "")).length() > 0,
+		"bot loadout resolves top and bottom deterministically")
+
+func _slot_count(items: Dictionary, slot: String) -> int:
+	var count := 0
+	for key: String in items:
+		var item: CosmeticItem = items[key]
+		if item.slot == slot:
+			count += 1
+	return count
 
 func _test_touch_contracts() -> void:
 	var controls := BlockfireMobileControls.new()

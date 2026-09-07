@@ -27,6 +27,7 @@ var _reload_at := -1
 var _switch_at := -1
 var _reload_pressed := false
 var _switch_pressed := false
+var _ads_pressed := false
 var _keepalive := false
 var _started := false
 var _shot_done := false
@@ -139,8 +140,10 @@ func _tick() -> void:
 		_player.set("is_alive", true)
 		_player.set("health", _player.get("max_health"))
 	if _yaw != 0.0 or _pitch != 0.0:
-		_player.set("look_yaw", deg_to_rad(_yaw))
-		_player.set("look_pitch", deg_to_rad(_pitch))
+		# El jugador trabaja look_yaw/look_pitch en GRADOS (rotation_degrees.y,
+		# pitch limitado a -78..78): pasar tal cual, sin conversion.
+		_player.set("look_yaw", _yaw)
+		_player.set("look_pitch", clampf(_pitch, -78.0, 78.0))
 	var weapon: Node = _player.get("weapon")
 	if _weapon_id != "" and weapon != null:
 		var ids := ["rifle", "pistol", "shotgun", "smg"]
@@ -159,12 +162,17 @@ func _tick() -> void:
 		_controls = _player.get("mobile_controls")
 	if _controls == null:
 		return
-	if _ads:
-		_controls.call("qa_press_aim")
 	if _fire:
 		# El jugador sobrescribe fire_held cada tick fisico con is_firing();
 		# hay que re-pulsar cada frame como un dedo real mantenido.
+		# Disparar primero garantiza combate activo y keepalive antes del ADS.
 		_controls.call("qa_press_fire")
+	if _ads and not _ads_pressed and _frames <= 100:
+		# qa_press_aim es un latch (aiming = not aiming): una sola pulsacion,
+		# llamarlo cada frame alterna ADS on/off y arruina la captura.
+		# Tras fire (combate activo), frames<=100 asegura el latch estable.
+		_ads_pressed = true
+		_controls.call("qa_press_aim")
 	if _reload and not _reload_pressed:
 		_reload_pressed = true
 		_controls.call("qa_press_reload")

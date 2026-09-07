@@ -1,37 +1,62 @@
 class_name OperatorVisual
 extends Node3D
 
-## Visual identity for operators and bots.
-## Design contract (see game/data/operator_definition.gd):
-## - All humanoids share one animated Quaternius rig (source of truth), so the
-##   shared-rig contract in the test suite stays intact.
-## - Operator identity lives on the BODY (jacket + pants) via the definition
-##   palette and on silhouette gear (helmet/vest/backpack) built from primitives.
-## - Team identity lives on the HELMET + shoulder band + a short ground ring,
-##   never on a floating halo, so friend/foe reads at a glance without
-##   dominating the silhouette.
+## Apariencia del avatar (jugador y bots). El jugador ya no tiene héroes:
+## BRAVO/VULTURE/TALON/DUNE/HAVOC quedan deprecados y el id solo decide la
+## variación determinista de los bots. La identidad visible vive en la ROPA
+## (CosmeticCatalog sobre el rig modular compartido) y en un pequeño accesorio
+## de equipo (banda en el brazo), nunca en un aro gigante ni un tinte global.
+## Rig: assets/models/quaternius_modular/avatar_rig.gltf (CC0, Quaternius
+## Ultimate Modular Characters). Un solo Skeleton3D; top/bottom/shoes/head se
+## activan por visibilidad; accesorios rígidos cuelgan de BoneAttachment3D.
 
-const HELMET_CENTER := Vector3(0.0, 1.845, 0.015)
-const HELMET_RADIUS := 0.155
-const VEST_CENTER := Vector3(0.0, 1.115, 0.0)
-const BACKPACK_CENTER := Vector3(0.0, 1.16, 0.235)
-const SHOULDER_BAND_Z := -0.155
-const GROUND_RING_Y := 0.045
+const AVATAR_SCENE := "res://assets/models/quaternius_modular/avatar_rig.gltf"
+
+## Escala del rig modular (altura ~1.97 unidades) al tamaño de gameplay (~1.75).
+const MODEL_SCALE := 0.885
+const MODEL_Y_OFFSET := 0.0
+
+const BAND_COLOR_ALLY := Color("#f0a064")
+const BAND_COLOR_ENEMY := Color("#da4f68")
 
 var operator_id: String = "BRAVO"
 var team: String = "ally"
-var accent: Color = Color("#ff9d50")
+var accent: Color = BAND_COLOR_ALLY
 var model_root: Node3D
+var skeleton: Skeleton3D
 var animation_player: AnimationPlayer
 var animation_state: StringName = &""
-var definition: OperatorDefinition
+## Cosméticos activos: slot -> CosmeticItem (los bots usan su variación;
+## el jugador recibe su loadout desde SettingsStore via player.gd).
+var loadout: Dictionary = {}
+## Color de equipo para la banda/aro pequeño.
+var team_band_color: Color = BAND_COLOR_ALLY
 
-func configure(id: String, team_id: String, color: Color) -> void:
+## Índice de skin del skeleton (una sola copia compartida por instancias del
+## mismo PackedScene: Godot instancia Skeleton3D por escena, sin coste extra).
+var _attachments: Array[BoneAttachment3D] = []
+
+
+func configure(id: String, team_id: String, color: Color, cosmetic_loadout: Dictionary = {}) -> void:
 	operator_id = id
 	team = team_id
 	accent = color
-	definition = _find_definition(id)
+	team_band_color = color
+	loadout = cosmetic_loadout
 	_build()
+
+
+## Compatibilidad: firma antigua configure(id, team, color) sigue válida.
+## Con loadout vacío el jugador usa SettingsStore y los bots usan variación
+## determinista por operator_id/role.
+func resolve_default_loadout(role_seed: int = 0) -> Dictionary:
+	if not loadout.is_empty():
+		return loadout
+	var settings := _settings()
+	if settings != null and team in ["ally", "player"]:
+		return settings.cosmetic_loadout()
+	return CosmeticCatalog.bot_loadout_for(operator_id, "entry", role_seed)
+
 
 func set_combat_state(moving: bool, firing: bool) -> void:
 	if animation_player == null or not is_instance_valid(animation_player):
@@ -45,41 +70,45 @@ func set_combat_state(moving: bool, firing: bool) -> void:
 		desired = &"Run_Gun"
 	_play_animation(desired)
 
+
 func play_death() -> void:
 	_play_animation(&"Death")
+
 
 func _build() -> void:
 	for child: Node in get_children():
 		child.free()
 	model_root = null
+	skeleton = null
 	animation_player = null
 	animation_state = &""
-	var model_path := definition.model_scene if definition != null else OperatorDefinition.SHARED_CHARACTER_SCENE
-	if team != "ally" and team != "player":
-		model_path = OperatorDefinition.ENEMY_CHARACTER_SCENE
-	var packed := load(model_path) as PackedScene
+	_attachments.clear()
+	var effective := loadout if not loadout.is_empty() else resolve_default_loadout(hash(operator_id) + hash(name))
+	var packed := load(AVATAR_SCENE) as PackedScene
 	if packed != null:
 		model_root = packed.instantiate() as Node3D
 	if model_root != null:
 		add_child(model_root)
-		# The shared rig has a broad toon silhouette; this scale keeps it aligned
-		# with the gameplay capsule while preserving readable shoulders and gear.
-		model_root.scale = Vector3.ONE * (definition.build_scale if definition != null else 0.78)
-		model_root.position.y = 0.30
-		_hide_embedded_weapon_nodes(model_root)
-		_apply_operator_materials()
+		model_root.scale = Vector3.ONE * MODEL_SCALE
+		model_root.position.y = MODEL_Y_OFFSET
+		skeleton = _find_skeleton(model_root)
 		_find_animation_player()
+		_apply_loadout(effective)
 		_play_animation(&"Idle")
 		_add_team_marker()
-		_add_gear()
 		return
 	_build_fallback()
 
-func _find_definition(id: String) -> OperatorDefinition:
-	for candidate: OperatorDefinition in OperatorDefinition.roster():
-		if candidate.id == id:
-			return candidate
-	return OperatorDefinition.new()
+
+func _find_skeleton(node: Node) -> Skeleton3D:
+	if node is Skeleton3D:
+		return node
+	for child: Node in node.get_children():
+		var found := _find_skeleton(child)
+		if found != null:
+			return found
+	return null
+
 
 func _find_animation_player() -> void:
 	for candidate: Node in model_root.find_children("*", "AnimationPlayer", true, false):
@@ -87,227 +116,173 @@ func _find_animation_player() -> void:
 		if animation_player != null:
 			return
 
-func _hide_embedded_weapon_nodes(node: Node) -> void:
-	var embedded_weapon_names: Array[String] = [
-		"ak", "grenadelauncher", "knife_1", "knife_2", "pistol", "revolver",
-		"revolver_small", "rocketlauncher", "shortcannon", "shotgun", "shovel",
-		"smg", "sniper", "sniper_2"
-	]
-	for child: Node in node.get_children():
-		if child is Node3D and embedded_weapon_names.has(child.name.to_lower()):
-			(child as Node3D).visible = false
-		else:
-			_hide_embedded_weapon_nodes(child)
 
 func _play_animation(animation_name: StringName) -> void:
 	if animation_player == null or not is_instance_valid(animation_player):
 		return
 	if not animation_player.has_animation(animation_name):
-		if animation_name != &"Idle" and animation_player.has_animation(&"Idle"):
-			animation_name = &"Idle"
-		else:
-			return
+		return
 	if animation_state == animation_name and animation_player.is_playing():
 		return
 	animation_state = animation_name
 	animation_player.play(animation_name, 0.12)
 	animation_player.speed_scale = 1.0
 
-func _apply_operator_materials() -> void:
-	if model_root == null:
+
+## Activa una prenda deformable del rig modular y desactiva las demás de su slot.
+func _apply_loadout(effective: Dictionary) -> void:
+	if skeleton == null:
 		return
-	var jacket: Color = definition.jacket if definition != null else accent
-	var pants: Color = definition.pants if definition != null else Color("#3f4a5c")
-	var visor_tint := definition.visor if definition != null else Color("#55dcff")
-	for candidate: Node in model_root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := candidate as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
+	# 1) Todo oculto salvo lo pedido: primero apagamos TODAS las prendas.
+	for child: Node in skeleton.get_children():
+		if child is MeshInstance3D:
+			(child as MeshInstance3D).visible = false
+	# 2) Slots deformables: head/top/bottom/shoes. Un solo mesh por slot.
+	for slot: String in ["head", "top", "bottom", "shoes"]:
+		var item := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
+		if item == null or item.mesh_node.is_empty():
+			# Fallback: el cuerpo necesita top/bottom/shoes siempre.
+			item = CosmeticCatalog.item_for(slot, _fallback_for(slot))
+		if item == null:
+			continue
+		var mesh_instance := skeleton.get_node_or_null(NodePath(item.mesh_node)) as MeshInstance3D
+		if mesh_instance != null:
+			mesh_instance.visible = true
+	# 3) Tinte de piel en los materiales Skin de la cabeza.
+	var skin_item := CosmeticCatalog.item_for("skin", String(effective.get("skin", "")))
+	if skin_item != null:
+		_tint_skin(skin_item.color)
+	# 4) Accesorios rígidos.
+	for slot: String in ["headwear", "eyewear", "mask"]:
+		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
+		if accessory != null:
+			_add_accessory(accessory)
+
+
+func _fallback_for(slot: String) -> String:
+	match slot:
+		"head": return "head_swat"
+		"top": return "top_swat"
+		"bottom": return "bottom_swat"
+		"shoes": return "shoes_swat"
+	return ""
+
+
+func _tint_skin(tone: Color) -> void:
+	for child: Node in skeleton.get_children():
+		var mesh_instance := child as MeshInstance3D
+		if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
+			continue
+		if not String(mesh_instance.name).ends_with("_Head"):
 			continue
 		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
 			var source := mesh_instance.get_active_material(surface_index)
 			if source is not StandardMaterial3D:
 				continue
+			if String(source.resource_name) != "Skin":
+				continue
 			var material := source.duplicate() as StandardMaterial3D
-			var material_name := material.resource_name.to_lower()
-			if material_name.is_empty():
-				material_name = String(mesh_instance.name).to_lower()
-			if material_name.begins_with("character_main") or material_name.begins_with("enemy_red"):
-				# Jacket: carries the operator identity color.
-				material.albedo_color = jacket
-			elif material_name.begins_with("pants"):
-				material.albedo_color = pants
-			elif material_name.begins_with("skin"):
-				material.albedo_color = definition.skin_tone if definition != null else Color("#d4a27f")
-			elif material_name.contains("head") or material_name.contains("visor"):
-				material.albedo_color = material.albedo_color.lerp(visor_tint, 0.60)
-				material.emission_enabled = true
-				material.emission = visor_tint
-				material.emission_energy_multiplier = 0.35
+			material.albedo_color = tone
 			mesh_instance.set_surface_override_material(surface_index, material)
 
-## Silhouette gear built from primitives. Each operator gets a distinct helmet
-## shape, vest and backpack so the five operators never read as clones even in
-## mid combat. Hitboxes and the shared rig are untouched.
-func _add_gear() -> void:
-	var jacket: Color = definition.jacket if definition != null else accent
-	var trim: Color = definition.trim if definition != null else accent.lightened(0.2)
-	var gear: String = definition.gear if definition != null else "vest"
-	var head_node := _find_head_node()
-	var head_top := HELMET_CENTER.y + HELMET_RADIUS
-	match gear:
-		"crest":
-			_add_helmet(head_node)
-			var crest := MeshInstance3D.new()
-			var crest_mesh := BoxMesh.new()
-			crest_mesh.size = Vector3(0.045, 0.115, 0.30)
-			crest.mesh = crest_mesh
-			crest.position = Vector3(0.0, head_top + 0.035, -0.01)
-			crest.material_override = _material(trim, 0.55)
-			head_node.add_child(crest)
-		"beanie":
-			_add_beanie(head_node, trim)
-		"scarf":
-			_add_beanie(head_node, trim)
-			var scarf := MeshInstance3D.new()
-			var scarf_mesh := BoxMesh.new()
-			scarf_mesh.size = Vector3(0.30, 0.085, 0.13)
-			scarf.mesh = scarf_mesh
-			scarf.position = Vector3(0.0, 1.60, -0.10)
-			scarf.rotation_degrees.z = -8.0
-			scarf.material_override = _material(trim, 0.0)
-			head_node.add_child(scarf)
-			var tail := MeshInstance3D.new()
-			var tail_mesh := BoxMesh.new()
-			tail_mesh.size = Vector3(0.09, 0.26, 0.06)
-			tail.mesh = tail_mesh
-			tail.position = Vector3(0.10, 1.44, 0.03)
-			tail.rotation_degrees.z = 14.0
-			tail.material_override = _material(trim, 0.0)
-			head_node.add_child(tail)
-		"heavy":
-			_add_helmet(head_node)
-			_add_vest_plate(jacket, trim)
-		"vest":
-			_add_beanie(head_node, trim)
-			_add_vest_plate(jacket, trim)
-	if definition.has_backpack:
-		var pack := MeshInstance3D.new()
-		var pack_mesh := BoxMesh.new()
-		pack_mesh.size = Vector3(0.30, 0.34, 0.16)
-		pack.mesh = pack_mesh
-		pack.position = BACKPACK_CENTER
-		pack.material_override = _material(trim.darkened(0.35), 0.0)
-		add_child(pack)
-		var strap := MeshInstance3D.new()
-		var strap_mesh := BoxMesh.new()
-		strap_mesh.size = Vector3(0.32, 0.05, 0.18)
-		strap.mesh = strap_mesh
-		strap.position = BACKPACK_CENTER + Vector3(0.0, 0.20, -0.01)
-		strap.material_override = _material(jacket.darkened(0.45), 0.0)
-		add_child(strap)
 
-func _add_helmet(head_node: Node3D) -> void:
-	var helmet := MeshInstance3D.new()
-	var helmet_mesh := SphereMesh.new()
-	helmet_mesh.radius = HELMET_RADIUS
-	helmet_mesh.height = HELMET_RADIUS * 2.0 * 0.86
-	helmet.mesh = helmet_mesh
-	helmet.position = HELMET_CENTER
-	helmet.material_override = _material(_team_color(), 0.55)
-	add_child(helmet)
-	var brim := MeshInstance3D.new()
-	var brim_mesh := BoxMesh.new()
-	brim_mesh.size = Vector3(0.26, 0.035, 0.16)
-	brim.mesh = brim_mesh
-	brim.position = HELMET_CENTER + Vector3(0.0, -0.045, -0.13)
-	brim.material_override = _material(_team_color().darkened(0.3), 0.0)
-	add_child(brim)
-
-func _add_beanie(head_node: Node3D, trim: Color) -> void:
-	var beanie := MeshInstance3D.new()
-	var beanie_mesh := SphereMesh.new()
-	beanie_mesh.radius = HELMET_RADIUS * 0.92
-	beanie_mesh.height = HELMET_RADIUS * 1.1
-	beanie.mesh = beanie_mesh
-	beanie.position = HELMET_CENTER + Vector3(0.0, 0.012, 0.0)
-	beanie.material_override = _material(trim, 0.0)
-	add_child(beanie)
-
-func _add_vest_plate(jacket: Color, trim: Color) -> void:
-	var vest := MeshInstance3D.new()
-	var vest_mesh := BoxMesh.new()
-	vest_mesh.size = Vector3(0.40, 0.44, 0.24)
-	vest.mesh = vest_mesh
-	vest.position = VEST_CENTER
-	vest.material_override = _material(jacket.darkened(0.42), 0.0)
-	add_child(vest)
-	var plate := MeshInstance3D.new()
-	var plate_mesh := BoxMesh.new()
-	plate_mesh.size = Vector3(0.30, 0.26, 0.045)
-	plate.mesh = plate_mesh
-	plate.position = VEST_CENTER + Vector3(0.0, 0.03, -0.20)
-	plate.material_override = _material(trim, 0.0)
-	add_child(plate)
-
-func _team_color() -> Color:
-	return accent
-
+## Banda fina en el brazo + aro corto en el suelo: lectura de equipo mínima.
 func _add_team_marker() -> void:
-	# Shoulder team band: small, rigid and readable without a floating halo.
 	var band := MeshInstance3D.new()
 	band.name = "TeamBand"
-	var band_mesh := BoxMesh.new()
-	band_mesh.size = Vector3(0.46, 0.075, 0.10)
+	var band_mesh := TorusMesh.new()
+	band_mesh.inner_radius = 0.075
+	band_mesh.outer_radius = 0.105
 	band.mesh = band_mesh
-	band.position = Vector3(0.0, 1.47, SHOULDER_BAND_Z)
-	band.material_override = _material(_team_color(), 0.25)
-	add_child(band)
-	# Short ground ring: team ring on the floor, faint from the front but
-	# unmistakable from above and in the HUD framing.
+	band.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	band.material_override = _material(team_band_color, 0.25)
+	var upper_arm := "UpperArm.L" if team in ["ally", "player"] else "UpperArm.R"
+	var attachment := BoneAttachment3D.new()
+	attachment.name = "TeamBandAttachment"
+	if skeleton != null and skeleton.find_bone(upper_arm) >= 0:
+		attachment.bone_name = upper_arm
+		skeleton.add_child(attachment)
+		attachment.add_child(band)
+		band.position = Vector3(0.0, -0.12, 0.0)
+	else:
+		add_child(band)
+		band.position = Vector3(0.0, 1.32, -0.09)
+	# Aro corto en el suelo (visible desde arriba, no domina la silueta).
 	var ring := MeshInstance3D.new()
 	ring.name = "TeamRing"
 	var ring_mesh := TorusMesh.new()
 	ring_mesh.inner_radius = 0.30
-	ring_mesh.outer_radius = 0.36
+	ring_mesh.outer_radius = 0.35
 	ring.mesh = ring_mesh
-	ring.position = Vector3(0.0, GROUND_RING_Y, 0.0)
-	ring.material_override = _material(_team_color(), 0.4)
+	ring.position = Vector3(0.0, 0.045, 0.0)
+	ring.material_override = _material(team_band_color, 0.4)
 	add_child(ring)
 
-func _find_head_node() -> Node3D:
-	if model_root == null:
-		return self
-	for candidate: Node in model_root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := candidate as MeshInstance3D
-		if mesh_instance != null and String(mesh_instance.name).to_lower().contains("head"):
-			return mesh_instance
-	return self
+
+func _add_accessory(item: CosmeticItem) -> void:
+	if skeleton == null or skeleton.find_bone(item.attachment_bone) < 0:
+		return
+	var attachment := BoneAttachment3D.new()
+	attachment.bone_name = item.attachment_bone
+	skeleton.add_child(attachment)
+	_attachments.append(attachment)
+	var accessory := MeshInstance3D.new()
+	match item.slot:
+		"eyewear":
+			accessory.mesh = _eyewear_mesh()
+			accessory.material_override = _material(item.color, 0.0)
+			accessory.scale = Vector3.ONE * 0.92
+		"mask":
+			accessory.mesh = _mask_mesh()
+			accessory.material_override = _material(item.color, 0.0)
+		"headwear":
+			accessory.mesh = _cap_mesh()
+			accessory.material_override = _material(item.color, 0.0)
+			accessory.scale = Vector3.ONE * 0.98
+	attachment.add_child(accessory)
+	accessory.position = item.attachment_offset
+	accessory.rotation_degrees = item.attachment_rotation_deg
+	accessory.scale *= item.attachment_scale
+
+
+func _eyewear_mesh() -> Mesh:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.16, 0.035, 0.035)
+	return mesh
+
+
+func _mask_mesh() -> Mesh:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.13, 0.11, 0.06)
+	return mesh
+
+
+func _cap_mesh() -> Mesh:
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.115
+	mesh.height = 0.10
+	return mesh
+
 
 func _build_fallback() -> void:
 	var body := MeshInstance3D.new()
 	var capsule := CapsuleMesh.new()
 	capsule.height = 1.45
-	capsule.radius = 0.34
+	capsule.radius = 0.30
 	body.mesh = capsule
 	body.position.y = 1.0
-	body.material_override = _material(definition.jacket if definition != null else accent.darkened(0.18), 0.0)
+	body.material_override = _material(Color("#4a5568"), 0.0)
 	add_child(body)
 	var head := MeshInstance3D.new()
 	var head_mesh := SphereMesh.new()
-	head_mesh.height = 0.55
-	head_mesh.radius = 0.3
+	head_mesh.height = 0.42
+	head_mesh.radius = 0.21
 	head.mesh = head_mesh
-	head.position.y = 1.95
+	head.position.y = 1.9
 	head.material_override = _material(Color("#d4a27f"), 0.0)
 	add_child(head)
-	var visor := MeshInstance3D.new()
-	var visor_mesh := BoxMesh.new()
-	visor_mesh.size = Vector3(0.34, 0.09, 0.05)
-	visor.mesh = visor_mesh
-	visor.position = Vector3(0, 2.02, -0.28)
-	visor.material_override = _material(definition.visor if definition != null else Color("#5ce8ff"), 0.6)
-	add_child(visor)
 	_add_team_marker()
+
 
 func _material(color: Color, emission_energy: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -318,3 +293,7 @@ func _material(color: Color, emission_energy: float) -> StandardMaterial3D:
 		material.emission = color
 		material.emission_energy_multiplier = emission_energy
 	return material
+
+
+func _settings() -> Node:
+	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
