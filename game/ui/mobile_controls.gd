@@ -6,6 +6,8 @@ signal fire_stopped
 signal look_dragged(delta: Vector2)
 signal jump_requested
 
+const ICON_STROKE: float = 3.0
+
 var mobile_qa: bool = false
 var move_vector: Vector2 = Vector2.ZERO
 var look_delta: Vector2 = Vector2.ZERO
@@ -33,7 +35,9 @@ func configure(is_mobile_qa: bool) -> void:
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Let the HUD's top-right settings/arsenal buttons receive taps. Gameplay
+	# touches are still consumed below once they are classified as controls.
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	var settings := _settings()
 	layout = settings.get_control_layout() if settings != null else {}
 	queue_redraw()
@@ -41,14 +45,26 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	queue_redraw()
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT \
+			or what == NOTIFICATION_APPLICATION_PAUSED \
+			or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		release_all()
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
+		if _is_hud_action(event.position):
+			_dispatch_hud_action(event.position)
+			return
 		_handle_touch(event.index, event.position, event.pressed)
 		accept_event()
 	elif event is InputEventScreenDrag:
 		_handle_drag(event.index, event.position, event.relative)
 		accept_event()
 	elif mobile_qa and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if _is_hud_action(event.position):
+			_dispatch_hud_action(event.position)
+			return
 		_handle_touch(0, event.position, event.pressed)
 		accept_event()
 	elif mobile_qa and event is InputEventMouseMotion and touch_positions.has(0):
@@ -88,6 +104,12 @@ func is_firing() -> bool:
 
 func is_aiming() -> bool:
 	return aiming
+
+func is_aim_latched() -> bool:
+	return aiming
+
+func is_looking() -> bool:
+	return look_pointer >= 0 or fire_pointer >= 0 or aim_pointer >= 0
 
 func is_sprinting() -> bool:
 	return sprinting
@@ -156,11 +178,15 @@ func qa_press_jump() -> void:
 	jump_request = true
 	jump_requested.emit()
 
+func qa_tap_aim() -> void:
+	aiming = not aiming
+
 func qa_press_aim() -> void:
-	aiming = true
+	qa_tap_aim()
 
 func qa_release_aim() -> void:
-	aiming = false
+	# ADS is tap-to-latch. Releasing the finger must not clear it.
+	pass
 
 func qa_set_move(value: Vector2) -> void:
 	move_vector = value.limit_length(1.0)
@@ -169,6 +195,7 @@ func qa_drag_look(delta: Vector2) -> void:
 	look_delta += delta
 
 func release_all() -> void:
+	var was_firing := firing
 	move_pointer = -1
 	look_pointer = -1
 	fire_pointer = -1
@@ -176,9 +203,15 @@ func release_all() -> void:
 	touch_positions.clear()
 	move_vector = Vector2.ZERO
 	look_delta = Vector2.ZERO
+	jump_request = false
+	crouch_request = false
+	reload_request = false
+	switch_request = false
 	firing = false
 	aiming = false
 	sprinting = false
+	if was_firing:
+		fire_stopped.emit()
 	queue_redraw()
 
 func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
@@ -189,7 +222,7 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			qa_press_fire()
 		elif _in_aim(position):
 			aim_pointer = pointer
-			aiming = true
+			aiming = not aiming
 		elif _in_jump(position):
 			jump_request = true
 			jump_requested.emit()
@@ -218,7 +251,6 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			qa_release_fire()
 		if pointer == aim_pointer:
 			aim_pointer = -1
-			aiming = false
 
 func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 	touch_positions[pointer] = position
@@ -290,6 +322,20 @@ func _in_any_button(position: Vector2) -> bool:
 			return true
 	return false
 
+func _is_hud_action(position: Vector2) -> bool:
+	# Match both top-right HUD actions with a little safe-area tolerance.
+	return position.y <= 104.0 and position.x >= size.x - 250.0
+
+func _dispatch_hud_action(position: Vector2) -> void:
+	var hud := get_parent().get_parent() if get_parent() != null else null
+	if hud == null:
+		return
+	var normalized_x := position.x / maxf(size.x, 1.0)
+	if normalized_x < 0.94 and hud.has_method("toggle_control_editor"):
+		hud.toggle_control_editor()
+	elif hud.has_signal("arsenal_requested"):
+		hud.arsenal_requested.emit()
+
 func _draw() -> void:
 	if not mobile_qa and not DisplayServer.is_touchscreen_available():
 		return
@@ -305,15 +351,58 @@ func _draw() -> void:
 		var center := _button_center(id)
 		var radius: float = (55.0 if id == "fire" else 40.0) * _control_scale(id)
 		var control_alpha := alpha * _control_opacity(id)
-		var color := Color(1.0, 0.56, 0.24, control_alpha) if id == "fire" else Color(0.15, 0.28, 0.48, control_alpha)
+		var pressed := (id == "fire" and firing) or (id == "aim" and aiming) or (id == "sprint" and sprinting)
+		var color := Color(1.0, 0.42, 0.16, control_alpha) if id == "fire" else Color(0.15, 0.28, 0.48, control_alpha)
 		if id == "aim":
-			color = Color(0.28, 0.7, 0.92, control_alpha)
+			color = Color(0.12, 0.62, 0.84, control_alpha)
+		if pressed:
+			color = color.lightened(0.28)
 		draw_circle(center, radius, color)
-		draw_arc(center, radius, 0, TAU, 24, bright, 2.0)
-		var text: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "REC", "switch": "ARMA", "crouch": "AGACH", "sprint": "CORRER"}.get(id, id))
-		draw_string(ThemeDB.fallback_font, center + Vector2(-radius * 0.62, 4), text, HORIZONTAL_ALIGNMENT_CENTER, radius * 1.24, 11, Color.WHITE)
+		draw_arc(center, radius, 0, TAU, 24, Color(bright.r, bright.g, bright.b, control_alpha), 2.0)
+		_draw_icon(id, center, radius, Color(1, 1, 1, minf(1.0, control_alpha + 0.12)))
+		if edit_mode:
+			var context_name: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "RECARGAR", "switch": "CAMBIAR", "crouch": "AGACHAR", "sprint": "CORRER"}.get(id, id.to_upper()))
+			draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 18), context_name, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11, Color.WHITE)
 	if edit_mode:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.4, 0.7, 1.0, 0.08), false, 2.0)
+
+func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> void:
+	var r := radius * 0.42
+	match id:
+		"fire":
+			draw_circle(center, r * 0.28, color, false, ICON_STROKE)
+			for direction: Vector2 in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT]:
+				draw_line(center + direction * r * 0.45, center + direction * r, color, ICON_STROKE, true)
+		"aim":
+			var eye := PackedVector2Array([center + Vector2(-r, 0), center + Vector2(-r * 0.52, -r * 0.52), center, center + Vector2(r * 0.52, -r * 0.52), center + Vector2(r, 0), center + Vector2(r * 0.52, r * 0.52), center, center + Vector2(-r * 0.52, r * 0.52), center + Vector2(-r, 0)])
+			draw_polyline(eye, color, ICON_STROKE, true)
+			draw_circle(center, r * 0.22, color, false, ICON_STROKE)
+		"jump":
+			draw_line(center + Vector2(-r * 0.72, r * 0.42), center, color, ICON_STROKE, true)
+			draw_line(center, center + Vector2(r * 0.72, r * 0.42), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.72, r * 0.72), center + Vector2(r * 0.72, r * 0.72), color, ICON_STROKE, true)
+		"reload":
+			draw_arc(center, r * 0.72, deg_to_rad(35), deg_to_rad(320), 20, color, ICON_STROKE, true)
+			draw_colored_polygon(PackedVector2Array([center + Vector2(r * 0.62, -r * 0.76), center + Vector2(r * 0.92, -r * 0.58), center + Vector2(r * 0.56, -r * 0.38)]), color)
+		"switch":
+			draw_line(center + Vector2(-r * 0.78, -r * 0.3), center + Vector2(r * 0.65, -r * 0.3), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.65, -r * 0.3), center + Vector2(r * 0.28, -r * 0.62), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.65, -r * 0.3), center + Vector2(r * 0.28, 0.02 * r), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.78, r * 0.3), center + Vector2(-r * 0.65, r * 0.3), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.65, r * 0.3), center + Vector2(-r * 0.28, -0.02 * r), color, ICON_STROKE, true)
+		"crouch":
+			draw_circle(center + Vector2(0, -r * 0.55), r * 0.22, color)
+			draw_line(center + Vector2(0, -r * 0.28), center + Vector2(0, r * 0.45), color, ICON_STROKE, true)
+			draw_line(center + Vector2(0, r * 0.05), center + Vector2(r * 0.66, r * 0.38), color, ICON_STROKE, true)
+			draw_line(center + Vector2(0, r * 0.45), center + Vector2(r * 0.72, r * 0.72), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.35, r * 0.72), center + Vector2(r * 0.78, r * 0.72), color, ICON_STROKE, true)
+		"sprint":
+			draw_line(center + Vector2(-r * 0.75, -r * 0.45), center + Vector2(r * 0.08, -r * 0.45), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.9, 0), center + Vector2(-r * 0.08, 0), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.75, r * 0.45), center + Vector2(r * 0.08, r * 0.45), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.06, r * 0.18), center + Vector2(r * 0.78, r * 0.18), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.78, r * 0.18), center + Vector2(r * 0.5, -r * 0.12), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.78, r * 0.18), center + Vector2(r * 0.5, r * 0.48), color, ICON_STROKE, true)
 
 func _settings() -> Node:
 	if not is_inside_tree():

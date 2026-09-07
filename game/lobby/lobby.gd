@@ -12,6 +12,7 @@ var mode_buttons: Dictionary = {}
 var operator_buttons: Dictionary = {}
 var skin_buttons: Dictionary = {}
 var settings_popup: PanelContainer
+var ui_root: Control
 
 const OPERATORS: Array[String] = ["BRAVO", "VULTURE", "TALON", "DUNE", "HAVOC"]
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
@@ -85,7 +86,8 @@ func _build_world() -> void:
 
 	hero = OperatorVisual.new()
 	hero.position = Vector3(1.4, 0.35, 0)
-	hero.rotation_degrees.y = 180.0
+	# Kenney characters face -Z; keep the portrait looking toward the camera.
+	hero.rotation_degrees.y = 0.0
 	hero.configure(selected_operator, "ally", _operator_color(selected_operator))
 	add_child(hero)
 
@@ -96,6 +98,7 @@ func _build_ui() -> void:
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_PASS
+	ui_root = root
 	layer.add_child(root)
 
 	var left := VBoxContainer.new()
@@ -178,9 +181,9 @@ func _build_ui() -> void:
 	settings.pressed.connect(_open_settings)
 	footer.add_child(settings)
 
-	var legal := BlockfireTheme.label("Audio: Jesús Lastra · CC-BY 3.0\nPC: WASD + RATÓN  ·  MÓVIL: JOYSTICK + FUEGO", 10, Color("#6d86a6"))
-	legal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	left.add_child(legal)
+	var controls_hint := BlockfireTheme.label("PC: WASD + RATÓN  ·  MÓVIL: JOYSTICK + FUEGO\nLEGAL Y CRÉDITOS DISPONIBLES EN CONFIGURACIÓN", 10, Color("#6d86a6"))
+	controls_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	left.add_child(controls_hint)
 	_select_mode(selected_mode)
 	_select_operator(selected_operator)
 	_select_skin(selected_skin)
@@ -240,7 +243,11 @@ func _open_settings() -> void:
 	settings_popup.position = Vector2(52, 18)
 	settings_popup.size = Vector2(350, 370)
 	settings_popup.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#09172deF"), Color("#7fbfff"), 12, 2))
-	add_child(settings_popup)
+	if ui_root != null:
+		ui_root.add_child(settings_popup)
+	else:
+		add_child(settings_popup)
+	settings_popup.z_index = 20
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	settings_popup.add_child(stack)
@@ -251,6 +258,11 @@ func _open_settings() -> void:
 	_add_setting_slider(stack, "SENSIBILIDAD", "sensitivity", 0.04, 0.25, 0.12)
 	_add_setting_slider(stack, "MULTIPLICADOR ADS", "ads_multiplier", 0.45, 1.0, 0.72)
 	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.68)
+	var legal_title := BlockfireTheme.label("LEGAL / CRÉDITOS", 10, Color("#9db7db"))
+	stack.add_child(legal_title)
+	var legal := BlockfireTheme.label("Audio: Jesús Lastra · CC-BY 3.0\nCódigo y atribuciones: CREDITS.md", 10, Color("#6d86a6"))
+	legal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(legal)
 	var close := Button.new()
 	close.text = "CERRAR"
 	BlockfireTheme.apply_button(close, Color("#80cfff"))

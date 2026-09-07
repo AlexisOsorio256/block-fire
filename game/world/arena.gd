@@ -1,6 +1,11 @@
 class_name BlockfireArena
 extends Node3D
 
+const NAVIGATION_SOURCE_GROUP: StringName = &"blockfire_navigation_floor"
+const NAVIGATION_AGENT_RADIUS: float = 0.5
+
+var navigation_region: NavigationRegion3D
+
 var spawn_squad: Array[Vector3] = [
 	Vector3(-28, 0.2, 0), Vector3(-24, 0.2, -7), Vector3(-24, 0.2, 7), Vector3(-20, 0.2, 0),
 	Vector3(28, 0.2, 0), Vector3(24, 0.2, -7), Vector3(24, 0.2, 7), Vector3(20, 0.2, 0)
@@ -69,16 +74,72 @@ func _create_layout() -> void:
 	_create_box("ArchTop", Vector3(0, 5.8, -32), Vector3(15.2, 1.0, 1.2), Color("#d28c45"), true)
 
 func _create_navigation() -> void:
-	var region := NavigationRegion3D.new()
-	region.name = "NavigationRegion"
+	navigation_region = NavigationRegion3D.new()
+	navigation_region.name = "NavigationRegion"
 	var mesh := NavigationMesh.new()
-	mesh.vertices = PackedVector3Array([
-		Vector3(-54, 0, -54), Vector3(54, 0, -54), Vector3(54, 0, 54), Vector3(-54, 0, 54)
+	mesh.agent_radius = NAVIGATION_AGENT_RADIUS
+	mesh.agent_height = 1.75
+	mesh.agent_max_climb = 0.25
+	mesh.agent_max_slope = 35.0
+	mesh.cell_size = 0.25
+	mesh.cell_height = 0.25
+	mesh.filter_walkable_low_height_spans = true
+	mesh.set_parsed_geometry_type(NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS)
+	mesh.set_source_geometry_mode(NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN)
+	mesh.set_source_group_name(NAVIGATION_SOURCE_GROUP)
+	mesh.set_collision_mask(1)
+	navigation_region.navigation_mesh = mesh
+	add_child(navigation_region)
+
+	# Bake one walkable source (the floor) and carve every gameplay obstacle.
+	# The NavigationServer owns the resulting path graph; no custom grid/A* is
+	# used and bots still follow it through NavigationAgent3D.
+	var source := NavigationMeshSourceGeometryData3D.new()
+	NavigationServer3D.parse_source_geometry_data(mesh, source, self)
+	for obstruction: PackedVector3Array in _navigation_obstructions():
+		source.add_projected_obstruction(obstruction, 0.0, 8.0, true)
+	NavigationServer3D.bake_from_source_geometry_data(mesh, source)
+
+func _navigation_obstructions() -> Array[PackedVector3Array]:
+	var result: Array[PackedVector3Array] = []
+	# The margin is intentionally slightly larger than the physical bot radius
+	# so a path never asks the capsule center to skim a cover corner.
+	var margin := NAVIGATION_AGENT_RADIUS + 0.12
+	var blockers: Array[Dictionary] = [
+		{"center": Vector3(0, 0, 0), "size": Vector3(10, 0, 8)},
+		{"center": Vector3(0, 0, -18), "size": Vector3(24, 0, 3)},
+		{"center": Vector3(0, 0, 18), "size": Vector3(24, 0, 3)},
+		{"center": Vector3(-21, 0, 0), "size": Vector3(3, 0, 20)},
+		{"center": Vector3(21, 0, 0), "size": Vector3(3, 0, 20)},
+		{"center": Vector3(-38, 0, -19), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(-38, 0, 19), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(38, 0, -19), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(38, 0, 19), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(-10, 0, -37), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(10, 0, 37), "size": Vector3(4, 0, 4)},
+		{"center": Vector3(-7, 0, -32), "size": Vector3(1.2, 0, 1.2)},
+		{"center": Vector3(7, 0, -32), "size": Vector3(1.2, 0, 1.2)},
+		{"center": Vector3(0, 0, -32), "size": Vector3(15.2, 0, 1.2)},
+		{"center": Vector3(0, 0, -58), "size": Vector3(116, 0, 1)},
+		{"center": Vector3(0, 0, 58), "size": Vector3(116, 0, 1)},
+		{"center": Vector3(-58, 0, 0), "size": Vector3(1, 0, 116)},
+		{"center": Vector3(58, 0, 0), "size": Vector3(1, 0, 116)}
+	]
+	for blocker: Dictionary in blockers:
+		var center: Vector3 = blocker["center"]
+		var size: Vector3 = blocker["size"]
+		result.append(_rect_obstruction(center, size, margin))
+	return result
+
+func _rect_obstruction(center: Vector3, size: Vector3, margin: float) -> PackedVector3Array:
+	var half_x := size.x * 0.5 + margin
+	var half_z := size.z * 0.5 + margin
+	return PackedVector3Array([
+		Vector3(center.x - half_x, 0, center.z - half_z),
+		Vector3(center.x + half_x, 0, center.z - half_z),
+		Vector3(center.x + half_x, 0, center.z + half_z),
+		Vector3(center.x - half_x, 0, center.z + half_z)
 	])
-	mesh.add_polygon(PackedInt32Array([0, 1, 2, 3]))
-	mesh.agent_radius = 0.55
-	region.navigation_mesh = mesh
-	add_child(region)
 
 func _create_box(node_name: String, position: Vector3, size: Vector3, color: Color, collider: bool) -> Node3D:
 	var visual := MeshInstance3D.new()
@@ -103,6 +164,8 @@ func _create_box(node_name: String, position: Vector3, size: Vector3, color: Col
 	body.position = position
 	body.collision_layer = 1
 	body.collision_mask = 2 | 4
+	if node_name == "Ground":
+		body.add_to_group(NAVIGATION_SOURCE_GROUP)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = size

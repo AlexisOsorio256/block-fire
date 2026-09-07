@@ -28,9 +28,11 @@ var spectator_index: int = 0
 var spectator_targets: Array[Node] = []
 var last_team: String = "enemy"
 var kills: Dictionary = {}
+var round_owned_weapons: Dictionary = {}
 var ffa_winner: Node
 var round_start_count: int = 0
 var qa_skip_buy: bool = false
+var spawn_status_active: bool = false
 
 func configure(selected_mode: String, selected_operator: String, selected_skin: String, use_mobile_qa: bool) -> void:
 	mode = selected_mode
@@ -67,6 +69,7 @@ func _process(delta: float) -> void:
 		if transition_timer <= 0.0:
 			_start_round()
 	elif state == "COMBAT":
+		_update_spawn_status()
 		if mode == "squad":
 			_evaluate_squad()
 		_update_spectator_camera()
@@ -76,6 +79,10 @@ func _process(delta: float) -> void:
 func _start_round() -> void:
 	state = "BUY"
 	round_start_count += 1
+	round_owned_weapons = {"pistol": true}
+	ffa_winner = null
+	if hud != null and hud.mobile_controls != null:
+		hud.mobile_controls.release_all()
 	_clear_actors()
 	var spawns := arena.get_spawns(mode)
 	if mode == "squad":
@@ -107,8 +114,9 @@ func _start_combat() -> void:
 	if state == "COMBAT":
 		return
 	state = "COMBAT"
+	spawn_status_active = true
 	hud.show_buy(false, 0, coins, WeaponController.DEFINITIONS, player.weapon.active_index if player != null else 1)
-	hud.set_status("🛡️ 2s · DISPARAR LO ROMPE", Color("#91e6ff"))
+	_update_spawn_status()
 	hud.show_banner("¡A LUCHAR!", 1.35)
 	if player != null:
 		player.input_enabled = true
@@ -173,14 +181,32 @@ func _on_buy_requested(index: int) -> void:
 	if index < 0 or index >= WeaponController.DEFINITIONS.size():
 		return
 	var definition := WeaponController.DEFINITIONS[index]
-	if index != 1 and coins < definition.cost:
+	if not buy_weapon(index):
 		hud.set_status("MONEDAS INSUFICIENTES", Color("#ff9d86"))
 		return
-	if index != 1:
-		coins -= definition.cost
 	player.weapon.switch_to(index)
 	hud.show_buy(true, round_timer, coins, WeaponController.DEFINITIONS, index)
 	hud.set_status("EQUIPADA · %s" % definition.display_name, Color("#9be6ff"))
+
+func buy_weapon(index: int) -> bool:
+	if index < 0 or index >= WeaponController.DEFINITIONS.size():
+		return false
+	var definition := WeaponController.DEFINITIONS[index]
+	if round_owned_weapons.has(definition.id):
+		return true
+	if index == 1:
+		round_owned_weapons[definition.id] = true
+		return true
+	if coins < definition.cost:
+		return false
+	coins -= definition.cost
+	round_owned_weapons[definition.id] = true
+	return true
+
+func is_weapon_owned(index: int) -> bool:
+	if index < 0 or index >= WeaponController.DEFINITIONS.size():
+		return false
+	return round_owned_weapons.has(WeaponController.DEFINITIONS[index].id)
 
 func _on_arsenal_requested() -> void:
 	if state == "BUY":
@@ -192,30 +218,47 @@ func _on_settings_requested() -> void:
 	if hud != null:
 		hud.toggle_control_editor()
 
-func _on_player_died(_dead: Node, killer: Node) -> void:
+func _on_player_died(dead: Node, killer: Node) -> void:
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "enemy"
 	hud.show_death("MUERTE")
 	if mode == "ffa":
-		_schedule_respawn(player)
+		if _register_ffa_kill(killer):
+			return
+		_schedule_respawn(dead)
 		return
 	_start_spectating()
 	_evaluate_squad()
 
 func _on_bot_died(dead: Node, killer: Node) -> void:
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "ally"
-	if is_instance_valid(killer):
-		var id: int = killer.get_instance_id()
-		kills[id] = int(kills.get(id, 0)) + 1
-		if mode == "ffa":
-			hud.update_score(get_player_kills(), 0, 1)
-			if FfaRules.is_match_over(kills[id]):
-				ffa_winner = killer
-				_finish_ffa()
-				return
+	if mode == "ffa":
+		if _register_ffa_kill(killer):
+			return
+	else:
+		if is_instance_valid(killer):
+			var id: int = killer.get_instance_id()
+			kills[id] = int(kills.get(id, 0)) + 1
 	if mode == "ffa":
 		_schedule_respawn(dead)
 	else:
 		_evaluate_squad()
+
+func _register_ffa_kill(killer: Node) -> bool:
+	if not register_ffa_kill(killer):
+		return false
+	hud.update_score(get_player_kills(), 0, 1)
+	if FfaRules.is_match_over(kills[killer.get_instance_id()]):
+		ffa_winner = killer
+		_finish_ffa()
+		return true
+	return false
+
+func register_ffa_kill(killer: Node) -> bool:
+	if not is_instance_valid(killer) or not killer.has_method("get_team"):
+		return false
+	var id: int = killer.get_instance_id()
+	kills[id] = int(kills.get(id, 0)) + 1
+	return FfaRules.is_match_over(kills[id])
 
 func _evaluate_squad() -> void:
 	if state != "COMBAT" or mode != "squad":
@@ -310,8 +353,19 @@ func _schedule_respawn(actor: Node) -> void:
 			if hud.mobile_controls != null:
 				hud.mobile_controls.release_all()
 				hud.mobile_controls.visible = true
+			spawn_status_active = true
 			hud.set_status("REAPARECIENDO", Color("#91e6ff"))
 	)
+
+func _update_spawn_status() -> void:
+	if not spawn_status_active or not is_instance_valid(player):
+		return
+	var remaining := float(player.get("spawn_immunity"))
+	if remaining > 0.0:
+		hud.set_status("🛡️ %.1fs · DISPARAR LO ROMPE" % remaining, Color("#91e6ff"))
+	else:
+		spawn_status_active = false
+		hud.set_status("COMBATE ACTIVO", Color("#b7d4ee"))
 
 func _finish_ffa() -> void:
 	if state == "FINISHED":
@@ -319,13 +373,17 @@ func _finish_ffa() -> void:
 	state = "FINISHED"
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var winner_name := str(ffa_winner.name) if is_instance_valid(ffa_winner) else "GANADOR"
-	hud.show_match_end("VICTORIA FFA", "%s alcanza 20 eliminaciones" % winner_name)
+	hud.show_match_end(ffa_result_title(ffa_winner == player), "%s alcanza 20 eliminaciones" % winner_name)
+
+static func ffa_result_title(player_won: bool) -> String:
+	return "VICTORIA" if player_won else "DERROTA"
 
 func retry() -> void:
 	ally_rounds = 0
 	enemy_rounds = 0
 	round_number = 1
 	coins = 1300
+	round_owned_weapons = {"pistol": true}
 	state = "BUY"
 	if is_instance_valid(hud.end_panel):
 		hud.end_panel.queue_free()

@@ -28,6 +28,7 @@ var walk_speed: float = 6.6
 var sprint_speed: float = 9.2
 var crouch_speed: float = 3.7
 var acceleration: float = 32.0
+var assist_break_timer: float = 0.0
 
 func configure(context: Node, team_id: String, selected_operator: String, controls: Node = null) -> void:
 	match_context = context
@@ -45,6 +46,7 @@ func _ready() -> void:
 	health_changed.emit(health, max_health)
 
 func _physics_process(delta: float) -> void:
+	assist_break_timer = maxf(0.0, assist_break_timer - delta)
 	if spawn_immunity > 0.0:
 		spawn_immunity = maxf(0.0, spawn_immunity - delta)
 	if not is_alive:
@@ -88,9 +90,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var settings := _settings()
-		var sensitivity := float(settings.get_value("sensitivity", 0.12) if settings != null else 0.12)
-		var motion: Vector2 = event.relative * sensitivity
+		var motion: Vector2 = event.relative * _look_sensitivity()
 		look_yaw -= motion.x
 		look_pitch = clampf(look_pitch - motion.y, -78.0, 78.0)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -121,9 +121,13 @@ func _die(killer: Node) -> void:
 	collision_mask = 0
 	if weapon != null:
 		weapon.set_fire_held(false)
+	if mobile_controls != null and mobile_controls.has_method("release_all"):
+		mobile_controls.release_all()
 	player_died.emit(self, killer)
 
 func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
+	if mobile_controls != null and mobile_controls.has_method("release_all"):
+		mobile_controls.release_all()
 	global_position = spawn
 	velocity = Vector3.ZERO
 	health = max_health
@@ -135,6 +139,11 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	collision_mask = 1
 	health_changed.emit(health, max_health)
 	look_pitch = 0.0
+	assist_target = null
+	assist_break_timer = 0.0
+
+func break_spawn_immunity() -> void:
+	spawn_immunity = 0.0
 
 func get_team() -> String:
 	return team
@@ -149,17 +158,35 @@ func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) ->
 	if mobile_controls == null or match_context == null or not match_context.has_method("get_combatants"):
 		return base_direction
 	var origin := get_aim_origin()
+	var chosen := _select_assist_target(base_direction, max_range, origin)
+	if chosen == null:
+		assist_target = null
+		return base_direction
+	assist_target = chosen
+	var assisted_point: Vector3 = chosen.get_target_point()
+	var assisted_direction := origin.direction_to(assisted_point)
+	var angle_to_target := rad_to_deg(acos(clampf(base_direction.normalized().dot(assisted_direction), -1.0, 1.0)))
+	var follow_strength := 0.54 if weapon != null and weapon.aim_held else 0.38
+	follow_strength *= 1.0 - clampf(angle_to_target / 19.0, 0.0, 1.0) * 0.35
+	return base_direction.normalized().lerp(assisted_direction, follow_strength).normalized()
+
+func _select_assist_target(base_direction: Vector3, max_range: float, origin: Vector3) -> Node:
+	if match_context == null or not match_context.has_method("get_combatants") or max_range <= 0.0:
+		return null
+	var direction := base_direction.normalized()
+	if direction.length_squared() < 0.01:
+		return null
 	var chosen: Node
 	var chosen_score := -INF
 	var candidates: Array[Node] = match_context.get_combatants()
 	for candidate: Node in candidates:
-		if candidate == self or not is_instance_valid(candidate) or not candidate.get("is_alive"):
+		if candidate == self or not is_instance_valid(candidate) or not bool(candidate.get("is_alive")):
 			continue
 		if not candidate.has_method("get_team") or candidate.get_team() == team:
 			continue
 		var target_point: Vector3 = candidate.get_target_point() if candidate.has_method("get_target_point") else candidate.global_position + Vector3.UP * 1.4
 		var to_target := origin.direction_to(target_point)
-		var dot := clampf(base_direction.normalized().dot(to_target), -1.0, 1.0)
+		var dot := clampf(direction.dot(to_target), -1.0, 1.0)
 		var angle := acos(dot)
 		var cone := deg_to_rad(19.0) if candidate == assist_target else deg_to_rad(13.0)
 		if angle > cone or origin.distance_to(target_point) > max_range:
@@ -171,16 +198,7 @@ func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) ->
 		if score > chosen_score:
 			chosen_score = score
 			chosen = candidate
-	if chosen == null:
-		assist_target = null
-		return base_direction
-	assist_target = chosen
-	var assisted_point: Vector3 = chosen.get_target_point()
-	var assisted_direction := origin.direction_to(assisted_point)
-	var angle_to_target := rad_to_deg(acos(clampf(base_direction.normalized().dot(assisted_direction), -1.0, 1.0)))
-	var follow_strength := 0.54 if weapon != null and weapon.aim_held else 0.38
-	follow_strength *= 1.0 - clampf(angle_to_target / 19.0, 0.0, 1.0) * 0.35
-	return base_direction.normalized().lerp(assisted_direction, follow_strength).normalized()
+	return chosen
 
 func _assist_has_line_of_sight(origin: Vector3, target_point: Vector3) -> bool:
 	var arena: Node = match_context.get_arena() if match_context.has_method("get_arena") else null
@@ -201,15 +219,55 @@ func _movement_input() -> Vector2:
 	return value
 
 func _update_look(delta: float) -> void:
+	var look := Vector2.ZERO
 	if mobile_controls != null and mobile_controls.has_method("consume_look_delta"):
-		var look: Vector2 = mobile_controls.consume_look_delta()
-		var settings := _settings()
-		var sensitivity := float(settings.get_value("sensitivity", 0.12) if settings != null else 0.12)
-		look_yaw -= look.x * sensitivity * 0.72
-		look_pitch = clampf(look_pitch - look.y * sensitivity * 0.72, -78.0, 78.0)
+		look = mobile_controls.consume_look_delta()
+	var sensitivity := _look_sensitivity()
+	look_yaw -= look.x * sensitivity
+	look_pitch = clampf(look_pitch - look.y * sensitivity, -78.0, 78.0)
+	_apply_rotational_assist(delta, look)
 	rotation_degrees.y = look_yaw
 	if camera_pivot != null:
 		camera_pivot.rotation_degrees.x = look_pitch
+
+func _apply_rotational_assist(delta: float, look_input: Vector2) -> void:
+	if mobile_controls == null or match_context == null or camera == null:
+		return
+	var engaged: bool = (mobile_controls.has_method("is_looking") and mobile_controls.is_looking()) \
+			or _mobile_fire() or _mobile_aim()
+	if not engaged:
+		assist_target = null
+		return
+	if look_input.length() > 18.0:
+		assist_break_timer = 0.24
+	if assist_break_timer > 0.0:
+		return
+	var origin := get_aim_origin()
+	var target := _select_assist_target(-camera.global_transform.basis.z, 70.0, origin)
+	if target == null:
+		assist_target = null
+		return
+	assist_target = target
+	var target_direction := origin.direction_to(target.get_target_point())
+	var desired_yaw := rad_to_deg(atan2(-target_direction.x, -target_direction.z))
+	var desired_pitch := rad_to_deg(asin(clampf(target_direction.y, -1.0, 1.0)))
+	var yaw_error := wrapf(desired_yaw - look_yaw, -180.0, 180.0)
+	var pitch_error := desired_pitch - look_pitch
+	var follow_rate := 8.0 if _uses_ads() else 5.5
+	var blend := clampf(delta * follow_rate, 0.0, 0.28)
+	look_yaw = wrapf(look_yaw + yaw_error * blend, -360.0, 360.0)
+	look_pitch = clampf(look_pitch + pitch_error * blend, -78.0, 78.0)
+
+func _uses_ads() -> bool:
+	return (weapon != null and weapon.aim_held) or Input.is_action_pressed("aim") or _mobile_aim()
+
+func _look_sensitivity() -> float:
+	var settings := _settings()
+	var sensitivity := float(settings.get_value("sensitivity", 0.12) if settings != null else 0.12)
+	if not _uses_ads():
+		return sensitivity
+	var multiplier := float(settings.get_value("ads_multiplier", 0.72) if settings != null else 0.72)
+	return sensitivity * clampf(multiplier, 0.1, 1.0)
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
@@ -256,9 +314,11 @@ func _create_collision() -> void:
 	head.set_meta("damage_zone", "head")
 	var head_shape := CollisionShape3D.new()
 	var head_sphere := SphereShape3D.new()
-	head_sphere.radius = 0.27
+	head_sphere.radius = 0.2
 	head_shape.shape = head_sphere
-	head_shape.position.y = 1.95
+	# Keep the head above the body capsule so a head ray resolves the Area3D
+	# instead of being swallowed by the full-height body collider.
+	head_shape.position.y = 2.16
 	head.add_child(head_shape)
 	add_child(head)
 

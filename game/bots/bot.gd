@@ -21,6 +21,10 @@ var target_refresh: float = 0.0
 var stuck_timer: float = 0.0
 var last_position: Vector3
 var orbit_sign: float = 1.0
+var target_memory_position: Vector3 = Vector3.ZERO
+var target_memory_timer: float = 0.0
+var navigation_safe_velocity: Vector3 = Vector3.ZERO
+var has_navigation_safe_velocity: bool = false
 
 func configure(context: Node, team_id: String, selected_operator: String, role_id: String, difficulty_bonus: float = 0.0) -> void:
 	match_context = context
@@ -41,10 +45,16 @@ func _ready() -> void:
 	navigation_agent = NavigationAgent3D.new()
 	navigation_agent.name = "NavigationAgent3D"
 	navigation_agent.path_height_offset = 0.0
-	navigation_agent.path_desired_distance = 1.2
-	navigation_agent.target_desired_distance = role.preferred_distance
-	navigation_agent.radius = 0.55
+	navigation_agent.path_desired_distance = 0.55
+	navigation_agent.path_max_distance = 2.5
+	navigation_agent.target_desired_distance = 1.1
+	navigation_agent.radius = 0.5
+	navigation_agent.neighbor_distance = 8.0
+	navigation_agent.max_neighbors = 6
+	navigation_agent.max_speed = 7.5
+	navigation_agent.time_horizon = 0.65
 	navigation_agent.avoidance_enabled = true
+	navigation_agent.velocity_computed.connect(_on_navigation_velocity_computed)
 	add_child(navigation_agent)
 	weapon = WeaponController.new()
 	weapon.name = "WeaponController"
@@ -58,68 +68,121 @@ func _physics_process(delta: float) -> void:
 	if not is_alive or match_context == null:
 		return
 	if match_context.has_method("is_combat_active") and not match_context.is_combat_active():
-		weapon.set_fire_held(false)
-		velocity.x = move_toward(velocity.x, 0.0, 16.0 * delta)
-		velocity.z = move_toward(velocity.z, 0.0, 16.0 * delta)
-		if not is_on_floor():
-			velocity.y -= 22.0 * delta
-		move_and_slide()
+		_stop_navigation()
+		_move_with_velocity(Vector3.ZERO, delta)
 		return
 	target_refresh -= delta
 	if target_refresh <= 0.0:
 		target_refresh = 0.24
 		_acquire_target()
-	var desired := Vector3.ZERO
+	var movement_target := Vector3.ZERO
 	var can_see := false
 	if is_instance_valid(target) and target.get("is_alive"):
 		var target_position: Vector3 = target.get_target_point()
 		var distance := global_position.distance_to(target_position)
 		can_see = _has_line_of_sight(target_position)
-		if can_see and distance <= current_weapon_range() * 0.92:
-			var to_target := global_position.direction_to(target_position)
-			var ideal := role.preferred_distance
-			if distance > ideal + 2.0:
-				desired = to_target
-			elif distance < ideal - 2.0:
-				desired = -to_target
-			else:
-				desired = Vector3(-to_target.z, 0, to_target.x) * orbit_sign
+		if can_see:
+			target_memory_position = Vector3(target_position.x, 0.2, target_position.z)
+			target_memory_timer = 1.35
+		elif target_memory_timer > 0.0:
+			target_memory_timer = maxf(0.0, target_memory_timer - delta)
+		if can_see or target_memory_timer > 0.0:
+			movement_target = _movement_intent(target_position, distance, can_see)
 		else:
-			desired = global_position.direction_to(target_position)
-		navigation_agent.target_position = target_position
-		weapon.set_ai_target(target, can_see)
-		weapon.set_fire_held(can_see and distance <= current_weapon_range())
-	else:
-		var rally: Vector3 = Vector3.ZERO
-		if match_context.has_method("get_rally_point"):
-			rally = match_context.get_rally_point(team)
-		desired = global_position.direction_to(rally)
+			target = null
+	if target == null or not is_instance_valid(target):
+		if target_memory_timer > 0.0:
+			movement_target = target_memory_position
+		elif match_context.has_method("get_rally_point"):
+			movement_target = match_context.get_rally_point(team)
 		weapon.set_ai_target(null, false)
 		weapon.set_fire_held(false)
-	if desired.length_squared() > 0.01:
-		desired.y = 0.0
-		desired = desired.normalized()
-		var speed := 4.4 + role.aggression * 1.5
-		velocity.x = move_toward(velocity.x, desired.x * speed, 16.0 * delta)
-		velocity.z = move_toward(velocity.z, desired.z * speed, 16.0 * delta)
-		rotation.y = lerp_angle(rotation.y, atan2(-desired.x, -desired.z), delta * 6.0)
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, 16.0 * delta)
-		velocity.z = move_toward(velocity.z, 0.0, 16.0 * delta)
+		weapon.set_ai_target(target, can_see)
+		var target_distance := global_position.distance_to(target.get_target_point())
+		weapon.set_fire_held(can_see and target_distance <= current_weapon_range())
+	if movement_target.length_squared() > 0.01:
+		movement_target.y = 0.2
+		navigation_agent.target_position = movement_target
+	var desired_velocity := _navigation_velocity(4.4 + role.aggression * 1.5)
+	_move_with_velocity(desired_velocity, delta)
+	if desired_velocity.length_squared() > 0.1:
+		var facing := desired_velocity.normalized()
+		rotation.y = lerp_angle(rotation.y, atan2(-facing.x, -facing.z), delta * 6.0)
+	if global_position.distance_to(last_position) < 0.03 and desired_velocity.length_squared() > 0.1:
+		stuck_timer += delta
+		if stuck_timer > 1.0:
+			_recover_from_stuck()
+	else:
+		stuck_timer = 0.0
+	last_position = global_position
+
+func _movement_intent(target_position: Vector3, distance: float, can_see: bool) -> Vector3:
+	if not can_see:
+		return target_memory_position
+	var flat_to_target := global_position.direction_to(target_position)
+	flat_to_target.y = 0.0
+	if flat_to_target.length_squared() < 0.01:
+		return global_position
+	flat_to_target = flat_to_target.normalized()
+	var ideal := role.preferred_distance
+	if distance > ideal + 2.0:
+		return Vector3(target_position.x, 0.2, target_position.z)
+	if distance < ideal - 2.0:
+		return Vector3(target_position.x, 0.2, target_position.z) - flat_to_target * maxf(ideal, 6.0)
+	var lateral := Vector3(-flat_to_target.z, 0.0, flat_to_target.x)
+	var orbit_distance := clampf(ideal * 0.42, 3.0, 8.0)
+	return Vector3(target_position.x, 0.2, target_position.z) + lateral * orbit_sign * orbit_distance
+
+func _navigation_velocity(speed: float) -> Vector3:
+	if NavigationServer3D.map_get_iteration_id(navigation_agent.get_navigation_map()) == 0:
+		return Vector3.ZERO
+	if navigation_agent.is_navigation_finished():
+		return Vector3.ZERO
+	var next_path_position := navigation_agent.get_next_path_position()
+	var direction := global_position.direction_to(next_path_position)
+	direction.y = 0.0
+	if direction.length_squared() < 0.001:
+		return Vector3.ZERO
+	return direction.normalized() * speed
+
+func _move_with_velocity(wanted_velocity: Vector3, delta: float) -> void:
+	var movement_velocity := wanted_velocity
+	if navigation_agent != null and navigation_agent.avoidance_enabled:
+		navigation_agent.set_velocity(wanted_velocity)
+		if has_navigation_safe_velocity:
+			movement_velocity = navigation_safe_velocity
+	velocity.x = move_toward(velocity.x, movement_velocity.x, 16.0 * delta)
+	velocity.z = move_toward(velocity.z, movement_velocity.z, 16.0 * delta)
 	if not is_on_floor():
 		velocity.y -= 22.0 * delta
 	else:
 		velocity.y = 0.0
 	move_and_slide()
-	if global_position.distance_to(last_position) < 0.03 and desired.length_squared() > 0.1:
-		stuck_timer += delta
-		if stuck_timer > 1.2:
-			orbit_sign *= -1.0
-			target_refresh = 0.0
-			stuck_timer = 0.0
+
+func _on_navigation_velocity_computed(safe_velocity: Vector3) -> void:
+	navigation_safe_velocity = safe_velocity
+	has_navigation_safe_velocity = true
+
+func _stop_navigation() -> void:
+	if navigation_agent == null:
+		return
+	navigation_agent.set_velocity(Vector3.ZERO)
+	navigation_agent.set_velocity_forced(Vector3.ZERO)
+	has_navigation_safe_velocity = false
+
+func _recover_from_stuck() -> void:
+	orbit_sign *= -1.0
+	target_refresh = 0.0
+	stuck_timer = 0.0
+	target_memory_timer = 0.0
+	if is_instance_valid(target) and target.get("is_alive"):
+		# A new tactical point is selected on the next perception tick; the
+		# navigation agent remains the source of movement and never teleports.
+		navigation_agent.target_position = global_position
 	else:
-		stuck_timer = 0.0
-	last_position = global_position
+		target = null
+	_stop_navigation()
 
 func take_damage(amount: float, source: Node, headshot: bool = false) -> void:
 	if not is_alive or spawn_immunity > 0.0:
@@ -141,6 +204,7 @@ func _die(killer: Node) -> void:
 	bot_died.emit(self, killer)
 
 func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
+	_stop_navigation()
 	global_position = spawn
 	velocity = Vector3.ZERO
 	health = max_health
@@ -150,7 +214,12 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	collision_layer = 2
 	collision_mask = 1
 	target = null
+	target_memory_position = Vector3.ZERO
+	target_memory_timer = 0.0
 	last_position = global_position
+
+func break_spawn_immunity() -> void:
+	spawn_immunity = 0.0
 
 func get_team() -> String:
 	return team
@@ -163,18 +232,40 @@ func get_aim_origin() -> Vector3:
 
 func _acquire_target() -> void:
 	var candidates: Array = match_context.get_combatants() if match_context.has_method("get_combatants") else []
-	var nearest: Node
-	var nearest_distance := INF
+	var best: Node
+	var best_score := -INF
+	var forward := -global_transform.basis.z
 	for candidate: Node in candidates:
-		if candidate == self or not is_instance_valid(candidate) or not candidate.get("is_alive"):
+		if candidate == self or not is_instance_valid(candidate) or not bool(candidate.get("is_alive")):
 			continue
 		if candidate.has_method("get_team") and candidate.get_team() == team:
 			continue
-		var distance := global_position.distance_squared_to(candidate.global_position)
-		if distance < nearest_distance:
-			nearest_distance = distance
-			nearest = candidate
-	target = nearest
+		var candidate_point: Vector3 = candidate.get_target_point() if candidate.has_method("get_target_point") else candidate.global_position + Vector3.UP * 1.4
+		var distance := global_position.distance_to(candidate_point)
+		if distance > 78.0 or not _within_perception_cone(forward, candidate_point):
+			continue
+		if not _has_line_of_sight(candidate_point):
+			continue
+		var direction := global_position.direction_to(candidate_point)
+		var visibility_score := forward.dot(direction) * 0.62
+		var distance_score := 1.0 - clampf(distance / 78.0, 0.0, 1.0)
+		var score := visibility_score + distance_score * 0.38
+		if score > best_score:
+			best_score = score
+			best = candidate
+	if best != null:
+		target = best
+		target_memory_position = Vector3(best.get_target_point().x, 0.2, best.get_target_point().z)
+		target_memory_timer = 1.35
+	elif not is_instance_valid(target) or not bool(target.get("is_alive")) or target_memory_timer <= 0.0:
+		target = null
+
+func _within_perception_cone(forward: Vector3, point: Vector3) -> bool:
+	var direction := global_position.direction_to(point)
+	direction.y = 0.0
+	if direction.length_squared() < 0.01:
+		return true
+	return forward.dot(direction.normalized()) >= cos(deg_to_rad(95.0))
 
 func _has_line_of_sight(target_position: Vector3) -> bool:
 	var arena: Node = match_context.get_arena() if match_context.has_method("get_arena") else null
@@ -201,9 +292,9 @@ func _create_collision() -> void:
 	head.set_meta("damage_zone", "head")
 	var head_shape := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = 0.27
+	sphere.radius = 0.2
 	head_shape.shape = sphere
-	head_shape.position.y = 1.95
+	head_shape.position.y = 2.16
 	head.add_child(head_shape)
 	add_child(head)
 

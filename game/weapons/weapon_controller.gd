@@ -33,6 +33,12 @@ var shot_audio: AudioStreamPlayer3D
 var reload_audio: AudioStreamPlayer3D
 var shot_streams: Dictionary = {}
 var rng := RandomNumberGenerator.new()
+var arms_root: Node3D
+var viewmodel_base_position := Vector3(0.28, -0.22, -0.46)
+var viewmodel_base_rotation := Vector3(0.0, 180.0, 0.0)
+var ads_weight: float = 0.0
+var recoil_amount: float = 0.0
+var viewmodel_time: float = 0.0
 
 func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = null) -> void:
 	actor = owner_actor
@@ -50,9 +56,13 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	reload_audio.max_distance = 20.0
 	add_child(reload_audio)
 	_refresh_viewmodel()
+	_create_arms()
 	_emit_ammo()
 
 func _physics_process(delta: float) -> void:
+	viewmodel_time += delta
+	recoil_amount = move_toward(recoil_amount, 0.0, delta * 1.8)
+	_animate_viewmodel(delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	if switching_timer > 0.0:
 		switching_timer = maxf(0.0, switching_timer - delta)
@@ -118,6 +128,9 @@ func try_fire() -> bool:
 		return false
 	ammo[active_index] -= 1
 	cooldown = definition.fire_interval
+	recoil_amount = minf(0.22, recoil_amount + (0.12 if aim_held else 0.16))
+	if actor != null and actor.has_method("break_spawn_immunity"):
+		actor.break_spawn_immunity()
 	_emit_ammo()
 	weapon_fired.emit(definition)
 	_play_shot(definition.id)
@@ -157,7 +170,7 @@ func _fire_pellet(definition: WeaponDefinition) -> void:
 	var distance: float = origin.distance_to(hit.position)
 	var multiplier: float = 1.0
 	var headshot := false
-	if collider is Area3D and collider.get_meta("damage_zone", "") == "head":
+	if is_headshot_collider(collider):
 		multiplier = definition.headshot_multiplier
 		headshot = true
 	var falloff := 1.0
@@ -167,6 +180,9 @@ func _fire_pellet(definition: WeaponDefinition) -> void:
 	if target.has_method("take_damage"):
 		target.take_damage(damage, actor, headshot)
 		damage_confirmed.emit(damage, headshot)
+
+func is_headshot_collider(collider: Object) -> bool:
+	return collider is Area3D and collider.get_meta("damage_zone", "") == "head"
 
 func _find_actor(value: Object) -> Node:
 	var node := value as Node
@@ -227,10 +243,89 @@ func _refresh_viewmodel() -> void:
 	if viewmodel == null:
 		viewmodel = _fallback_weapon(definition.id)
 	add_child(viewmodel)
-	viewmodel.position = Vector3(0.28, -0.22, -0.46)
-	viewmodel.rotation_degrees = Vector3(0, 180, 0)
+	viewmodel.position = viewmodel_base_position
+	viewmodel.rotation_degrees = viewmodel_base_rotation
 	viewmodel.scale = Vector3.ONE * 0.36
 	_apply_weapon_skin()
+
+func _create_arms() -> void:
+	if is_instance_valid(arms_root):
+		arms_root.queue_free()
+	arms_root = Node3D.new()
+	arms_root.name = "ArmsAndHands"
+	arms_root.position = viewmodel_base_position
+	arms_root.rotation_degrees = viewmodel_base_rotation
+	# Match the imported weapon scale so the arms frame the weapon instead of
+	# filling the camera at the close viewmodel distance.
+	arms_root.scale = Vector3.ONE * 0.38
+	add_child(arms_root)
+	_create_arm_segment("LeftSleeve", Vector3(-0.13, -0.18, 0.1), -32.0, Color("#263a5b"))
+	_create_arm_segment("RightSleeve", Vector3(0.22, -0.18, 0.12), 32.0, Color("#263a5b"))
+	_create_hand("LeftHand", Vector3(0.02, -0.09, -0.22))
+	_create_hand("RightHand", Vector3(0.32, -0.07, -0.2))
+
+func _create_arm_segment(node_name: String, position: Vector3, roll: float, color: Color) -> void:
+	var arm := MeshInstance3D.new()
+	arm.name = node_name
+	var mesh := CapsuleMesh.new()
+	mesh.radius = 0.095
+	mesh.height = 0.62
+	arm.mesh = mesh
+	arm.position = position
+	arm.rotation_degrees.z = roll
+	arm.material_override = _arm_material(color)
+	arms_root.add_child(arm)
+
+func _create_hand(node_name: String, position: Vector3) -> void:
+	var hand := MeshInstance3D.new()
+	hand.name = node_name
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.12
+	mesh.height = 0.24
+	hand.mesh = mesh
+	hand.position = position
+	hand.scale = Vector3(0.9, 0.75, 0.72)
+	hand.material_override = _arm_material(Color("#d99873"))
+	arms_root.add_child(hand)
+
+func _arm_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.86
+	return material
+
+func _animate_viewmodel(delta: float) -> void:
+	if not is_instance_valid(viewmodel):
+		return
+	var aiming_now := 1.0 if aim_held else 0.0
+	ads_weight = lerpf(ads_weight, aiming_now, clampf(delta * 14.0, 0.0, 1.0))
+	var movement := Vector3.ZERO
+	if actor is CharacterBody3D:
+		var actor_velocity := (actor as CharacterBody3D).velocity
+		movement = Vector3(actor_velocity.x, 0.0, actor_velocity.z)
+	var move_amount := clampf(movement.length() / 8.0, 0.0, 1.0)
+	var bob := Vector3(
+		cos(viewmodel_time * 8.0) * 0.012 * move_amount,
+		sin(viewmodel_time * 16.0) * 0.009 * move_amount,
+		0.0
+	)
+	var sway := Vector3(sin(viewmodel_time * 1.35) * 0.006, cos(viewmodel_time * 1.7) * 0.005, 0.0)
+	var ads_position := Vector3(0.12, -0.16, -0.56)
+	var target_position := viewmodel_base_position.lerp(ads_position, ads_weight) + bob + sway
+	var target_rotation := viewmodel_base_rotation
+	target_rotation.x -= recoil_amount * 54.0
+	target_rotation.z += sin(viewmodel_time * 8.0) * 1.5 * move_amount
+	if reload_timer > 0.0:
+		target_position.y -= 0.055
+		target_rotation.z += 16.0
+	if switching_timer > 0.0:
+		var switch_weight := clampf(switching_timer / 0.34, 0.0, 1.0)
+		target_position.y -= sin(switch_weight * PI) * 0.16
+	viewmodel.position = viewmodel.position.lerp(target_position, clampf(delta * 18.0, 0.0, 1.0))
+	viewmodel.rotation_degrees = viewmodel.rotation_degrees.lerp(target_rotation, clampf(delta * 18.0, 0.0, 1.0))
+	if is_instance_valid(arms_root):
+		arms_root.position = viewmodel.position
+		arms_root.rotation_degrees = viewmodel.rotation_degrees
 
 func _apply_weapon_skin() -> void:
 	if viewmodel == null or not is_instance_valid(viewmodel):
@@ -294,9 +389,10 @@ func _weapon_material(id: String) -> StandardMaterial3D:
 func _show_muzzle_flash() -> void:
 	if not is_instance_valid(muzzle_flash):
 		muzzle_flash = MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radius = 0.07
-		mesh.height = 0.14
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 0.012
+		mesh.bottom_radius = 0.11
+		mesh.height = 0.28
 		muzzle_flash.mesh = mesh
 		var material := StandardMaterial3D.new()
 		material.albedo_color = Color("#ffd45a")
@@ -306,6 +402,7 @@ func _show_muzzle_flash() -> void:
 		muzzle_flash.material_override = material
 		add_child(muzzle_flash)
 		muzzle_flash.position = Vector3(0.28, -0.22, -0.9)
+		muzzle_flash.rotation_degrees.x = 90.0
 	muzzle_flash.visible = true
 	get_tree().create_timer(0.045).timeout.connect(func() -> void:
 		if is_instance_valid(muzzle_flash):
@@ -319,7 +416,7 @@ func _play_shot(weapon_id: String) -> void:
 		"rifle": "res://assets/sfx/gshot_rifle.ogg",
 		"pistol": "res://assets/sfx/gshot_pistol.ogg",
 		"shotgun": "res://assets/sfx/gshot_shotgun.ogg",
-		"smg": "res://assets/sfx/gshot_pistol.ogg"
+		"smg": "res://assets/sfx/gshot_rifle.ogg"
 	}
 	if not shot_streams.has(weapon_id):
 		shot_streams[weapon_id] = load(str(paths.get(weapon_id, ""))) as AudioStream

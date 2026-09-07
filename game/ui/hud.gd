@@ -71,6 +71,7 @@ func _build() -> void:
 	settings.offset_right = -90
 	settings.offset_top = 18
 	settings.offset_bottom = 64
+	settings.z_index = 5
 	BlockfireTheme.apply_button(settings, Color("#80cfff"))
 	settings.pressed.connect(func() -> void: settings_requested.emit())
 	root.add_child(settings)
@@ -84,6 +85,7 @@ func _build() -> void:
 	arsenal.offset_right = -20
 	arsenal.offset_top = 18
 	arsenal.offset_bottom = 64
+	arsenal.z_index = 5
 	BlockfireTheme.apply_button(arsenal, BlockfireTheme.GOLD)
 	arsenal.pressed.connect(func() -> void: arsenal_requested.emit())
 	root.add_child(arsenal)

@@ -23,7 +23,10 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/size/resizable=true
 window/stretch/mode="canvas_items"
-window/handheld/orientation=1
+window/stretch/aspect="expand"
+; 4 = sensor landscape. BLOCKFIRE is landscape-first on Android and must
+; rotate between both landscape directions when the device sensor allows it.
+window/handheld/orientation=4
 
 [input]
 
