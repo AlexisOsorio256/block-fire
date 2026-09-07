@@ -19,17 +19,19 @@
 <body>
   <div id="game-container"></div>
 
-  <!-- HUD mínimo -->
-  <button id="btn-arsenal" aria-label="Arsenal">🛒 ARSENAL</button>
+  <!-- Sistema: iconografía compacta, sin CTA textual durante el combate. -->
+  <button id="btn-arsenal" aria-label="Abrir arsenal" title="Arsenal (B)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h16l-1.2 10H5.2L4 8.5Z"/><path d="M8 8.5 9.3 5h5.4L16 8.5M8 13h8M10 16h4"/></svg>
+  </button>
   <!-- ABANDONAR vive DENTRO del panel de configuración (solo en partida):
        jamás un botón flotante de toque accidental. -->
   <div id="hud">
     <div id="hud-top">
-      <div id="squad-score">
-        <span class="ss-side ss-ally">ALIADOS</span><span id="score-ally" class="ss-num">0</span>
+      <div id="squad-score" aria-label="Marcador de rondas">
+        <span id="score-ally" class="ss-num ss-ally">0</span><span id="round-pips-ally" class="round-pips" aria-hidden="true"></span>
         <span class="ss-dash">—</span>
-        <span id="score-enemy" class="ss-num">0</span><span class="ss-side ss-enemy">ENEMIGOS</span>
-        <span id="round-ind">RONDA 1/4</span>
+        <span id="round-pips-enemy" class="round-pips enemy" aria-hidden="true"></span><span id="score-enemy" class="ss-num ss-enemy">0</span>
+        <span id="round-ind">R1</span>
       </div>
       <div id="score-chip">
         <span id="kills">0</span><label>KILLS</label>
@@ -54,31 +56,29 @@
         <div class="bp-head">
           <span class="bp-title">FASE DE COMPRA</span>
           <span id="bp-coins">🪙 1000</span>
-          <div id="bp-count"><b id="bp-countdown">15</b><i>s</i></div>
+          <div id="bp-count"><b id="bp-countdown">10</b><i>s</i></div>
         </div>
         <div id="bp-grid" class="bp-grid"></div>
         <p class="bp-foot">GANA EL PRIMERO EN LLEGAR A <b>4 RONDAS</b> · las rondas se ganan eliminando al equipo rival</p>
       </div>
     </div>
     <div id="hud-bottom">
-      <div id="health-block"><span id="health">100</span><label>HP</label></div>
+      <div id="health-block"><span class="health-meter" aria-hidden="true"><i id="health-fill"></i></span><span id="health">200</span><label>HP</label></div>
       <div id="ammo-block"><span id="ammo">30/90</span><label id="weapon-name">RIFLE</label></div>
     </div>
+    <div id="round-feedback" aria-hidden="true"></div>
   </div>
 
   <!-- Mobile controls -->
   <div id="mobile-controls">
-    <button id="btn-fullscreen" aria-label="Pantalla completa">
+    <button id="btn-fullscreen" aria-label="Entrar en pantalla completa" title="Pantalla completa">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
     <button id="btn-settings" aria-label="Ajustes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H4a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 11 4.09V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03H20a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.35z"/></svg>
     </button>
-    <div id="joystick-zone">
-      <div id="joystick-base"><div id="joystick-stick"></div></div>
-      <span class="zone-label">MOVER</span>
-    </div>
-    <div id="look-zone"><span class="zone-label zone-label-right">MIRAR</span></div>
+    <div id="joystick-zone"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
+    <div id="look-zone"></div>
     <div id="action-buttons">
       <button id="btn-sprint" class="action-btn" aria-label="Correr">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="4.5" r="2"/><path d="M13.5 8.5l-3 3 2.5 3-3 6"/><path d="M10.5 11.5L7 12l-1.5 3"/></svg>
@@ -105,7 +105,7 @@
         <span class="lbl">MIRA</span>
       </button>
       <button id="btn-fire" class="action-btn fire-drag" aria-label="Disparar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 8.5 5h7L19 8.5v7L15.5 19h-7L5 15.5v-7Z"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 1.8v1.7M12 20.5v1.7M1.8 12h1.7M20.5 12h1.7"/></svg>
         <span class="lbl">FUEGO</span>
       </button>
     </div>
@@ -113,7 +113,7 @@
          activa — disparo de precisión con la otra mano (esquema FPS móvil). -->
     <div id="action-buttons-left">
       <button id="btn-fire-left" class="action-btn fire-drag" aria-label="Disparar (mira)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 8.5 5h7L19 8.5v7L15.5 19h-7L5 15.5v-7Z"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 1.8v1.7M12 20.5v1.7M1.8 12h1.7M20.5 12h1.7"/></svg>
         <span class="lbl">FUEGO</span>
       </button>
     </div>

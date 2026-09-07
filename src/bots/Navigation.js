@@ -223,14 +223,14 @@ export class Navigation {
   nextWaypoint(bot, toX, toZ) {
     let rec = this._paths.get(bot.id);
     if (!rec) {
-      rec = { path: [], at: -9, i: 0 };
+      rec = { path: [], at: -9, i: 0, failures: 0 };
       this._paths.set(bot.id, rec);
     }
     if (this._clock - rec.at >= 0.9 || rec.i >= rec.path.length) {
       const p = this.findPath(bot.position.x, bot.position.z, toX, toZ, rec.path);
       rec.at = this._clock;
       rec.i = 0;
-      if (!p) return null;
+      if (!p) { rec.failures++; return null; }
     }
     const wp = rec.path[rec.i];
     if (!wp) return null;

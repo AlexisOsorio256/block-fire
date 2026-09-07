@@ -31,6 +31,11 @@ export function runTestSuite(game) {
       log('3 WEAPON FIRE', ammoAfter < ammoBefore, `ammo ${ammoBefore} -> ${ammoAfter}`);
       // Test 4: Bots exist
       log('4 BOTS', game.bots.length === 7, `bots ${game.bots.length}`);
+      const maxHealthOk = game.playerController.maxHealth === 200
+        && game.playerController.health <= 200
+        && game.bots.every(b => b.maxHealth === 200);
+      log('4b MAX HEALTH CONTRACT', maxHealthOk,
+        `player ${game.playerController.health}/${game.playerController.maxHealth} · bots ${game.bots.map(b => b.maxHealth).join('/')}`);
       // Test 5: Map has collision
       const coll2 = typeof game.map.checkCollision === 'function';
       log('5 MAP COLLISION', coll2, `hasCheck ${coll2}`);
@@ -62,6 +67,10 @@ export function runTestSuite(game) {
       game.weaponSystem.ammoInMag = game.weaponSystem.currentWeapon.magazineSize;
       game.weaponSystem.owned.add('rifle');
       game.weaponSystem.switchWeapon(1); // rifle: daño de perfil para el test
+      // La transición visual bloquea el fuego hasta que el arma llega a la
+      // mano. Este test mide daño, no la animación de equipar; completa el
+      // handoff de manera explícita antes de disparar.
+      game.weaponSystem._finishSwitch();
       let combatResult = null;
       // Deterministic shots: zero spread for the test (spread is random and
       // made this test flaky when flinch pushed the bot).
@@ -71,7 +80,7 @@ export function runTestSuite(game) {
         game.weaponSystem.fireCooldown = 0;
         // Bots flinch on hit (knockback), so re-aim at the moving target each
         // shot — a real fight tracks the target instead of a fixed spot.
-        // Aim at the head: 125 HP / headshot 48 → 3 shots kill; 6 shots give
+        // Aim at the head: 200 HP y daño retunado → 4 tiros bastan; 6 dan
         // headroom so the test is deterministic regardless of body/head ratio.
         game.camera.lookAt(bot.position.x, bot.position.y - 0.08, bot.position.z);
         game.camera.updateMatrixWorld();
@@ -123,16 +132,23 @@ export function runTestSuite(game) {
       game.weaponSystem.isReloading = false;
       game.weaponSystem.fireCooldown = 0;
       game.weaponSystem.owned = new Set(['rifle', 'pistol', 'shotgun', 'smg']);
-      game.weaponSystem.switchWeapon(1); // pistol (pos 1)
-      game.weaponSystem.switchWeapon('next');
+      const switchReady9 = (dir) => { game.weaponSystem.switchWeapon(dir); game.weaponSystem._finishSwitch(); };
+      switchReady9(1); // pistol (pos 1)
+      switchReady9('next');
       const w1 = game.weaponSystem.currentWeapon.name;
-      game.weaponSystem.switchWeapon('next');
+      switchReady9('next');
       const w2 = game.weaponSystem.currentWeapon.name;
-      game.weaponSystem.switchWeapon('next');
+      switchReady9('next');
       const w3 = game.weaponSystem.currentWeapon.name;
       const cycleOk = w1 === 'Pistol' && w2 === 'Shotgun' && w3 === 'SMG';
       log('9 WEAPON CYCLE NEXT', cycleOk, `${w1} → ${w2} → ${w3}`);
       game.weaponSystem.switchWeapon(1);
+      const switchAnim9 = game.weaponSystem._switchAnim;
+      const blockedByHandoff9 = switchAnim9 > 0
+        && game.weaponSystem.fire(game.player, []) === null;
+      game.weaponSystem._finishSwitch();
+      log('9b SWITCH BLOCKS FIRE UNTIL READY', blockedByHandoff9,
+        `anim=${switchAnim9.toFixed(2)} · fireDuranteHandoff=${blockedByHandoff9 ? 'BLOQUEADO' : 'ERROR'}`);
 
       // Test 10: entities must not share the same body space (bots used to
       // walk inside the player, filling the camera with point-blank polygons)
@@ -337,7 +353,8 @@ export function runTestSuite(game) {
       const noDelta43 = (() => { const d = game.input.getLookDelta(); return d.x === 0 && d.y === 0; })();
       const moved43 = Math.abs(cl40.get('btn-fire').fx - 0.9463) > 0.001; // el drag MOVIO el layout
       cl40.setEditMode(false);
-      const exitedClean43 = cl40.editMode === false && game.input.fire === false;
+      const exitedClean43 = cl40.editMode === false && game.input.fire === false
+        && document.getElementById('ctl-editor').classList.contains('hidden');
       // tras salir, el mismo gesto vuelve a disparar (gameplay restaurado)
       btnFire43.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 931, bubbles: true, cancelable: true }));
       const fireWorksAfter43 = game.input.fire === true;
@@ -649,6 +666,7 @@ export function runTestSuite(game) {
       const fire33 = (weaponKey, randFn) => {
         game.weaponSystem.owned.add(weaponKey);
         game.weaponSystem.switchWeapon({ rifle: 1, pistol: 2, shotgun: 3, smg: 4 }[weaponKey]);
+        game.weaponSystem._finishSwitch(); // prueba de trayectoria, no de handoff visual
         const realRandom = Math.random;
         Math.random = randFn;
         game.camera.position.copy(eye33);
@@ -674,32 +692,22 @@ export function runTestSuite(game) {
       game.matchState = 'LOADING';
       game._resultShown = false;
 
-      // ── Test 37: FIN DE RONDA DETERMINISTA (bug P0 "ronda ganada sin que
-      // pase nada") — contrato del timeout de MatchSquad._timeoutWinner:
-      //   A) más VIVOS gana, B) empate a vivos → más HP agregada, C) empate
-      //      exacto → 'draw'. La ronda jamás anuncia un ganador sin causa.
+      // ── Test 37: el watchdog de combate NO entrega resultados. Si el reloj
+      // llega a cero con ambos equipos vivos, solo fuerza rutas de contacto.
       game.matchState = 'PLAYING';
       game.gameMode = 'squad';
       game.player.team = 'ally';
       game.phase = 'combat';
       const ms37 = game.squad;
-      // A) enemigos con 1 vivo menos
-      game.player.isAlive = true; game.playerController.health = 100;
-      game.bots.forEach(b => { b.isAlive = true; b.health = 100; });
-      game.bots[3].isAlive = false; // cae un enemigo → aliados 4 vs 3
-      const wA37 = ms37._timeoutWinner();
-      // B) empate a vivos → más HP agregada decide (bot[3] es enemigo:
-      // enemigos 330 vs aliados 430 → 'ally'; invertida → 'enemy')
-      game.bots[3].isAlive = true; game.bots[3].health = 30;
-      game.playerController.health = 100;
-      const wB37 = ms37._timeoutWinner(); // aliados 400 vs enemigos 330 → ally
-      game.playerController.health = 1;
-      const wB2_37 = ms37._timeoutWinner(); // aliados 301 vs enemigos 330 → enemy
-      // C) empate exacto → ronda nula
-      game.playerController.health = 100; game.bots.forEach(b => b.health = 100);
-      const wC37 = ms37._timeoutWinner();
-      log('37 ROUND END DETERMINISTIC TIMEOUT', wA37 === 'ally' && wB37 === 'ally' && wB2_37 === 'enemy' && wC37 === 'draw',
-        `masVivos:${wA37} hpMayor:${wB37} hpMenor:${wB2_37} empateExacto:${wC37}`);
+      game.player.isAlive = true; game.playerController.health = game.playerController.maxHealth;
+      game.bots.forEach(b => { b.isAlive = true; b.health = b.maxHealth; b._tacticalGoal = null; });
+      game.roundWins = { ally: 2, enemy: 1 };
+      game.phaseTime = 0;
+      ms37.tickPhase(0.016);
+      const watchdogOk37 = game.phase === 'combat' && game.roundWins.ally === 2 && game.roundWins.enemy === 1
+        && game.bots.filter(b => b.isAlive).every(b => !!b._tacticalGoal);
+      log('37 ROUND WATCHDOG DOES NOT AWARD RESULT', watchdogOk37,
+        `fase=${game.phase} score=${game.roundWins.ally}-${game.roundWins.enemy} rutasForzadas=${game.bots.filter(b => b._tacticalGoal).length}`);
 
       // ── Test 37b: NINGUNA muerte fuera de la ruta central de daño ──
       // Una baja SIEMPRE pasa por Game.applyDamage → Bot.takeDamage: health=0,
@@ -911,36 +919,43 @@ export function runTestSuite(game) {
       game.weaponSystem.owned = new Set(['pistol']);
       game.weaponSystem.isReloading = false;
       game.weaponSystem.switchWeapon(2); // pistola
+      game.weaponSystem._finishSwitch();
       const wStart35 = game.weaponSystem.weapons[game.weaponSystem.currentIndex];
       const ws = game.weaponSystem;
+      // El input de producción se bloquea durante unequip→swap→equip. Las
+      // aserciones de inventario prueban el filtro de propiedad, así que cada
+      // intención consecutiva concluye de forma determinista su transición.
+      const ready35 = () => ws._finishSwitch();
       // slots no-owned bloqueados (rifle=1, escopeta=3, smg=4)
       const slotBlocked35 = !ws.switchWeapon(1) && !ws.switchWeapon(3) && !ws.switchWeapon(4)
         && ws.weapons[ws.currentIndex] === 'pistol';
       // next/prev repetidos nunca abandonan la pistola
-      ws.switchWeapon('next'); ws.switchWeapon('next'); ws.switchWeapon('next');
+      ws.switchWeapon('next'); ready35(); ws.switchWeapon('next'); ready35(); ws.switchWeapon('next'); ready35();
       const nextStayed35 = ws.weapons[ws.currentIndex] === 'pistol';
-      ws.switchWeapon(-1); ws.switchWeapon(-1);
+      ws.switchWeapon(-1); ready35(); ws.switchWeapon(-1); ready35();
       const prevStayed35 = ws.weapons[ws.currentIndex] === 'pistol';
       // comprar UNA primaria (escopeta) por la TIENDA → pasa a ser cambiable
       const coins35 = game.coins;
       game.coins = 9999;
       const shotIdx = ws.weapons.indexOf('shotgun');
       game.shop.buy(shotIdx);
+      ready35();
       const boughtOk35 = ws.owned.has('shotgun') && ws.weapons[ws.currentIndex] === 'shotgun';
       // con pistol+shotgun owned: slots no-owned SIGUEN bloqueados
       const slotRifle35 = !ws.switchWeapon(1) && !ws.switchWeapon(4);
       // next/prev ciclan SOLO por las 2 owned (pistol ↔ shotgun, nunca rifle/smg)
-      ws.switchWeapon(2); // pistola
-      ws.switchWeapon('next');
+      ws.switchWeapon(2); ready35(); // pistola
+      ws.switchWeapon('next'); ready35();
       const cycleA35 = ws.weapons[ws.currentIndex] === 'shotgun';
-      ws.switchWeapon('next');
+      ws.switchWeapon('next'); ready35();
       const cycleB35 = ws.weapons[ws.currentIndex] === 'pistol';
-      ws.switchWeapon(-1);
+      ws.switchWeapon(-1); ready35();
       const cycleC35 = ws.weapons[ws.currentIndex] === 'shotgun';
       // nueva ronda: MatchSquad NO toca owned (arrastra compras) pero el filtro
       // sigue valiendo; retry (startMatch squad) RESETEA a {pistol} — y tras el
       // reset el arma activa vuelve a ser una owned.
       game.squad.startMatch();
+      ready35();
       const retryOk35 = ws.owned.has('pistol') && ws.weapons[ws.currentIndex] === 'pistol'
         && !ws.switchWeapon(1) && !ws.switchWeapon(3) && !ws.switchWeapon(4);
       // FFA: arsenal completo ES el contrato del modo (no es un leak)

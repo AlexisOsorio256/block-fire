@@ -1,11 +1,12 @@
 import * as THREE from '../lib/three.module.js';
 import { assets, WEAPON_MODELS } from '../core/AssetRegistry.js';
+import { DAMAGE_SCALE } from '../core/CombatRules.js';
 
 export const WeaponData = {
   rifle: {
     name: 'Rifle',
     price: 1500,
-    damage: 17, // TTK body 0.81s a distancia óptima (medido): reacción posible
+    damage: 17 * DAMAGE_SCALE, // preserva el TTK del contrato de 125 HP
     headshotMul: 2.0,
     fireRate: 0.115,
     magazineSize: 30,
@@ -22,7 +23,7 @@ export const WeaponData = {
   pistol: {
     name: 'Pistol',
     price: 0, // arma inicial: gratis, siempre en el inventario
-    damage: 25, // TTK body ~1.04s / head 0.52s: secundaria digna que premia puntería
+    damage: 25 * DAMAGE_SCALE, // TTK equivalente; el headshot sigue premiando
     headshotMul: 2.0,
     fireRate: 0.26,
     magazineSize: 12,
@@ -39,7 +40,7 @@ export const WeaponData = {
   shotgun: {
     name: 'Shotgun',
     price: 1200,
-    damage: 26, // 26x6=156: one-shot SOLO dentro de ~7m; a 10m quedan 114 (seguimiento)
+    damage: 26 * DAMAGE_SCALE, // misma identidad: un tiro cercano, seguimiento a distancia
     headshotMul: 1.5,
     fireRate: 0.75,
     magazineSize: 6,
@@ -55,7 +56,7 @@ export const WeaponData = {
   },
   smg: {
     name: 'SMG',
-    damage: 13,
+    damage: 13 * DAMAGE_SCALE,
     headshotMul: 1.9,
     fireRate: 0.085,
     magazineSize: 36,
@@ -669,7 +670,7 @@ export class WeaponSystem {
     // isReloading is exclusively the player's state (bots never reload). It
     // must NOT gate bots: probing showed every bot went silent for the whole
     // player reload (1.1–1.9s), gifting the player a free-push window.
-    if (usesPlayerAmmo && this.isReloading) return false;
+    if (usesPlayerAmmo && (this.isReloading || this._switchAnim > 0)) return false;
     if (usesPlayerAmmo && this.fireCooldown > 0) return false;
     if (usesPlayerAmmo && this.ammoInMag <= 0) {
       // Dry-fire click only when actively trying to shoot (not on spam frames)
@@ -1043,7 +1044,7 @@ export class WeaponSystem {
   // players on the pistol).
   switchWeapon(dir) {
     if (this.isReloading) return;
-    if (this._switchAnim > 0) this._finishSwitch();
+    if (this._switchAnim > 0) return;
     // Duelo de Escuadras: SOLO armas en propiedad (la TIENDA desbloquea el resto)
     const isOwned = (i) => this.owned.has(this.weapons[i]);
     let idx = this.currentIndex;

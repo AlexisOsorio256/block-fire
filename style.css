@@ -35,6 +35,10 @@ body{ background:#080c14; font-family: ui-sans-system, system-ui, -apple-system,
    única excepción: se edita DESDE el lobby también (los tests la usan). */
 body:not(.playing) #hud,
 body:not(.playing):not(.ctl-editing) #mobile-controls{ display:none !important; }
+/* El editor es una herramienta de configuración, no un control condicionado
+   por el breakpoint táctil: al abrirlo debe poder inspeccionarse también en
+   escritorio (suite DEV y jugadores con pantalla táctil conectada). */
+body.ctl-editing #mobile-controls{ display:block !important; }
 
 /* Mobile LANDSCAPE: short screen — health/ammo move to the TOP corners
    (row 1), score chip just below them (row 2); thumb controls keep the bottom */
@@ -170,7 +174,6 @@ body:not(.playing):not(.ctl-editing) #mobile-controls{ display:none !important; 
 #btn-fullscreen{ position:absolute; top:10px; right:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; z-index:4; }
 #btn-fullscreen svg{ width:20px; height:20px; }
 #btn-fullscreen:active{ background: rgba(255,210,60,0.25); }
-:fullscreen #btn-fullscreen{ display:none; }
 
 /* In-match settings gear — always reachable during gameplay */
 #btn-settings{ position:absolute; top:10px; left:12px; width:38px; height:38px; border-radius:9px; border:1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.35); color:rgba(255,255,255,0.85); backdrop-filter: blur(6px); display:grid; place-items:center; pointer-events:auto; padding:0; touch-action:manipulation; z-index:4; }
@@ -399,6 +402,13 @@ body:not(.playing) #squad-score{ display:none !important; }
 #round-banner .rb-sub{ font-size:13px; font-weight:800; letter-spacing:0.22em; color:#fff; opacity:0.85; margin-top:2px; }
 #round-banner.show{ animation: rb-pop 2.6s cubic-bezier(.2,.9,.3,1) forwards; }
 @keyframes rb-pop{ 0%{ opacity:0; transform:scale(1.65);} 12%{ opacity:1; transform:scale(1);} 80%{ opacity:1; transform:scale(1);} 100%{ opacity:0; transform:scale(0.95);} }
+#round-feedback{ position:fixed; inset:0; z-index:42; opacity:0; pointer-events:none; mix-blend-mode:screen; }
+#round-feedback.show.win{ animation:round-win-flash .78s ease-out; background:radial-gradient(circle at 50% 45%,rgba(119,255,174,.34),rgba(30,220,126,.06) 38%,transparent 69%); }
+#round-feedback.show.lose{ animation:round-lose-flash .78s ease-out; background:radial-gradient(circle at 50% 45%,rgba(255,112,112,.28),rgba(255,70,70,.05) 38%,transparent 69%); }
+#squad-score.score-pop{ animation:score-pop .48s cubic-bezier(.18,1.45,.4,1); }
+@keyframes round-win-flash{ 0%{opacity:0;transform:scale(.96)} 15%{opacity:1} 55%{opacity:.36} 100%{opacity:0;transform:scale(1.06)} }
+@keyframes round-lose-flash{ 0%{opacity:0} 18%{opacity:.86} 100%{opacity:0} }
+@keyframes score-pop{ 0%{transform:scale(.76)} 60%{transform:scale(1.12)} 100%{transform:scale(1)} }
 
 /* ═══ FASE DE COMPRA — bottom sheet animada (estilo Free Fire) ═══ */
 #buy-phase{ position:fixed; left:0; right:0; bottom:0; z-index:55; display:none; justify-content:center; pointer-events:none; }
@@ -489,6 +499,66 @@ body.buying #mobile-controls{ opacity:0.25; pointer-events:none; }
   padding:9px 16px; cursor:pointer; display:none; letter-spacing:.5px; }
 body.playing #btn-arsenal{ display:block; }
 #btn-arsenal:active{ transform:scale(.94); }
+
+/* ═══ HUD MOBILE — COMPOSICIÓN DE COMBATE ═══
+   Una sola línea de lectura por sistema: marcador arriba, vida abajo-centro,
+   munición separada y controles con iconos. No hay zonas "MOVER/MIRAR" ni
+   tarjetas numéricas compitiendo con la vista. */
+#hud{ padding:calc(8px + var(--sat)) calc(12px + var(--sar)) calc(8px + var(--sab)) calc(12px + var(--sal)); }
+#hud-top{ gap:0; }
+#squad-score{ gap:6px; min-height:28px; padding:5px 9px 4px; border-radius:0 0 10px 10px; border-top:0; background:rgba(6,11,22,.78); box-shadow:0 4px 16px rgba(0,0,0,.22); }
+#squad-score .ss-num{ font-size:16px; line-height:1; }
+#squad-score .ss-ally{ color:#68f5ad; }
+#squad-score .ss-enemy{ color:#ff7780; }
+#squad-score .ss-dash{ font-size:13px; color:rgba(255,255,255,.52); }
+#round-ind{ margin-left:2px; padding-left:6px; font-size:8px; letter-spacing:.12em; color:#e5edff; }
+.round-pips{ display:flex; align-items:center; gap:3px; }
+.round-pips i{ width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.2); box-shadow:inset 0 0 0 1px rgba(255,255,255,.12); }
+.round-pips i.won.ally{ background:#41e890; box-shadow:0 0 7px rgba(65,232,144,.7); }
+.round-pips i.won.enemy{ background:#ff5f69; box-shadow:0 0 7px rgba(255,95,105,.65); }
+body.squad-mode #score-chip{ display:none; }
+
+#hud-bottom{ position:static; padding:0; }
+#health-block{ position:fixed; left:50%; bottom:calc(10px + var(--sab)); transform:translateX(-50%); min-width:172px; height:28px; padding:4px 9px; gap:6px; border-radius:999px; background:rgba(5,12,22,.75); border-color:rgba(175,232,205,.28); box-shadow:0 4px 16px rgba(0,0,0,.32); }
+#health-block .health-meter{ width:94px; height:6px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.14); box-shadow:inset 0 1px 2px rgba(0,0,0,.35); }
+#health-fill{ display:block; width:100%; height:100%; border-radius:inherit; transform-origin:left center; transform:scaleX(1); background:linear-gradient(90deg,#3de589,#91f6b8); transition:transform .28s cubic-bezier(.2,.8,.2,1), background .2s ease; }
+#health-block #health{ font-size:13px; color:#e7fff0; }
+#health-block label{ font-size:8px; color:#9ec8ae; }
+#health-block.critical{ border-color:rgba(255,85,74,.9); }
+#health-block.critical #health-fill{ background:linear-gradient(90deg,#ff5147,#ff9a76); }
+#ammo-block{ position:fixed; right:calc(91px + var(--sar)); bottom:calc(10px + var(--sab)); height:28px; padding:4px 8px; gap:5px; border-radius:8px; background:rgba(5,12,22,.68); }
+#ammo-block #ammo{ font-size:13px; }
+#ammo-block #weapon-name{ font-size:7px; }
+
+#btn-arsenal, #btn-fullscreen, #btn-settings{ width:38px; height:38px; padding:0; display:grid; place-items:center; border-radius:11px; border:1px solid rgba(255,255,255,.16); color:#dce9ff; background:rgba(7,14,27,.66); box-shadow:0 3px 13px rgba(0,0,0,.2); }
+#btn-arsenal{ top:calc(9px + var(--sat)); right:calc(58px + var(--sar)); z-index:35; }
+#btn-arsenal svg{ width:20px; height:20px; color:#ffd45c; }
+#btn-fullscreen{ top:calc(9px + var(--sat)); right:calc(10px + var(--sar)); }
+#btn-fullscreen.is-fullscreen{ color:#ffd45c; border-color:rgba(255,212,92,.52); }
+#btn-settings{ top:calc(9px + var(--sat)); left:calc(10px + var(--sal)); }
+#btn-arsenal:active, #btn-fullscreen:active, #btn-settings:active{ transform:scale(.93); background:rgba(255,210,60,.18); }
+
+#joystick-zone{ z-index:1; width:178px; height:178px; left:0; top:0; bottom:auto; }
+#joystick-base{ left:50%; top:50%; bottom:auto; width:110px; height:110px; transform:translate(-50%,-50%) scale(var(--ctl-scale,1)); border-color:rgba(151,207,255,.24); background:radial-gradient(circle at 35% 30%,rgba(132,197,255,.18),rgba(8,18,33,.25) 64%); box-shadow:inset 0 0 0 7px rgba(255,255,255,.025),0 5px 16px rgba(0,0,0,.2); }
+#joystick-stick{ background:radial-gradient(circle at 35% 30%,rgba(245,251,255,.5),rgba(120,183,230,.2)); border-color:rgba(220,243,255,.38); box-shadow:0 2px 10px rgba(0,0,0,.3); }
+#look-zone{ z-index:0; width:100%; height:100%; }
+#action-buttons, #action-buttons-left{ z-index:3; }
+.action-btn{ border-color:rgba(193,225,255,.25); background:radial-gradient(circle at 34% 27%,rgba(110,175,229,.2),rgba(5,12,23,.58) 66%); box-shadow:inset 0 0 0 4px rgba(255,255,255,.025),0 4px 13px rgba(0,0,0,.22); }
+.action-btn svg{ width:54%; height:54%; }
+.action-btn .lbl{ display:none; }
+#btn-fire, #btn-fire-left{ width:62px; height:62px; border-color:rgba(255,109,90,.8); background:radial-gradient(circle,rgba(255,103,83,.46),rgba(103,22,28,.66) 54%,rgba(8,13,23,.76) 72%); box-shadow:0 0 0 4px rgba(255,92,73,.1),0 5px 18px rgba(0,0,0,.34); }
+#btn-fire svg, #btn-fire-left svg{ color:#ffe8df; width:58%; height:58%; }
+.action-btn:active{ transform:scale(calc(var(--ctl-scale,1) * .92)); background:rgba(255,210,60,.28); }
+#mobile-controls.editing .action-btn:active{ transform:scale(var(--ctl-scale,1)); }
+
+@media (pointer: coarse) and (orientation: landscape), (max-width:900px) and (orientation:landscape){
+  #hud{ display:block; }
+  #hud-top{ position:fixed; top:0; left:50%; transform:translateX(-50%); }
+  #hud-bottom{ position:static; }
+  #health-block{ bottom:calc(9px + var(--sab)); }
+  #ammo-block{ bottom:calc(9px + var(--sab)); }
+  #killfeed{ top:54px; right:calc(10px + var(--sar)); }
+}
 
 /* ── ABANDONAR: zona destructiva DENTRO del panel de configuración ──
    Solo existe en partida (body.playing); en el lobby no se renderiza. */

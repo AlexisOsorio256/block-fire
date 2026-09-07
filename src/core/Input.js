@@ -132,14 +132,28 @@ export class Input {
 
     if (!joystickZone || !window.PointerEvent) return;
 
-    // ---- Fullscreen + landscape lock (unchanged behavior, pointer-safe) ----
+    // ---- Fullscreen + landscape lock: el DOM deriva del estado REAL. ----
     if (btnFullscreen) {
+      const enterIcon = '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>';
+      const exitIcon = '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>';
+      const syncFullscreen = () => {
+        const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        btnFullscreen.classList.toggle('is-fullscreen', active);
+        btnFullscreen.setAttribute('aria-label', active ? 'Salir de pantalla completa' : 'Entrar en pantalla completa');
+        btnFullscreen.title = active ? 'Salir de pantalla completa' : 'Pantalla completa';
+        const svg = btnFullscreen.querySelector('svg');
+        if (svg) svg.innerHTML = active ? exitIcon : enterIcon;
+      };
+      document.addEventListener('fullscreenchange', syncFullscreen);
+      document.addEventListener('webkitfullscreenchange', syncFullscreen);
+      syncFullscreen();
       const goFullscreen = async () => {
         const el = document.documentElement;
         const already = document.fullscreenElement || document.webkitFullscreenElement;
         try {
           if (already) {
-            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (exit) await exit.call(document);
             return;
           }
           const req = el.requestFullscreen || el.webkitRequestFullscreen || el.requestFullScreen || el.webkitRequestFullScreen;
@@ -149,6 +163,7 @@ export class Input {
           // Landscape is a permanent project rule: lock it while fullscreen.
           const so = screen.orientation && (screen.orientation.lock || screen.lockOrientation);
           if (so) { try { so.call(screen.orientation || screen, 'landscape'); } catch(e){} }
+          syncFullscreen();
         } catch (err) {
           btnFullscreen.title = err.message || 'fullscreen failed';
           const label = document.createElement('div');

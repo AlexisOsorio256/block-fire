@@ -48,9 +48,9 @@ export class Game {
       depthWrite: false,
       fog: false,
       uniforms: {
-        top: { value: new THREE.Color(0x4a90d9) },
-        horizon: { value: new THREE.Color(0xbfe0f5) },
-        below: { value: new THREE.Color(0x87b5e8) }
+        top: { value: new THREE.Color(0x367ec7) },
+        horizon: { value: new THREE.Color(0xc9ecff) },
+        below: { value: new THREE.Color(0x92c7ef) }
       },
       vertexShader: `
         varying vec3 vDir;
@@ -70,7 +70,7 @@ export class Game {
         }`
     });
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
-    this.scene.fog = new THREE.Fog(0x87b5e8, 45, 125); // mapa 120x120
+    this.scene.fog = new THREE.Fog(0x9ecff1, 58, 145); // profundidad sin velar el color
 
     // Renderer — mobile renders sharper than before (DPR cap 1.75, was 1.5:
     // the "Android looks degraded" note) with the dynamic downscaler
@@ -86,6 +86,8 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.container.appendChild(this.renderer.domElement);
     this._isMobile = isMobile;
     // Plataforma táctil (para el aim assist: asistencia mayor en touch que PC)
@@ -185,7 +187,8 @@ export class Game {
     // Mejor-de-7: gana el PRIMERO en llegar a 4 rondas de equipo.
     // Cada ronda: fase de COMPRA (tienda animada) → combate → eliminación.
     this.ROUND_TARGET = 4;      // rondas para ganar el duelo
-    this.BUY_TIME = 15;         // segundos de fase de compra
+    this.FIRST_BUY_TIME = 10;   // R1 explica el arsenal sin romper el ritmo
+    this.BUY_TIME = 8;          // rondas siguientes: comprar y volver a pelear
     this.ROUND_TIME = 90;       // segundos por ronda (mapa 120x120)
     this.round = 1;
     this.roundWins = { ally: 0, enemy: 0 };
@@ -258,14 +261,15 @@ export class Game {
   }
 
   _setupLights() {
-    // Bright arcade-military daylight: readable, not washed out
-    this.renderer.toneMappingExposure = 1.15;
+    // Luz diurna arcade: mapas y operadores se separan por valor y color,
+    // sin usar un postproceso caro como sustituto de materiales legibles.
+    this.renderer.toneMappingExposure = 1.24;
 
-    const ambient = new THREE.HemisphereLight(0xbfd9ff, 0x3d4a5f, 1.15);
+    const ambient = new THREE.HemisphereLight(0xc7e8ff, 0x607b86, 1.38);
     this.scene.add(ambient);
     this._hemiLight = ambient; // el lobby la atenúa (estudio de retrato)
 
-    const dir = new THREE.DirectionalLight(0xfff2d4, 1.35);
+    const dir = new THREE.DirectionalLight(0xffedc6, 1.62);
     dir.position.set(18, 28, 12);
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024, 1024);
@@ -280,7 +284,7 @@ export class Game {
     this._sunLight = dir; // el lobby la atenúa (estudio de retrato)
 
     // Cool fill from opposite side — separates bots from walls
-    const fill = new THREE.DirectionalLight(0x7db4ff, 0.45);
+    const fill = new THREE.DirectionalLight(0x80c2ff, 0.62);
     fill.position.set(-12, 14, -18);
     this.scene.add(fill);
   }
@@ -543,6 +547,7 @@ export class Game {
     // The gameplay HUD + touch controls only exist DURING a match: without
     // this, mobile controls and health/ammo chips bleed through the lobby.
     document.body.classList.add('playing');
+    document.body.classList.toggle('squad-mode', this.gameMode === 'squad');
     // Reset squad-specific HUD (round score, immunity, shop) so FFA doesn't
     // inherit stale elements from a prior squad match.
     const ss = document.getElementById('squad-score');
@@ -640,9 +645,11 @@ export class Game {
   // Dynamic resolution: every ~1.5s of frames, if the average frame time is
   // over budget (22ms), drop DPR a step; if comfortably under (14ms) and below
   // cap, raise it back. Small steps avoid visible oscillation.
-  _adaptResolution(dt) {
+  _adaptResolution(dt, rawDt = dt) {
     this._frameTimes.push(dt);
-    this._frameMetrics[this._frameMetricCursor] = dt;
+    // Diagnóstico conserva el delta crudo: la simulación puede protegerse
+    // contra saltos de pestaña, pero p95 debe revelar el stutter real.
+    this._frameMetrics[this._frameMetricCursor] = rawDt;
     this._frameMetricCursor = (this._frameMetricCursor + 1) % this._frameMetrics.length;
     this._frameMetricCount = Math.min(this._frameMetricCount + 1, this._frameMetrics.length);
     if (this._frameTimes.length < 90) return;
@@ -720,6 +727,7 @@ export class Game {
         mapSize: shadowMap ? { width: shadowMap.x, height: shadowMap.y } : null,
       },
       map: mapHalf === null ? null : { halfSize: mapHalf, width: mapHalf * 2, depth: mapHalf * 2 },
+      bots: this.bots.map(b => b.getNavigationDebug ? b.getNavigationDebug() : null),
       fps: Number.isFinite(this.fps) ? this.fps : null,
       frameTimeMs: { p50: percentile(0.50), p95: percentile(0.95), samples: frameMs.length },
       touch: {
@@ -864,7 +872,9 @@ export class Game {
         const allyCount = (this.player.isAlive ? 1 : 0) + this.bots.filter(b => b.team === 'ally' && b.isAlive).length;
         const enemyCount = this.bots.filter(b => b.team === 'enemy' && b.isAlive).length;
         if (enemyCount === 0 || allyCount === 0) {
-          this._endRound(enemyCount === 0 ? 'ally' : (allyCount === 0 ? 'enemy' : 'draw'));
+          // El impacto que elimina al último rival decide. La ruta de daño es
+          // secuencial, por lo que una eliminación simultánea no crea un tercer resultado.
+          this._endRound(enemyCount === 0 ? 'ally' : 'enemy');
         }
       }
 
@@ -1071,12 +1081,13 @@ export class Game {
 
   animate() {
     requestAnimationFrame(()=> this.animate());
-    let dt = Math.min(this.clock.getDelta(), 0.033);
+    const rawDt = this.clock.getDelta();
+    let dt = Math.min(rawDt, 0.033);
     const time = this.clock.elapsedTime;
 
     // FPS
     this.fps = 1/dt;
-    this._adaptResolution(dt);
+    this._adaptResolution(dt, rawDt);
 
     // In-match settings panel open → PAUSE the simulation (bots, timers, HUD)
     // but keep rendering the last frame. Closing the panel resumes play.
@@ -1253,6 +1264,7 @@ export class Game {
     p.leader = Math.max(this.playerKills, this._maxBotKills()); // líder por KILLS en ambos modos (antes la píldora mostraba la ronda en squad)
     p.timeLeft = timeLeft;
     p.health = this.playerController.health;
+    p.maxHealth = this.playerController.maxHealth;
     p.ammo = this.weaponSystem.getAmmoText();
     p.kills = this.playerKills;
     p.deaths = this.playerDeaths;

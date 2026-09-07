@@ -178,6 +178,7 @@ export const AvatarLib = {
         // sobre geometría SIN groups hace que three.js no dibuje NADA.
         const paint = (m) => {
           const m2 = m.clone();
+          if (m2.map) m2.map.colorSpace = THREE.SRGBColorSpace;
           if (/visor/i.test(o.name || '')) {
             // VISOR = identidad de equipo (glow aliado/enemigo + paleta propia)
             if (m2.color) m2.color.set(op.visor).lerp(teamCol, isHero ? 0.15 : 0.45);
@@ -185,7 +186,7 @@ export const AvatarLib = {
           } else {
             // TRAJE = identidad del OPERADOR (paleta propia, nunca el color de equipo).
             // La difusa del GLB es gris-base: baseColor manda sobre ella.
-            if (m2.color) m2.color.set(op.body);
+            if (m2.color) m2.color.set(op.body).lerp(new THREE.Color(0xffffff), 0.12);
           }
           return m2;
         };
@@ -218,9 +219,11 @@ export const AvatarLib = {
     for (const k of ['walk', 'run']) if (actions[k]) actions[k].setEffectiveWeight(0);
 
     // Mano derecha para el arma (rig Mixamo)
-    let hand = null;
+    let hand = null, rightArm = null, leftArm = null;
     clone.traverse((o) => {
       if (o.isBone && /RightHand$/i.test(o.name)) hand = o;
+      if (o.isBone && /RightArm$/i.test(o.name)) rightArm = o;
+      if (o.isBone && /LeftArm$/i.test(o.name)) leftArm = o;
     });
     let gunPivot = null;
     if (hand && opts.weapon) {
@@ -251,6 +254,8 @@ export const AvatarLib = {
       actions,
       gunPivot, // pivote del arma (hermano del esqueleto; update() lo ancla)
       _handBone: hand, // hueso de la mano derecha (ancla del arma por frame)
+      _rightArm: rightArm,
+      _leftArm: leftArm,
       feetOffset,
       setGrounded() {
         const scaleY = Math.abs(this.root.scale.y) || 1;
@@ -316,6 +321,17 @@ export const AvatarLib = {
         clone.rotation.x = -0.13 * this._pulse + actionX;
         clone.rotation.z = this._action === 'hit' ? 0.10 * envelope : 0;
         mixer.update(dt);
+        // Las locomociones anteriores son clips reales del GLB. Las acciones
+        // de arma no existen en ese archivo, así que solo sus brazos/mano
+        // reciben una pose aditiva breve: culatazo, recarga y reacción son
+        // legibles sin fingir que haya un clip de disparo descargado.
+        if (this._rightArm) {
+          const armKick = this._action === 'shoot' ? -0.24 * envelope
+            : this._action === 'reload' ? 0.38 * envelope
+            : this._action === 'hit' ? 0.16 * envelope : 0;
+          this._rightArm.rotation.x += armKick;
+        }
+        if (this._leftArm && this._action === 'reload') this._leftArm.rotation.x += -0.52 * envelope;
         // ANCLAJE DEL ARMA A LA MANO (estado de render exacto): tras el
         // mixer.update los huesos ya tienen su pose ESTE frame — copiar
         // posición+quaternion del hueso al pivote hermano reproduce el

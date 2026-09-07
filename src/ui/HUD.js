@@ -62,14 +62,27 @@ export class HUD {
     el.classList.add('show');
   }
 
-  // Marcador por RONDAS: ALIADOS x — y ENEMIGOS · RONDA N/4
+  // Marcador por rondas: lectura instantánea por color + pips, sin copiar
+  // palabras de equipo ni métricas de FFA sobre el combate de escuadras.
   updateTeamScore(ally, enemy, round, roundTarget) {
     const a = document.getElementById('score-ally');
     const e = document.getElementById('score-enemy');
     const r = document.getElementById('round-ind');
     if (a) a.textContent = ally;
     if (e) e.textContent = enemy;
-    if (r && round) r.textContent = `RONDA ${round} · GANA A ${roundTarget || 4}`;
+    if (r && round) r.textContent = `R${round}`;
+    const paintPips = (id, wins, tone) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const target = roundTarget || 4;
+      el.replaceChildren(...Array.from({ length: target }, (_, i) => {
+        const pip = document.createElement('i');
+        if (i < wins) pip.className = `won ${tone}`;
+        return pip;
+      }));
+    };
+    paintPips('round-pips-ally', ally, 'ally');
+    paintPips('round-pips-enemy', enemy, 'enemy');
     const wrap = document.getElementById('squad-score');
     if (wrap) wrap.classList.add('show');
   }
@@ -86,7 +99,24 @@ export class HUD {
     el.classList.remove('show');
     void el.offsetWidth; // reiniciar animación CSS
     el.classList.add('show');
-    this._bannerT = 2.6;
+    this._bannerT = 2.1;
+  }
+
+  // Impacto de fin de ronda: una capa brevísima, pulso del marcador y banner
+  // comparten reloj/DOM del HUD. Es feedback real aun sin depender de assets.
+  showRoundResult(winner) {
+    const el = document.getElementById('round-feedback');
+    const score = document.getElementById('squad-score');
+    if (el) {
+      el.className = `show ${winner === 'ally' ? 'win' : 'lose'}`;
+      clearTimeout(this._roundFeedbackTimer);
+      this._roundFeedbackTimer = setTimeout(() => { el.className = ''; }, 780);
+    }
+    if (score) {
+      score.classList.remove('score-pop');
+      void score.offsetWidth;
+      score.classList.add('score-pop');
+    }
   }
 
   tickRoundBanner(dt) {
@@ -234,7 +264,7 @@ export class HUD {
     if (hb) hb.classList.toggle('spectator-hidden', !!dead);
   }
 
-  update({ score, timeLeft, health, ammo, kills, deaths, fps, pos, botCount, weaponName, leader }) {
+  update({ score, timeLeft, health, maxHealth = 200, ammo, kills, deaths, fps, pos, botCount, weaponName, leader }) {
     if (this.leaderEl) this.leaderEl.textContent = leader !== undefined ? leader : (this.leaderEl.textContent || '0');
     if (this.timerEl) {
       const m = Math.floor(timeLeft / 60);
@@ -244,9 +274,12 @@ export class HUD {
     if (this.killsEl) this.killsEl.textContent = kills || 0;
     if (this.healthEl) {
       this.healthEl.textContent = Math.max(0, Math.round(health));
-      this.healthEl.style.color = health > 60 ? '#4ade80' : health > 30 ? '#facc15' : '#f87171';
+      const ratio = Math.max(0, Math.min(1, health / maxHealth));
+      this.healthEl.style.color = ratio > 0.45 ? '#dfffe9' : ratio > 0.22 ? '#ffe59b' : '#ffd0cd';
+      const fill = document.getElementById('health-fill');
+      if (fill) fill.style.transform = `scaleX(${ratio})`;
       if (this.healthEl.parentElement) {
-        this.healthEl.parentElement.classList.toggle('critical', health <= 30 && health > 0);
+        this.healthEl.parentElement.classList.toggle('critical', ratio <= 0.22 && health > 0);
       }
     }
     if (this.ammoEl) {
@@ -262,7 +295,7 @@ export class HUD {
     if (this.weaponNameEl) this.weaponNameEl.textContent = (weaponName || 'RIFLE').toUpperCase();
 
     if (this._vignEl === undefined) this._vignEl = document.getElementById('damage-vignette');
-    if (this._vignEl) this._vignEl.classList.toggle('low', health <= 30 && health > 0);
+    if (this._vignEl) this._vignEl.classList.toggle('low', health / maxHealth <= 0.22 && health > 0);
 
     if (this.debugEnabled && this.debugEl) {
       this.debugEl.textContent = `FPS ${fps|0} | POS ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} | BOTS ${botCount} | SCORE ${score}`;

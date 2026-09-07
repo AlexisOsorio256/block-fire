@@ -29,7 +29,8 @@ export class MatchSquad {
     const g = this.g;
     g.round = n;
     g.phase = 'buy';
-    g.phaseTime = g.BUY_TIME;
+    g.buyDuration = n === 1 ? g.FIRST_BUY_TIME : g.BUY_TIME;
+    g.phaseTime = g.buyDuration;
     g.teamScore.ally = 0;
     g.teamScore.enemy = 0;
     g.matchTime = 0;
@@ -147,28 +148,24 @@ export class MatchSquad {
     };
   }
 
-  // Fin de ronda por TIEMPO: regla DETERMINISTA y documentada —
-  //   1) más vivos, 2) más HP agregada de los vivos, 3) empate exacto = ronda nula.
-  // Jamás se anuncia ganador sin causa: la razón queda registrada para debug.
-  _timeoutWinner() {
-    const { ally, enemy, allyHP, enemyHP } = this._aliveCounts();
-    if (ally !== enemy) return ally > enemy ? 'ally' : 'enemy';
-    if (allyHP !== enemyHP) return allyHP > enemyHP ? 'ally' : 'enemy';
-    return 'draw';
+  // El reloj de combate es un watchdog sin resultado de producto. Si ambos
+  // equipos siguen vivos, reabre rutas y empuja a bots hacia contacto; jamás
+  // regala puntos ni introduce una tercera salida.
+  _breakStall() {
+    const g = this.g;
+    g.phaseTime = 14;
+    for (const bot of g.bots) if (bot.isAlive && bot.forceEngagement) bot.forceEngagement();
+    console.info(`[MATCH] watchdog R${g.round}: reencauzando combate, sin adjudicar ronda`);
   }
 
-  // Fin de ronda: banner + oro → (Game decide: siguiente ronda o fin del duelo)
-  endRound(winner) { // 'ally' | 'enemy' | 'draw'
+  // Fin de ronda: solo eliminación de un equipo → oro + feedback → siguiente.
+  endRound(winner) { // 'ally' | 'enemy'
     const g = this.g;
     if (g.phase === 'roundEnd') return;
+    if (winner !== 'ally' && winner !== 'enemy') throw new Error(`Round winner inválido: ${winner}`);
     g.phase = 'roundEnd';
     const { ally, enemy } = this._aliveCounts();
-    // Razón de fin (contrato §12: auditable, no adivinable). Eliminación =
-    // un equipo a 0; si ambos equipos tienen vivos, la única ruta válida es
-    // el timeout determinista de tickPhase.
-    const reason = (ally === 0 || enemy === 0)
-      ? `eliminacion A${ally}/E${enemy}`
-      : `timeout A${ally}/E${enemy} HP ${(this._aliveCounts().allyHP) | 0}/${(this._aliveCounts().enemyHP) | 0}`;
+    const reason = `eliminacion A${ally}/E${enemy}`;
     console.log(`[MATCH] ronda ${g.round} fin — ${reason} → ${winner}`);
     document.body.classList.remove('buying');
     g.hud.closeShop();
@@ -177,16 +174,14 @@ export class MatchSquad {
       g.roundWins.ally++;
       g.coins += 400;
       g.hud.showRoundBanner('¡RONDA GANADA!', `${g.roundWins.ally} — ${g.roundWins.enemy} · +400 ORO`, '#7dff9a');
-    } else if (winner === 'enemy') {
+    } else {
       g.roundWins.enemy++;
       g.coins += 200;
       g.hud.showRoundBanner('RONDA PERDIDA', `${g.roundWins.ally} — ${g.roundWins.enemy} · +200 ORO`, '#ff6b7a');
-    } else {
-      g.coins += 100;
-      g.hud.showRoundBanner('EMPATE', `${g.roundWins.ally} — ${g.roundWins.enemy} · +100 ORO`, '#facc15');
     }
     g.hud.updateTeamScore(g.roundWins.ally, g.roundWins.enemy, g.round, g.ROUND_TARGET);
-    g.audio.play(winner === 'ally' ? 'win_round' : winner === 'enemy' ? 'lose_round' : 'ui');
+    g.hud.showRoundResult(winner);
+    g.audio.play(winner === 'ally' ? 'win_round' : 'lose_round');
     g._roundEndTime = g.matchTime;
   }
 
@@ -206,16 +201,15 @@ export class MatchSquad {
     const g = this.g;
     g.phaseTime -= dt;
     if (g.phase === 'buy') {
-      g.hud.tickBuyPhase(g.phaseTime, g.BUY_TIME);
+      g.hud.tickBuyPhase(g.phaseTime, g.buyDuration || g.BUY_TIME);
       if (g.phaseTime <= 0) this.startCombat();
     } else if (g.phase === 'combat') {
-      g.hud.tickBuyPhase(-1, g.BUY_TIME); // oculta el contador de compra
+      g.hud.tickBuyPhase(-1, g.buyDuration || g.BUY_TIME); // oculta el contador de compra
       if (g.phaseTime <= 0) {
-        // Tiempo agotado → regla determinista (_timeoutWinner, ver arriba).
-        this.endRound(this._timeoutWinner());
+        this._breakStall();
       }
     } else if (g.phase === 'roundEnd') {
-      if (g.matchTime - g._roundEndTime > 3.0) this.afterRoundEnd();
+      if (g.matchTime - g._roundEndTime > 2.1) this.afterRoundEnd();
     }
   }
 }

@@ -106,19 +106,18 @@ class ControlLayout {
       el.style.setProperty('--ctl-scale', String(s));
       el.style.opacity = String(clamp(d.opacity * gOp, 0, 1));
       if (id === 'joystick-base') {
-        // La ZONA de activación sigue a la base (la zona es el grab area):
-        // la base vive a 24px del borde inferior-izquierdo de su zona (CSS).
+        // La zona de activación acompaña la base, pero el centro del joystick
+        // puede vivir en TODO el viewport útil. El editor no "protege" lados
+        // para el producto: la elección del jugador prevalece.
         const zone = document.getElementById('joystick-zone');
         if (!zone) continue;
-        const zoneH = vh * 0.45; // 45% fijo en style.css
-        const m = 24;
-        // El joystick nunca invade la mitad derecha (área de mirar) y su
-        // zona nunca tapa la engranaje de ajustes (top 48px).
-        const cx = clamp(d.fx * vw, sal + m + w / 2, Math.max(sal + m + w / 2, Math.min(vw * 0.45, vw - sar) - (m + w / 2)));
-        const minCy = Math.max(sat + h / 2, 48 + zoneH - m - h / 2);
-        const cy = clamp(d.fy * vh, minCy, Math.max(minCy, vh - sab - m - h / 2));
-        zone.style.left = `${Math.round(cx - (m + w / 2))}px`;
-        zone.style.top = `${Math.round(cy - (zoneH - m - h / 2))}px`;
+        const zoneW = Math.max(156, w + 68), zoneH = Math.max(156, h + 68);
+        const cx = clamp(d.fx * vw, sal + w / 2, Math.max(sal + w / 2, vw - sar - w / 2));
+        const cy = clamp(d.fy * vh, sat + h / 2, Math.max(sat + h / 2, vh - sab - h / 2));
+        zone.style.width = `${Math.round(zoneW)}px`;
+        zone.style.height = `${Math.round(zoneH)}px`;
+        zone.style.left = `${Math.round(cx - zoneW / 2)}px`;
+        zone.style.top = `${Math.round(cy - zoneH / 2)}px`;
         zone.style.bottom = 'auto';
       } else {
         const cx = clamp(d.fx * vw, sal + w / 2, Math.max(sal + w / 2, vw - sar - w / 2));
@@ -156,6 +155,8 @@ class ControlLayout {
       this.select(null);
       settings._persist();
       this.apply();
+      const panel = document.getElementById('ctl-editor');
+      if (panel) panel.classList.add('hidden');
       // Solo el SALIR propio del editor reabre el panel (si lo ocultó él);
       // un setEditMode(false) externo (Game) ya gestiona su panel.
       if (this._exitFromPanel && this._hidConfig) {

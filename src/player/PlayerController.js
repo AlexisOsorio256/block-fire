@@ -1,5 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { settings } from '../core/Settings.js';
+import { MAX_HEALTH } from '../core/CombatRules.js';
 
 // ── Scratch a nivel de módulo (reglas §6: cero allocs por frame) ──
 // update() corre 1× por frame; los vectores de trabajo nunca escapan.
@@ -25,8 +26,8 @@ export class PlayerController {
 
     this.velocity = new THREE.Vector3();
     this.onGround = false;
-    this.health = 100;
-    this.maxHealth = 125;
+    this.health = MAX_HEALTH;
+    this.maxHealth = MAX_HEALTH;
 
     this.yaw = 0;
     this.pitch = 0;

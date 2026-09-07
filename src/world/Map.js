@@ -19,6 +19,7 @@ export class Map {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(repeatX, repeatY);
         tex.anisotropy = 8; // sharper textures at grazing angles (floor!)
+        tex.colorSpace = THREE.SRGBColorSpace;
       }
       return new THREE.MeshStandardMaterial({
         color: fallbackColor,
@@ -28,16 +29,16 @@ export class Map {
       });
     };
     // Scale repeats so texels read at arcade scale (not noisy)
-    this._matGround = loadTex('ground.png', 24, 24, 0x9aa5b3);
-    this._matWall = loadTex('wall.png', 24, 1, 0x5a6b80);
-    this._matCover = loadTex('cover.png', 1.6, 1.6, 0xc9b8a0);
-    this._matPlatform = loadTex('platform.png', 2.5, 1.5, 0x9fb06a);
+    this._matGround = loadTex('ground.png', 24, 24, 0xaeb8a9);
+    this._matWall = loadTex('wall.png', 24, 1, 0x5b7e9e);
+    this._matCover = loadTex('cover.png', 1.6, 1.6, 0xd3bc8d);
+    this._matPlatform = loadTex('platform.png', 2.5, 1.5, 0xa7c77a);
     // Duelo de Escuadras: colores de equipo (aliado verde-azul, enemigo rojo)
-    this._matAllyFloor = loadTex('ground.png', 6, 2, 0x2b4a52);
-    this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x52303a);
-    this._matAllyWall = loadTex('wall.png', 4, 1, 0x2f6b5a);
-    this._matEnemyWall = loadTex('wall.png', 4, 1, 0x7a4038);
-    this._matWood = loadTex('cover.png', 2, 1, 0x8a6a3a);
+    this._matAllyFloor = loadTex('ground.png', 6, 2, 0x35696b);
+    this._matEnemyFloor = loadTex('ground.png', 6, 2, 0x70424a);
+    this._matAllyWall = loadTex('wall.png', 4, 1, 0x3f866c);
+    this._matEnemyWall = loadTex('wall.png', 4, 1, 0x9a5147);
+    this._matWood = loadTex('cover.png', 2, 1, 0xa67a41);
 
     if (this.mode === 'squad') {
       // CLASH SQUAD: arena propia (bases espejo + centro + lanes) — SIN la

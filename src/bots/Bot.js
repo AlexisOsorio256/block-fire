@@ -1,5 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { AvatarLib } from '../characters/SoldierAvatar.js';
+import { MAX_HEALTH } from '../core/CombatRules.js';
 
 // ── Scratch a nivel de módulo (reglas §6: cero allocs por frame) ──
 // Bot.update corre 7× por frame, SIEMPRE en secuencia y nunca reentrante:
@@ -63,8 +64,8 @@ export class Bot {
     // Snap spawn Y to actual ground (covers platforms correctly)
     const gy = map ? map.getGroundY(position.x, position.z) : 0;
     this.position = new THREE.Vector3(position.x, gy + 1.65, position.z);
-    this.health = 100;
-    this.maxHealth = 125;
+    this.health = MAX_HEALTH;
+    this.maxHealth = MAX_HEALTH;
     this.kills = 0;
     this.deaths = 0;
 
@@ -73,7 +74,10 @@ export class Bot {
     this.pitch = 0;
 
     this.velocity = new THREE.Vector3();
-    this.speed = 3.2 + Math.random() * 0.8;
+    // Ritmo por operador: rompe la marcha sincronizada sin convertir a nadie
+    // en aimbot ni depender de suerte que vuelve imposible reproducir bugs.
+    this._tempo = 0.88 + (id % 5) * 0.055;
+    this.speed = 3.55 * this._tempo;
     this.sprintSpeed = 5.0;
 
     this.height = 1.65;
@@ -109,6 +113,9 @@ export class Bot {
     this._flankT = 0;            // reubicación lateral en curso (límite temporal)
     this._laneSeed = (id % 2 === 0) ? 1 : -1; // flanco preferido coherente por bot
     this._flankDir = this._laneSeed; // lado del flanqueo (alterna por intento)
+    this._recoveryGoal = new THREE.Vector3();
+    this._recoveryT = 0;
+    this._navDebug = { waypoint: null, pathFailures: 0, collisionAttempts: 0, stuckRecoveries: 0, distanceWindow: 0, effectiveSpeed: 0 };
 
     // CLASH SQUAD: arma comprada por ronda (la IA "compra" en la fase de compra)
     this.weaponKey = 'pistol';
@@ -151,9 +158,10 @@ export class Bot {
     this._avatar = av;
     av.root.scale.setScalar(1.15); // presencia: personajes más grandes (pedido del usuario)
     av.setGrounded();
-    this._gunPivot = null;
-    // localizar el pivote del arma (hijo de la mano derecha creado por create())
-    av.root.traverse((o) => { if (o.isBone && /RightHand$/i.test(o.name)) { this._gunPivot = o.children.find(c => c.type === 'Group') || null; } });
+    // AvatarLib.create expone el pivote de forma explícita: es hermano del
+    // esqueleto y se ancla a la mano por frame. Buscarlo bajo el hueso hacía
+    // que compras posteriores cambiaran la lógica, pero no el arma visible.
+    this._gunPivot = av.gunPivot || null;
     // Ocultar piezas de fallback (conservar el grupo: Game las posiciona igual)
     this._fallbackParts = this.mesh.children.filter(c => c !== av.root).map(c => { c.userData.__wasVisible = c.visible; return c; });
     for (const c of this._fallbackParts) c.visible = false;
@@ -407,12 +415,46 @@ export class Bot {
     this._tacticalGoal = null;
     this._stuckT = 0;
     this._stuckAnchor = null;
+    this._recoveryT = 0;
+    this._navDebug.waypoint = null;
+    this._navDebug.distanceWindow = 0;
+    this._navDebug.effectiveSpeed = 0;
     if (this.navigation) this.navigation.reset(this.id);
     if (this._avatar) {
       this._avatar.resetAction();
       this._avatar.setMoving(false);
       this._avatar.setGrounded();
     }
+  }
+
+  // Watchdog de ronda: no teletransporta ni daña. Solo invalida la ruta que
+  // dejó de ser útil y hace que este operador tome una línea de choque nueva.
+  forceEngagement() {
+    this._lastSeen = null;
+    this._noContactT = 11;
+    this._tacticalGoal = { x: this._laneSeed * 5, z: 0 };
+    this.state = 'wander';
+    this.stateTimer = 0;
+    this._flankT = 1.0;
+    this._flankDir = -this._flankDir;
+    if (this.navigation) this.navigation.reset(this.id);
+  }
+
+  // Snapshot DEV explícito: permite observar el comportamiento real sin
+  // dejar overlays de producción ni arrays nuevos en el update por frame.
+  getNavigationDebug() {
+    const d = this._navDebug;
+    return {
+      id: this.id,
+      state: this.state,
+      target: this.target ? (this.target.operatorName || this.target.name || 'player') : null,
+      waypoint: d.waypoint ? { x: d.waypoint.x, z: d.waypoint.z } : null,
+      effectiveSpeed: d.effectiveSpeed,
+      distanceWindow: d.distanceWindow,
+      pathFailures: d.pathFailures,
+      collisionAttempts: d.collisionAttempts,
+      stuckRecoveries: d.stuckRecoveries,
+    };
   }
 
   update(dt, player, bots, map) {
@@ -553,10 +595,23 @@ export class Bot {
       }
     }
 
+    // Una recuperación siempre toma primero una salida lateral corta. Volver
+    // a pedir exactamente la misma ruta era la causa del bucle frente a caja.
+    if (this._recoveryT > 0) {
+      this._recoveryT -= dt;
+      goalX = this._recoveryGoal.x;
+      goalZ = this._recoveryGoal.z;
+    }
+
     // Consulta de waypoint (barata: cache 0.9s por bot en Navigation)
     if (nav && goalX !== null) {
       const w = nav.nextWaypoint(this, goalX, goalZ);
-      if (w) { wp = w; }
+      if (w) { wp = w; this._navDebug.waypoint = w; }
+      else {
+        this._navDebug.waypoint = null;
+        const rec = nav._paths && nav._paths.get(this.id);
+        if (rec) this._navDebug.pathFailures = rec.failures || 0;
+      }
     }
 
     if (this.state === 'wander') {
@@ -710,6 +765,7 @@ export class Bot {
       if (!map.checkCollision(nextPos, this.radius, this.height)) {
         this.position.copy(nextPos);
       } else {
+        this._navDebug.collisionAttempts++;
         // Try slide axis-separated (same contract as the player)
         const tryX = S.axis.copy(this.position); tryX.x = nextPos.x; tryX.y = nextPos.y;
         if (!map.checkCollision(tryX, this.radius, this.height)) this.position.x = tryX.x;
@@ -728,11 +784,18 @@ export class Bot {
       const anchor = this._stuckAnchor || (this._stuckAnchor = new THREE.Vector3());
       this._stuckT += dt;
       if (this._stuckT > 2.5) {
-        if (moveMag0 > 0.0002 && this.position.distanceTo(anchor) < 1.5) {
+        const traveled = this.position.distanceTo(anchor);
+        this._navDebug.distanceWindow = traveled;
+        this._navDebug.effectiveSpeed = traveled / this._stuckT;
+        if (moveMag0 > 0.0002 && traveled < 1.5) {
           if (nav) nav.reset(this.id);
           this.strafeDir = -this.strafeDir;
           this._flankT = 1.2;
           this._flankDir = -this._flankDir;
+          this._recoveryT = 1.35;
+          const angle = this.yaw + Math.PI * 0.5 * this._flankDir;
+          this._recoveryGoal.set(this.position.x + Math.sin(angle) * 4.2, 0, this.position.z + Math.cos(angle) * 4.2);
+          this._navDebug.stuckRecoveries++;
         }
         this._stuckT = 0;
         anchor.copy(this.position);
@@ -778,6 +841,7 @@ export class Bot {
     // WALK CYCLE — hip/shoulder pivots swing like a real stride. Speed drives
     // stride frequency; still bots settle to neutral pose smoothly.
     const speedNow = Math.hypot(this.velocity.x, this.velocity.z);
+    this._navDebug.effectiveSpeed = speedNow;
     const moving = move.lengthSq() > 0.01;
     this._stridePhase = (this._stridePhase || 0) + dt * (4 + speedNow * 1.6);
     const strideAmp = moving ? Math.min(0.55, 0.25 + speedNow * 0.09) : 0;

@@ -138,10 +138,12 @@ export class Lobby {
       group.add(c);
       return c;
     };
-    // Derecha-cerca del héroe (borde del encuadre, pantalla)
-    mkCol(1.6, 8.5, 1.2, 5.6, 4.2, 3.4, 0.45);
-    // Extremo derecho, aún más cerca de cámara (dolly de encuadre)
-    mkCol(2.8, 11, 1.8, 9.4, 5.4, 6.2, 0.2);
+    // Derecha de FONDO: antes estas columnas quedaban delante de la lente
+    // del retrato en pantallas anchas y tapaban al héroe con polígonos negros.
+    // Conservan profundidad, pero nunca ocupan el pasillo cámara→operador.
+    mkCol(1.6, 8.5, 1.2, 5.6, 4.2, -3.4, 0.45);
+    // Extremo derecho, también detrás del plano del héroe.
+    mkCol(2.8, 11, 1.8, 9.4, 5.4, -4.8, 0.2);
     // Izquierda lejana (tras el plano de la UI, apenas asoma)
     mkCol(1.8, 7, 1.3, -7.2, 3.4, 1.2, -0.35);
 
@@ -477,10 +479,10 @@ export class Lobby {
     const vFov = THREE.MathUtils.degToRad(LOBBY_FOV);
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
     const halfWView = Math.tan(hFov / 2) * dist; // semiancho visible en el plano del héroe
-    // 50%: el volumen de equipamiento requiere más separación de la UI lateral.
-    // El empuje extra es aire, no composición: el héroe sigue centrado en el
-    // tercio derecho y la bóveda lo recorta igual.
-    return halfWView * 0.50; // héroe al ~80% del ancho de pantalla
+    // 32% deja al operador en el tercio derecho sin arrinconarlo tras los
+    // elementos de ambientación del borde. La columna izquierda de UI sigue
+    // libre y el héroe conserva aire a ambos lados en 16:9 y móvil horizontal.
+    return halfWView * 0.32;
   }
 
   // Métricas (para el test de encuadre y debug): Box3 del héroe en NDC con
