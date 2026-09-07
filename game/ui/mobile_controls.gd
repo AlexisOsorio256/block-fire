@@ -30,19 +30,15 @@ func configure(is_mobile_qa: bool) -> void:
 	mobile_qa = is_mobile_qa
 	var settings := _settings()
 	layout = settings.get_control_layout() if settings != null else {}
-	set_process(true)
 	queue_redraw()
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Let the HUD's top-right settings/arsenal buttons receive taps. Gameplay
-	# touches are still consumed below once they are classified as controls.
-	mouse_filter = Control.MOUSE_FILTER_PASS
+	# HUD buttons own their own input. Gameplay touch is collected only from
+	# unhandled events, so no viewport-width coordinate hack can steal a tap.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var settings := _settings()
 	layout = settings.get_control_layout() if settings != null else {}
-	queue_redraw()
-
-func _process(_delta: float) -> void:
 	queue_redraw()
 
 func _notification(what: int) -> void:
@@ -51,25 +47,19 @@ func _notification(what: int) -> void:
 			or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		release_all()
 
-func _gui_input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
-		if _is_hud_action(event.position):
-			_dispatch_hud_action(event.position)
-			return
 		_handle_touch(event.index, event.position, event.pressed)
-		accept_event()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventScreenDrag:
 		_handle_drag(event.index, event.position, event.relative)
-		accept_event()
+		get_viewport().set_input_as_handled()
 	elif mobile_qa and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if _is_hud_action(event.position):
-			_dispatch_hud_action(event.position)
-			return
 		_handle_touch(0, event.position, event.pressed)
-		accept_event()
+		get_viewport().set_input_as_handled()
 	elif mobile_qa and event is InputEventMouseMotion and touch_positions.has(0):
 		_handle_drag(0, event.position, event.relative)
-		accept_event()
+		get_viewport().set_input_as_handled()
 
 func get_move_vector() -> Vector2:
 	return move_vector
@@ -169,10 +159,12 @@ func reset_layout() -> void:
 func qa_press_fire() -> void:
 	firing = true
 	fire_started.emit()
+	queue_redraw()
 
 func qa_release_fire() -> void:
 	firing = false
 	fire_stopped.emit()
+	queue_redraw()
 
 func qa_press_jump() -> void:
 	jump_request = true
@@ -180,6 +172,7 @@ func qa_press_jump() -> void:
 
 func qa_tap_aim() -> void:
 	aiming = not aiming
+	queue_redraw()
 
 func qa_press_aim() -> void:
 	qa_tap_aim()
@@ -190,6 +183,7 @@ func qa_release_aim() -> void:
 
 func qa_set_move(value: Vector2) -> void:
 	move_vector = value.limit_length(1.0)
+	queue_redraw()
 
 func qa_drag_look(delta: Vector2) -> void:
 	look_delta += delta
@@ -251,6 +245,7 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			qa_release_fire()
 		if pointer == aim_pointer:
 			aim_pointer = -1
+	queue_redraw()
 
 func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 	touch_positions[pointer] = position
@@ -262,10 +257,12 @@ func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 	elif not _in_any_button(position):
 		look_delta += relative
 		look_dragged.emit(relative)
+	queue_redraw()
 
 func _update_move(position: Vector2) -> void:
 	var center := _move_center()
 	move_vector = ((position - center) / 72.0).limit_length(1.0)
+	queue_redraw()
 
 func _move_center() -> Vector2:
 	var normalized: Vector2 = _normalized_position("joystick", Vector2(0.12, 0.76))
@@ -322,20 +319,6 @@ func _in_any_button(position: Vector2) -> bool:
 			return true
 	return false
 
-func _is_hud_action(position: Vector2) -> bool:
-	# Match both top-right HUD actions with a little safe-area tolerance.
-	return position.y <= 104.0 and position.x >= size.x - 250.0
-
-func _dispatch_hud_action(position: Vector2) -> void:
-	var hud := get_parent().get_parent() if get_parent() != null else null
-	if hud == null:
-		return
-	var normalized_x := position.x / maxf(size.x, 1.0)
-	if normalized_x < 0.94 and hud.has_method("toggle_control_editor"):
-		hud.toggle_control_editor()
-	elif hud.has_signal("arsenal_requested"):
-		hud.arsenal_requested.emit()
-
 func _draw() -> void:
 	if not mobile_qa and not DisplayServer.is_touchscreen_available():
 		return
@@ -374,9 +357,12 @@ func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> voi
 			for direction: Vector2 in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT]:
 				draw_line(center + direction * r * 0.45, center + direction * r, color, ICON_STROKE, true)
 		"aim":
-			var eye := PackedVector2Array([center + Vector2(-r, 0), center + Vector2(-r * 0.52, -r * 0.52), center, center + Vector2(r * 0.52, -r * 0.52), center + Vector2(r, 0), center + Vector2(r * 0.52, r * 0.52), center, center + Vector2(-r * 0.52, r * 0.52), center + Vector2(-r, 0)])
-			draw_polyline(eye, color, ICON_STROKE, true)
-			draw_circle(center, r * 0.22, color, false, ICON_STROKE)
+			draw_circle(center, r * 0.58, color, false, ICON_STROKE)
+			draw_circle(center, r * 0.12, color)
+			draw_line(center + Vector2(-r, 0), center + Vector2(-r * 0.64, 0), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.64, 0), center + Vector2(r, 0), color, ICON_STROKE, true)
+			draw_line(center + Vector2(0, -r), center + Vector2(0, -r * 0.64), color, ICON_STROKE, true)
+			draw_line(center + Vector2(0, r * 0.64), center + Vector2(0, r), color, ICON_STROKE, true)
 		"jump":
 			draw_line(center + Vector2(-r * 0.72, r * 0.42), center, color, ICON_STROKE, true)
 			draw_line(center, center + Vector2(r * 0.72, r * 0.42), color, ICON_STROKE, true)

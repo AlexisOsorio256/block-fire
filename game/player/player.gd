@@ -19,16 +19,19 @@ var camera: Camera3D
 var camera_pivot: Node3D
 var weapon: WeaponController
 var visual: OperatorVisual
+var feedback_audio: AudioStreamPlayer3D
 var look_yaw: float = 0.0
 var look_pitch: float = 0.0
 var jump_requested: bool = false
 var assist_target: Node
+var camera_recoil: float = 0.0
 var gravity: float = 22.0
 var walk_speed: float = 6.6
 var sprint_speed: float = 9.2
 var crouch_speed: float = 3.7
 var acceleration: float = 32.0
 var assist_break_timer: float = 0.0
+var step_timer: float = 0.0
 
 func configure(context: Node, team_id: String, selected_operator: String, controls: Node = null) -> void:
 	match_context = context
@@ -43,13 +46,37 @@ func _ready() -> void:
 	_create_collision()
 	_create_visual()
 	_create_camera()
+	feedback_audio = AudioStreamPlayer3D.new()
+	feedback_audio.name = "PlayerFeedbackSfx"
+	feedback_audio.bus = "SFX"
+	feedback_audio.max_distance = 24.0
+	add_child(feedback_audio)
 	health_changed.emit(health, max_health)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT \
+			or what == NOTIFICATION_APPLICATION_PAUSED \
+			or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		if mobile_controls != null and mobile_controls.has_method("release_all"):
+			mobile_controls.release_all()
+		if weapon != null:
+			weapon.clear_combat_input()
 
 func _physics_process(delta: float) -> void:
 	assist_break_timer = maxf(0.0, assist_break_timer - delta)
+	camera_recoil = move_toward(camera_recoil, 0.0, delta * 5.0)
 	if spawn_immunity > 0.0:
 		spawn_immunity = maxf(0.0, spawn_immunity - delta)
 	if not is_alive:
+		return
+	if match_context != null and match_context.has_method("is_combat_active") and not match_context.is_combat_active():
+		input_enabled = false
+		if weapon != null:
+			weapon.clear_combat_input()
+		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
+		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
+		_apply_gravity(delta)
+		move_and_slide()
 		return
 	_update_look(delta)
 	if not input_enabled:
@@ -69,6 +96,7 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	if _jump_pressed() and is_on_floor():
 		velocity.y = 8.4
+		_play_feedback("res://assets/sfx/jump.ogg")
 	if _crouch_pressed():
 		crouched = not crouched
 		_update_crouch_visual()
@@ -77,9 +105,16 @@ func _physics_process(delta: float) -> void:
 		weapon.set_aim_held(Input.is_action_pressed("aim") or _mobile_aim())
 		if Input.is_action_just_pressed("reload") or _mobile_reload():
 			weapon.request_reload()
+		if Input.is_action_just_pressed("previous_weapon"):
+			weapon.previous_weapon()
 		if Input.is_action_just_pressed("next_weapon") or _mobile_next_weapon():
 			weapon.next_weapon()
+		if Input.is_action_just_pressed("switch_weapon"):
+			weapon.switch_to(0)
 	move_and_slide()
+	_update_footsteps(delta)
+	if visual != null:
+		visual.set_combat_state(Vector2(velocity.x, velocity.z).length() > 0.15, weapon != null and weapon.fire_held)
 	if camera != null:
 		var target_fov := 58.0 if (weapon != null and weapon.aim_held) else 76.0
 		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
@@ -101,15 +136,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_4: weapon.switch_to(3)
 			KEY_ESCAPE: Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
-func take_damage(amount: float, source: Node, headshot: bool = false) -> void:
-	if not is_alive or spawn_immunity > 0.0:
-		return
+func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
+	if not can_use_combat() or spawn_immunity > 0.0:
+		return false
 	health = maxf(0.0, health - amount)
 	health_changed.emit(health, max_health)
 	if match_context != null and match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
 	if health <= 0.0:
+		_play_feedback("res://assets/sfx/sfx_death.ogg")
 		_die(source)
+	else:
+		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+	return true
 
 func _die(killer: Node) -> void:
 	if not is_alive:
@@ -120,7 +159,7 @@ func _die(killer: Node) -> void:
 	collision_layer = 0
 	collision_mask = 0
 	if weapon != null:
-		weapon.set_fire_held(false)
+		weapon.clear_combat_input()
 	if mobile_controls != null and mobile_controls.has_method("release_all"):
 		mobile_controls.release_all()
 	player_died.emit(self, killer)
@@ -141,9 +180,38 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	look_pitch = 0.0
 	assist_target = null
 	assist_break_timer = 0.0
+	camera_recoil = 0.0
+	_play_feedback("res://assets/sfx/respawn.ogg")
 
 func break_spawn_immunity() -> void:
 	spawn_immunity = 0.0
+
+func can_use_combat() -> bool:
+	return is_alive and input_enabled and (match_context == null or not match_context.has_method("is_combat_active") or bool(match_context.is_combat_active()))
+
+func apply_weapon_recoil(amount: float, ads: bool) -> void:
+	if not can_use_combat():
+		return
+	var kick := rad_to_deg(amount) * (0.72 if ads else 0.9)
+	camera_recoil += kick
+	look_pitch = clampf(look_pitch + kick, -78.0, 78.0)
+
+func _play_feedback(path: String) -> void:
+	if feedback_audio == null:
+		return
+	feedback_audio.stream = load(path) as AudioStream
+	feedback_audio.play()
+
+func _update_footsteps(delta: float) -> void:
+	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
+	if not is_on_floor() or horizontal_speed < 1.0:
+		step_timer = 0.0
+		return
+	step_timer -= delta
+	if step_timer > 0.0:
+		return
+	step_timer = lerpf(0.48, 0.27, clampf(horizontal_speed / sprint_speed, 0.0, 1.0))
+	_play_feedback("res://assets/sfx/step.ogg" if int(Time.get_ticks_msec() / 100) % 2 == 0 else "res://assets/sfx/step2.ogg")
 
 func get_team() -> String:
 	return team
@@ -155,7 +223,7 @@ func get_aim_origin() -> Vector3:
 	return camera.global_position if camera != null else global_position + Vector3.UP * 1.6
 
 func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) -> Vector3:
-	if mobile_controls == null or match_context == null or not match_context.has_method("get_combatants"):
+	if not can_use_combat() or mobile_controls == null or match_context == null or not match_context.has_method("get_combatants"):
 		return base_direction
 	var origin := get_aim_origin()
 	var chosen := _select_assist_target(base_direction, max_range, origin)
@@ -231,7 +299,7 @@ func _update_look(delta: float) -> void:
 		camera_pivot.rotation_degrees.x = look_pitch
 
 func _apply_rotational_assist(delta: float, look_input: Vector2) -> void:
-	if mobile_controls == null or match_context == null or camera == null:
+	if not can_use_combat() or mobile_controls == null or match_context == null or camera == null:
 		return
 	var engaged: bool = (mobile_controls.has_method("is_looking") and mobile_controls.is_looking()) \
 			or _mobile_fire() or _mobile_aim()

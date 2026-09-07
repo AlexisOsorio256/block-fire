@@ -47,11 +47,16 @@ func _test_weapon_definitions() -> void:
 		ids.append(definition.id)
 		_check(definition.damage > 0.0, definition.id + " damage must be positive")
 		_check(definition.magazine_size > 0, definition.id + " magazine must be positive")
+		_check(definition.reserve_ammo >= definition.magazine_size, definition.id + " reserve is definition-owned")
+		_check(definition.recoil > 0.0, definition.id + " recoil is data-owned")
 		_check(definition.range > definition.falloff_start, definition.id + " range/falloff ordering")
 	_check(ids.has("rifle") and ids.has("pistol") and ids.has("shotgun") and ids.has("smg"), "weapon roster ids")
 	_check(WeaponController.DEFINITIONS[0].automatic, "rifle is automatic")
 	_check(not WeaponController.DEFINITIONS[1].automatic, "pistol is semi automatic")
 	_check(WeaponController.DEFINITIONS[2].pellets > 1, "shotgun uses pellets")
+	_check(BotRole.make("entry").preferred_weapon_id == "smg", "entry role selects SMG")
+	_check(BotRole.make("support").preferred_weapon_id == "rifle", "support role selects rifle")
+	_check(BotRole.make("anchor").preferred_weapon_id == "rifle", "anchor role selects rifle")
 
 func _test_squad_rules() -> void:
 	_check(SquadRules.buy_duration(1) == 10.0, "first squad buy phase")
@@ -79,12 +84,14 @@ func _test_player_and_operator_contracts() -> void:
 	var model_paths: Array[String] = []
 	for definition: OperatorDefinition in roster:
 		model_paths.append(definition.model_scene)
-	var unique_paths: Array[String] = []
-	for path: String in model_paths:
-		if not unique_paths.has(path):
-			unique_paths.append(path)
-	_check(unique_paths.size() == model_paths.size(), "operators use distinct model paths")
+	_check(model_paths.all(func(path: String) -> bool: return path == OperatorDefinition.SHARED_CHARACTER_SCENE), "operators share one animated rig source")
 	_check(ResourceLoader.exists(roster[0].model_scene), "operator model asset imports")
+	var visual := OperatorVisual.new()
+	visual.configure("BRAVO", "ally", roster[0].accent)
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Idle"), "operator rig exposes idle animation")
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "operator rig exposes locomotion animation")
+	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "operator rig exposes death animation")
+	visual.free()
 
 func _test_touch_contracts() -> void:
 	var controls := BlockfireMobileControls.new()
@@ -124,13 +131,56 @@ func _test_consolidation_contracts() -> void:
 	_check(game_match.buy_weapon(0), "selecting owned rifle succeeds")
 	_check(game_match.coins == 500, "selecting owned rifle does not double-charge")
 	_check(game_match.is_weapon_owned(0), "purchased rifle is owned")
+	game_match.round_owned_weapons = {"pistol": true}
+	game_match.coins = 1300
+	_check(game_match.buy_weapon(2), "affordable shotgun purchase succeeds")
+	_check(game_match.coins == 100, "shotgun purchase charges once")
+	_check(game_match.buy_weapon(2), "selecting owned shotgun succeeds")
+	_check(game_match.coins == 100, "owned shotgun does not double-charge")
+	var availability_weapon := WeaponController.new()
+	availability_weapon.set_available_weapons([1, 2], 1)
+	_check(not availability_weapon.is_weapon_available(0), "unbought rifle is unavailable in squad")
+	_check(not availability_weapon.switch_to(0), "direct switch rejects unbought rifle")
+	availability_weapon.next_weapon()
+	_check(availability_weapon.active_index == 2, "next weapon follows the squad loadout")
+	availability_weapon.previous_weapon()
+	_check(availability_weapon.active_index == 1, "previous weapon follows the squad loadout")
+	availability_weapon.free()
+	var data_weapon := WeaponController.new()
+	data_weapon.setup(null)
+	_check(data_weapon.ammo[0] == WeaponController.DEFINITIONS[0].magazine_size, "ammo magazine comes from weapon definition")
+	_check(data_weapon.reserve[3] == WeaponController.DEFINITIONS[3].reserve_ammo, "reserve ammo comes from weapon definition")
+	_check(data_weapon.muzzle_anchor != null and data_weapon.muzzle_anchor.get_parent() == data_weapon.viewmodel, "muzzle flash anchor follows the viewmodel")
+	data_weapon.free()
 	var bot := BlockfireBot.new()
 	game_match.kills[bot.get_instance_id()] = 0
-	_check(not game_match.register_ffa_kill(bot), "FFA kill below target continues")
+	_check(game_match.register_ffa_kill(bot), "FFA kill below target registers")
 	_check(int(game_match.kills[bot.get_instance_id()]) == 1, "bot kill against player increments killer score")
+	_check(not game_match.ffa_killer_reached_target(bot), "FFA continues at one kill")
+	game_match.kills[bot.get_instance_id()] = 18
+	_check(game_match.register_ffa_kill(bot), "FFA nineteenth kill registers")
+	_check(not game_match.ffa_killer_reached_target(bot), "FFA continues at nineteen kills")
+	_check(game_match.register_ffa_kill(bot), "FFA twentieth kill registers")
+	_check(game_match.ffa_killer_reached_target(bot), "FFA ends only after twenty kills")
 	_check(MatchScript.ffa_result_title(false) == "DERROTA", "bot FFA winner is player defeat")
 	_check(MatchScript.ffa_result_title(true) == "VICTORIA", "player FFA winner is victory")
 	var player := BlockfirePlayer.new()
+	player.configure(game_match, "ally", "BRAVO")
+	player.input_enabled = true
+	game_match.state = "BUY"
+	var health_before := player.health
+	player.take_damage(40.0, bot)
+	_check(player.health == health_before, "BUY blocks damage")
+	var gated_bot := BlockfireBot.new()
+	gated_bot.configure(game_match, "enemy", "HAVOC", "support")
+	var bot_health_before := gated_bot.health
+	gated_bot.take_damage(40.0, player)
+	_check(gated_bot.health == bot_health_before, "BUY blocks bot damage")
+	var gated_weapon := WeaponController.new()
+	gated_weapon.setup(player)
+	gated_weapon.set_fire_held(true)
+	_check(not gated_weapon.try_fire(), "BUY blocks firing")
+	gated_weapon.free()
 	player.spawn_immunity = 2.0
 	player.break_spawn_immunity()
 	_check(player.spawn_immunity == 0.0, "firing contract can break spawn immunity")
@@ -145,6 +195,7 @@ func _test_consolidation_contracts() -> void:
 	_check(weapon.is_headshot_collider(head), "head hitbox resolves as headshot")
 	weapon.free()
 	player.free()
+	gated_bot.free()
 	bot.free()
 	game_match.free()
 
@@ -189,6 +240,8 @@ func _test_navigation_contract() -> void:
 		if absf(point.z) > 4.5:
 			bends = true
 	_check(bends, "navigation path routes around center cover")
+	var gate_path := NavigationServer3D.map_get_path(agent.get_navigation_map(), Vector3(0, 0.2, -40), Vector3(0, 0.2, -24), true)
+	_check(gate_path.size() >= 2, "navigation reaches the open north gate")
 	viewport.remove_child(agent_root)
 	agent_root.free()
 	viewport.remove_child(arena)

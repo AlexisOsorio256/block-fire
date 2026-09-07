@@ -14,20 +14,21 @@ orquesta compra, combate, muerte, respawn, espectador, score y retry.
   mirada, fuego-arrastre, botones y liberación segura.
 - `game/ui/control_editor.gd`: edición táctil de posición, escala y opacidad
   dentro de safe area; persiste en `SettingsStore`.
-- `game/weapons/weapon_controller.gd`: cuatro armas, munición, cadencia,
-  hitscan, oclusión, recoil, ADS, viewmodel, audio y skin.
+- `game/weapons/weapon_controller.gd`: cuatro armas, munición derivada de
+  `.tres`, loadout disponible, cadencia, hitscan, oclusión, recoil, ADS,
+  viewmodel, muzzle anchor, audio y skin.
 - `game/bots/bot.gd`: percepción, roles, selección de enemigo, combate y
   movimiento mediante `NavigationAgent3D`.
 - `game/world/arena.gd`: geometría, colliders, cobertura, iluminación,
   navegación y línea de visión.
-- `game/ui/hud.gd`: score, ronda, compra, salud, munición, banners, daño,
-  espectador, fin de partida y controles móviles.
+- `game/ui/hud.gd`: score por modo, ronda, compra, salud, munición, crosshair,
+  banners, daño, espectador, fin de partida y controles móviles.
 - `game/lobby/lobby.gd`: selección de modo, operador, skin, ajustes y entrada
   a la partida.
 - `game/audio/default_bus_layout.tres` y `game/settings_store.gd`: buses,
   volumen y preferencias locales.
-- `game/characters/operator_visual.gd`: cinco operadores Kenney, equipo,
-  marcador de equipo y fallback geométrico.
+- `game/characters/operator_visual.gd`: rig humanoide animado de Quaternius,
+  tintes/equipo, marcador de equipo, clips de locomoción/muerte y fallback.
 
 ## Datos y verificación
 

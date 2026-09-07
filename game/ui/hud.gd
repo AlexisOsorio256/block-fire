@@ -2,6 +2,7 @@ class_name BlockfireHud
 extends CanvasLayer
 
 const ControlEditorScript := preload("res://game/ui/control_editor.gd")
+const CrosshairScript := preload("res://game/ui/crosshair.gd")
 
 signal buy_requested(index: int)
 signal arsenal_requested
@@ -21,6 +22,7 @@ var weapon_label: Label
 var status_label: Label
 var banner_label: Label
 var damage_label: Label
+var crosshair: Control
 var bottom_bar: HBoxContainer
 var control_editor
 var buy_panel: PanelContainer
@@ -30,6 +32,7 @@ var buy_coins: Label
 var buy_buttons: Array[Button] = []
 var spectator_panel: PanelContainer
 var end_panel: PanelContainer
+var ui_audio: AudioStreamPlayer
 var mobile_qa: bool = false
 
 func setup(context: Node, use_mobile_qa: bool) -> void:
@@ -42,6 +45,10 @@ func _build() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	ui_audio = AudioStreamPlayer.new()
+	ui_audio.name = "UiFeedbackSfx"
+	ui_audio.bus = "UI"
+	add_child(ui_audio)
 
 	var top_panel := PanelContainer.new()
 	top_panel.anchor_left = 0.5
@@ -63,7 +70,7 @@ func _build() -> void:
 	top_row.add_child(round_label)
 
 	var settings := Button.new()
-	settings.text = "⚙"
+	settings.text = "CFG"
 	settings.tooltip_text = "Editar controles"
 	settings.anchor_left = 1.0
 	settings.anchor_right = 1.0
@@ -77,7 +84,7 @@ func _build() -> void:
 	root.add_child(settings)
 
 	var arsenal := Button.new()
-	arsenal.text = "▣"
+	arsenal.text = "ARM"
 	arsenal.tooltip_text = "Abrir arsenal (B)"
 	arsenal.anchor_left = 1.0
 	arsenal.anchor_right = 1.0
@@ -90,16 +97,17 @@ func _build() -> void:
 	arsenal.pressed.connect(func() -> void: arsenal_requested.emit())
 	root.add_child(arsenal)
 
-	var crosshair := BlockfireTheme.label("+", 28, Color("#ffffffcc"))
+	crosshair = CrosshairScript.new()
+	crosshair.name = "Crosshair"
+	crosshair.custom_minimum_size = Vector2(34, 34)
 	crosshair.anchor_left = 0.5
 	crosshair.anchor_top = 0.5
 	crosshair.anchor_right = 0.5
 	crosshair.anchor_bottom = 0.5
-	crosshair.offset_left = -10
-	crosshair.offset_top = -20
-	crosshair.offset_right = 10
-	crosshair.offset_bottom = 10
-	crosshair.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	crosshair.offset_left = -17
+	crosshair.offset_top = -17
+	crosshair.offset_right = 17
+	crosshair.offset_bottom = 17
 	root.add_child(crosshair)
 
 	bottom_bar = HBoxContainer.new()
@@ -176,6 +184,11 @@ func update_score(ally: int, enemy: int, round_number: int) -> void:
 		score_label.text = "%d   —   %d" % [ally, enemy]
 		round_label.text = "R%d" % round_number
 
+func update_ffa_score(kills: int, target: int) -> void:
+	if score_label != null:
+		score_label.text = "KILLS %d / %d" % [kills, target]
+		round_label.text = "FFA"
+
 func update_health(value: float, maximum: float) -> void:
 	if health_label != null:
 		health_label.text = "%d  HP" % roundi(value)
@@ -210,6 +223,22 @@ func show_damage(text: String, headshot: bool = false) -> void:
 	tween.tween_interval(0.55)
 	tween.tween_property(damage_label, "modulate", Color(1, 1, 1, 0), 0.28)
 
+func show_hit_feedback(amount: float, headshot: bool) -> void:
+	show_damage("%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot)
+	if crosshair != null:
+		crosshair.register_hit(headshot)
+	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_hit.ogg")
+
+func show_kill(headshot: bool = false) -> void:
+	show_banner("HEADSHOT" if headshot else "ELIMINACIÓN", 0.8)
+	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_kill.ogg")
+
+func _play_ui_sound(path: String) -> void:
+	if ui_audio == null:
+		return
+	ui_audio.stream = load(path) as AudioStream
+	ui_audio.play()
+
 func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[WeaponDefinition], equipped: int) -> void:
 	if visible:
 		if is_instance_valid(buy_panel):
@@ -236,7 +265,7 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		buy_timer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		buy_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		header.add_child(buy_timer)
-		buy_coins = BlockfireTheme.label("🪙 %d" % coins, 14, Color("#ffe285"))
+		buy_coins = BlockfireTheme.label("CRÉDITOS  %d" % coins, 14, Color("#ffe285"))
 		buy_coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		stack.add_child(buy_coins)
 		var row := HBoxContainer.new()
@@ -246,7 +275,9 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		for index: int in range(definitions.size()):
 			var definition := definitions[index]
 			var button := Button.new()
-			button.text = "%s\n🪙 %d" % [definition.display_name, definition.cost]
+			var owned: bool = match_context != null and match_context.has_method("is_weapon_owned") and bool(match_context.is_weapon_owned(index))
+			var state_text := "EQUIPADA" if index == equipped else ("COMPRADA" if owned else "COSTE %d" % definition.cost)
+			button.text = "%s\n%s" % [definition.display_name, state_text]
 			button.custom_minimum_size = Vector2(0, 72)
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			button.add_theme_font_size_override("font_size", 14)
@@ -254,7 +285,7 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 			button.pressed.connect(func() -> void: buy_requested.emit(index))
 			row.add_child(button)
 			buy_buttons.append(button)
-			button.modulate = Color.WHITE if index == equipped else Color("#8795a8")
+			button.modulate = Color.WHITE if index == equipped else (Color("#b6e3cb") if owned else Color("#8795a8"))
 		var hint := BlockfireTheme.label("GANA EL PRIMERO EN LLEGAR A 4 RONDAS · las rondas se ganan eliminando al equipo rival", 10, Color("#9db7db"))
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		stack.add_child(hint)
@@ -337,6 +368,11 @@ func hide_spectator() -> void:
 		spectator_panel = null
 
 func show_match_end(title: String, subtitle: String) -> void:
+	if mobile_controls != null:
+		mobile_controls.release_all()
+		mobile_controls.visible = false
+	if bottom_bar != null:
+		bottom_bar.visible = false
 	if is_instance_valid(end_panel):
 		end_panel.queue_free()
 	end_panel = PanelContainer.new()

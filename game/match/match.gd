@@ -81,6 +81,7 @@ func _start_round() -> void:
 	round_start_count += 1
 	round_owned_weapons = {"pistol": true}
 	ffa_winner = null
+	spawn_status_active = false
 	if hud != null and hud.mobile_controls != null:
 		hud.mobile_controls.release_all()
 	_clear_actors()
@@ -92,6 +93,9 @@ func _start_round() -> void:
 			_create_bot(spawns[index], "ally", ["entry", "support", "anchor"][index - 1], ["TALON", "DUNE", "VULTURE"][index - 1], 0.0)
 		for index: int in range(4, 8):
 			_create_bot(spawns[index], "enemy", ["entry", "support", "anchor", "entry"][index - 4], ["HAVOC", "VULTURE", "DUNE", "TALON"][index - 4], 0.08)
+		if player != null:
+			player.weapon.set_available_weapons(_owned_weapon_indices(), 1)
+			player.input_enabled = false
 		hud.update_score(ally_rounds, enemy_rounds, round_number)
 		if qa_skip_buy:
 			round_timer = 0.0
@@ -104,7 +108,9 @@ func _start_round() -> void:
 		_create_player(spawns[0], "player")
 		for index: int in range(1, 8):
 			_create_bot(spawns[index], "bot_%d" % index, ["entry", "support", "anchor"][index % 3], ["VULTURE", "TALON", "DUNE", "HAVOC"][index % 4], 0.05)
-		hud.update_score(0, 0, 1)
+		if player != null:
+			player.weapon.set_available_weapons([0, 1, 2, 3], 1)
+			hud.update_ffa_score(0, FfaRules.KILLS_TO_WIN)
 		_start_combat()
 	kills.clear()
 	if player != null:
@@ -148,10 +154,10 @@ func get_rally_point(team_id: String) -> Vector3:
 	return Vector3(-6, 0.2, 0) if team_id == "ally" else Vector3(6, 0.2, 0)
 
 func register_damage(victim: Node, amount: float, headshot: bool, source: Node) -> void:
+	if state != "COMBAT":
+		return
 	if victim == player:
-		hud.show_damage("-%d" % roundi(amount), false)
-	elif source == player:
-		hud.show_damage("%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot)
+		hud.show_damage("-%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot)
 
 func _create_player(spawn: Vector3, team_id: String) -> void:
 	player = Player.new()
@@ -159,11 +165,14 @@ func _create_player(spawn: Vector3, team_id: String) -> void:
 	player.configure(self, team_id, operator_id, hud.mobile_controls)
 	add_child(player)
 	player.global_position = spawn
+	player.spawn_immunity = 1.2
+	player.input_enabled = mode == "ffa"
+	player.weapon.set_available_weapons([0, 1, 2, 3] if mode == "ffa" else [1], 1)
 	player.player_died.connect(_on_player_died)
 	player.health_changed.connect(hud.update_health)
 	player.weapon.ammo_changed.connect(hud.update_ammo)
 	player.weapon.weapon_changed.connect(func(definition: WeaponDefinition) -> void: hud.update_ammo(player.weapon.ammo[player.weapon.active_index], player.weapon.reserve[player.weapon.active_index], definition))
-	player.weapon.damage_confirmed.connect(func(amount: float, headshot: bool) -> void: hud.show_damage("%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot))
+	player.weapon.damage_confirmed.connect(func(amount: float, headshot: bool) -> void: hud.show_hit_feedback(amount, headshot))
 
 func _create_bot(spawn: Vector3, team_id: String, role_id: String, bot_operator: String, bonus: float) -> void:
 	var bot := Bot.new()
@@ -171,6 +180,8 @@ func _create_bot(spawn: Vector3, team_id: String, role_id: String, bot_operator:
 	bot.configure(self, team_id, bot_operator, role_id, bonus)
 	add_child(bot)
 	bot.global_position = spawn
+	bot.spawn_immunity = 1.2
+	bot.weapon.set_available_weapons([bot.preferred_weapon_index()], bot.preferred_weapon_index())
 	bot.bot_died.connect(_on_bot_died)
 	bots.append(bot)
 	kills[bot.get_instance_id()] = 0
@@ -184,6 +195,7 @@ func _on_buy_requested(index: int) -> void:
 	if not buy_weapon(index):
 		hud.set_status("MONEDAS INSUFICIENTES", Color("#ff9d86"))
 		return
+	player.weapon.set_available_weapons(_owned_weapon_indices(), index)
 	player.weapon.switch_to(index)
 	hud.show_buy(true, round_timer, coins, WeaponController.DEFINITIONS, index)
 	hud.set_status("EQUIPADA · %s" % definition.display_name, Color("#9be6ff"))
@@ -238,6 +250,8 @@ func _on_bot_died(dead: Node, killer: Node) -> void:
 		if is_instance_valid(killer):
 			var id: int = killer.get_instance_id()
 			kills[id] = int(kills.get(id, 0)) + 1
+			if killer == player:
+				hud.show_kill()
 	if mode == "ffa":
 		_schedule_respawn(dead)
 	else:
@@ -246,8 +260,10 @@ func _on_bot_died(dead: Node, killer: Node) -> void:
 func _register_ffa_kill(killer: Node) -> bool:
 	if not register_ffa_kill(killer):
 		return false
-	hud.update_score(get_player_kills(), 0, 1)
-	if FfaRules.is_match_over(kills[killer.get_instance_id()]):
+	if killer == player:
+		hud.show_kill()
+	hud.update_ffa_score(get_player_kills(), FfaRules.KILLS_TO_WIN)
+	if ffa_killer_reached_target(killer):
 		ffa_winner = killer
 		_finish_ffa()
 		return true
@@ -258,7 +274,12 @@ func register_ffa_kill(killer: Node) -> bool:
 		return false
 	var id: int = killer.get_instance_id()
 	kills[id] = int(kills.get(id, 0)) + 1
-	return FfaRules.is_match_over(kills[id])
+	return true
+
+func ffa_killer_reached_target(killer: Node) -> bool:
+	if not is_instance_valid(killer):
+		return false
+	return FfaRules.is_match_over(int(kills.get(killer.get_instance_id(), 0)))
 
 func _evaluate_squad() -> void:
 	if state != "COMBAT" or mode != "squad":
@@ -279,6 +300,7 @@ func _evaluate_squad() -> void:
 func _end_squad_round(winner: String) -> void:
 	if state != "COMBAT":
 		return
+	_stop_combat_inputs()
 	state = "ROUND_END"
 	transition_timer = 2.2
 	if winner == "ally":
@@ -336,8 +358,16 @@ func _update_spectator_camera() -> void:
 	if not is_instance_valid(target) or not target.get("is_alive"):
 		_cycle_spectator(1)
 		return
-	spectator_camera.global_position = target.global_position + Vector3(0, 3.2, 6.5)
-	spectator_camera.look_at(target.get_target_point(), Vector3.UP)
+	var focus: Vector3 = target.get_target_point()
+	var desired_position: Vector3 = focus + Vector3(0, 3.2, 6.5)
+	var query := PhysicsRayQueryParameters3D.create(focus, desired_position)
+	query.collision_mask = 1
+	query.exclude = [target.get_rid()]
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		desired_position = hit.position - desired_position.direction_to(focus) * 0.4
+	spectator_camera.global_position = desired_position
+	spectator_camera.look_at(focus, Vector3.UP)
 
 func _schedule_respawn(actor: Node) -> void:
 	var delay := FfaRules.respawn_delay()
@@ -362,7 +392,7 @@ func _update_spawn_status() -> void:
 		return
 	var remaining := float(player.get("spawn_immunity"))
 	if remaining > 0.0:
-		hud.set_status("🛡️ %.1fs · DISPARAR LO ROMPE" % remaining, Color("#91e6ff"))
+		hud.set_status("ESCUDO %.1fs · DISPARAR LO ROMPE" % remaining, Color("#91e6ff"))
 	else:
 		spawn_status_active = false
 		hud.set_status("COMBATE ACTIVO", Color("#b7d4ee"))
@@ -370,6 +400,7 @@ func _update_spawn_status() -> void:
 func _finish_ffa() -> void:
 	if state == "FINISHED":
 		return
+	_stop_combat_inputs()
 	state = "FINISHED"
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var winner_name := str(ffa_winner.name) if is_instance_valid(ffa_winner) else "GANADOR"
@@ -379,6 +410,7 @@ static func ffa_result_title(player_won: bool) -> String:
 	return "VICTORIA" if player_won else "DERROTA"
 
 func retry() -> void:
+	_stop_combat_inputs()
 	ally_rounds = 0
 	enemy_rounds = 0
 	round_number = 1
@@ -395,6 +427,8 @@ func get_player_kills() -> int:
 
 func _clear_actors() -> void:
 	if is_instance_valid(player):
+		if player.weapon != null:
+			player.weapon.clear_combat_input()
 		player.queue_free()
 	player = null
 	for bot: BlockfireBot in bots:
@@ -404,4 +438,22 @@ func _clear_actors() -> void:
 	spectator_targets.clear()
 	if is_instance_valid(spectator_camera):
 		spectator_camera.queue_free()
-		spectator_camera = null
+	spectator_camera = null
+
+func _owned_weapon_indices() -> Array[int]:
+	var result: Array[int] = []
+	for index: int in range(WeaponController.DEFINITIONS.size()):
+		if is_weapon_owned(index):
+			result.append(index)
+	return result
+
+func _stop_combat_inputs() -> void:
+	if hud != null and hud.mobile_controls != null:
+		hud.mobile_controls.release_all()
+	if is_instance_valid(player):
+		player.input_enabled = false
+		if player.weapon != null:
+			player.weapon.clear_combat_input()
+	for bot: BlockfireBot in bots:
+		if is_instance_valid(bot) and bot.weapon != null:
+			bot.weapon.clear_combat_input()

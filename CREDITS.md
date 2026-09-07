@@ -23,15 +23,29 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 - **Licencia**: CC0 1.0 (dominio público, sin atribución requerida —
   se registra como cortesía)
 
-## Personajes — Kenney Blocky Characters (CC0)
+## Personajes legacy — Kenney Blocky Characters (CC0)
 
 `assets/models/kenney_blocky/character-{a,b,c,d,e}.glb` y sus texturas
 
 - **Fuente**: Kenney, [Blocky Characters](https://kenney.nl/assets/blocky-characters)
 - **Licencia**: Creative Commons Zero (CC0); copia local en
   `assets/models/kenney_blocky/LICENSE-KENNEY.txt`
-- Se usan como cinco operadores visualmente distintos y son aptos para uso
-  comercial según la licencia publicada por el autor.
+- Se conservan como fallback/migración licenciada; el runtime canónico usa el
+  rig humanoide de Quaternius descrito abajo.
+
+## Operadores y props — Quaternius Toon Shooter Game Kit (CC0)
+
+`assets/models/quaternius_toon_shooter/Character_Soldier.gltf`,
+`Character_Enemy.gltf`, `Barrier_Large.gltf` + `Barrier_Large_Fence.png`,
+`Container_Long.gltf` y `Structure_1.gltf`
+
+- **Fuente**: Quaternius, [Toon Shooter Game Kit](https://quaternius.com/packs/toonshootergamekit.html)
+- **Licencia**: Creative Commons Zero (CC0) 1.0, indicada explícitamente en
+  la página oficial del pack; evidencia y hashes en
+  `assets/models/quaternius_toon_shooter/LICENSE-QUATERNIUS.md`
+- Se integran como un rig animado compartido (con la variante de color
+  enemiga del mismo kit), y como decoración visual ligera del mapa; no se
+  redistribuye el pack como tal.
 
 ## Modelos de armas — Kenney (CC0)
 

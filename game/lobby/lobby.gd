@@ -13,6 +13,8 @@ var operator_buttons: Dictionary = {}
 var skin_buttons: Dictionary = {}
 var settings_popup: PanelContainer
 var ui_root: Control
+var profile_label: Label
+var armory_label: Label3D
 
 const OPERATORS: Array[String] = ["BRAVO", "VULTURE", "TALON", "DUNE", "HAVOC"]
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
@@ -90,6 +92,50 @@ func _build_world() -> void:
 	hero.rotation_degrees.y = 0.0
 	hero.configure(selected_operator, "ally", _operator_color(selected_operator))
 	add_child(hero)
+	_create_weapon_display()
+
+func _create_weapon_display() -> void:
+	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
+	if packed == null:
+		return
+	var display_base := MeshInstance3D.new()
+	display_base.name = "ArmoryPreviewBase"
+	var base_mesh := CylinderMesh.new()
+	base_mesh.top_radius = 0.58
+	base_mesh.bottom_radius = 0.68
+	base_mesh.height = 0.16
+	display_base.mesh = base_mesh
+	display_base.position = Vector3(3.55, 0.28, 0.15)
+	display_base.material_override = _material(Color("#405a76"))
+	add_child(display_base)
+	var display_ring := MeshInstance3D.new()
+	display_ring.name = "ArmoryPreviewRing"
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.58
+	ring_mesh.outer_radius = 0.64
+	display_ring.mesh = ring_mesh
+	display_ring.position = Vector3(3.55, 0.38, 0.15)
+	display_ring.material_override = _material(BlockfireTheme.GOLD)
+	add_child(display_ring)
+	var display := Node3D.new()
+	display.name = "ArmoryPreview"
+	display.position = Vector3(3.55, 0.78, 0.15)
+	display.rotation_degrees = Vector3(-8.0, 180.0, -24.0)
+	display.scale = Vector3.ONE * 1.05
+	display.add_child(packed.instantiate())
+	add_child(display)
+	armory_label = Label3D.new()
+	armory_label.name = "ArmoryPreviewLabel"
+	armory_label.text = "RIFLE  //  " + selected_skin.to_upper()
+	armory_label.position = Vector3(3.25, 2.65, 0.0)
+	armory_label.font_size = 30
+	armory_label.pixel_size = 0.006
+	armory_label.modulate = BlockfireTheme.GOLD
+	armory_label.outline_size = 7
+	armory_label.outline_modulate = Color("#071127cc")
+	armory_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	armory_label.no_depth_test = true
+	add_child(armory_label)
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -172,8 +218,9 @@ func _build_ui() -> void:
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 12)
 	left.add_child(footer)
-	var stats := BlockfireTheme.label("ÚLTIMA:  0 KILLS  ·  0 MUERTES  ·  VICTORIAS:  0", 12, Color("#b9cde7"))
-	footer.add_child(stats)
+	profile_label = BlockfireTheme.label("OPERADOR ACTIVO  ·  " + selected_operator, 12, Color("#b9cde7"))
+	profile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(profile_label)
 	var settings := Button.new()
 	settings.text = "CONFIGURACIÓN"
 	settings.custom_minimum_size = Vector2(150, 34)
@@ -220,6 +267,8 @@ func _select_operator(id: String) -> void:
 		settings.set_value("operator", id)
 	for key: String in operator_buttons:
 		operator_buttons[key].modulate = Color.WHITE if key == id else Color("#8292a8")
+	if profile_label != null:
+		profile_label.text = "OPERADOR ACTIVO  ·  " + id
 	if is_instance_valid(hero):
 		hero.configure(id, "ally", _operator_color(id))
 
@@ -230,6 +279,8 @@ func _select_skin(skin: String) -> void:
 		settings.set_value("weapon_skin", skin)
 	for key: String in skin_buttons:
 		skin_buttons[key].modulate = Color.WHITE if key == skin else Color("#8292a8")
+	if armory_label != null:
+		armory_label.text = "RIFLE  //  " + skin.to_upper()
 
 func _on_play() -> void:
 	start_requested.emit(selected_mode, selected_operator, selected_skin)
@@ -251,7 +302,7 @@ func _open_settings() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	settings_popup.add_child(stack)
-	var heading := BlockfireTheme.label("AJUSTES DE LAB", 18, Color.WHITE)
+	var heading := BlockfireTheme.label("CONFIGURACIÓN", 18, Color.WHITE)
 	stack.add_child(heading)
 	_add_setting_slider(stack, "VOLUMEN MASTER", "master_volume", 0.0, 1.0, 0.85)
 	_add_setting_slider(stack, "VOLUMEN SFX", "sfx_volume", 0.0, 1.0, 0.9)

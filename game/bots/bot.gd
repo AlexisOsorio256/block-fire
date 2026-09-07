@@ -12,9 +12,11 @@ var is_alive: bool = true
 var health: float = 200.0
 var max_health: float = 200.0
 var bot_accuracy: float = 0.68
+var difficulty_bonus: float = 0.0
 var spawn_immunity: float = 0.0
 var weapon: WeaponController
 var visual: OperatorVisual
+var feedback_audio: AudioStreamPlayer3D
 var navigation_agent: NavigationAgent3D
 var target: Node
 var target_refresh: float = 0.0
@@ -25,14 +27,22 @@ var target_memory_position: Vector3 = Vector3.ZERO
 var target_memory_timer: float = 0.0
 var navigation_safe_velocity: Vector3 = Vector3.ZERO
 var has_navigation_safe_velocity: bool = false
+var reposition_timer: float = 0.0
+var death_hide_timer: float = 0.0
+var rng := RandomNumberGenerator.new()
 
 func configure(context: Node, team_id: String, selected_operator: String, role_id: String, difficulty_bonus: float = 0.0) -> void:
 	match_context = context
 	team = team_id
 	operator_id = selected_operator
 	role = BotRole.make(role_id)
-	bot_accuracy = clampf(role.accuracy + difficulty_bonus, 0.28, 0.9)
+	self.difficulty_bonus = clampf(difficulty_bonus, 0.0, 0.2)
+	# Enemy advantage is deliberately distributed: a little faster reaction,
+	# slightly better shot quality and more willingness to reposition/recover.
+	bot_accuracy = clampf(role.accuracy + self.difficulty_bonus * 0.32, 0.28, 0.9)
+	rng.randomize()
 	orbit_sign = -1.0 if hash(name) % 2 == 0 else 1.0
+	reposition_timer = rng.randf_range(0.2, 1.0)
 
 func _ready() -> void:
 	add_to_group("combatants")
@@ -42,6 +52,11 @@ func _ready() -> void:
 	visual = OperatorVisual.new()
 	visual.configure(operator_id, team, _team_color())
 	add_child(visual)
+	feedback_audio = AudioStreamPlayer3D.new()
+	feedback_audio.name = "BotFeedbackSfx"
+	feedback_audio.bus = "SFX"
+	feedback_audio.max_distance = 24.0
+	add_child(feedback_audio)
 	navigation_agent = NavigationAgent3D.new()
 	navigation_agent.name = "NavigationAgent3D"
 	navigation_agent.path_height_offset = 0.0
@@ -63,34 +78,41 @@ func _ready() -> void:
 	last_position = global_position
 
 func _physics_process(delta: float) -> void:
+	if death_hide_timer > 0.0:
+		death_hide_timer = maxf(0.0, death_hide_timer - delta)
+		if death_hide_timer <= 0.0:
+			visible = false
 	if spawn_immunity > 0.0:
 		spawn_immunity = maxf(0.0, spawn_immunity - delta)
+	if target_memory_timer > 0.0:
+		target_memory_timer = maxf(0.0, target_memory_timer - delta)
+	reposition_timer = maxf(0.0, reposition_timer - delta)
 	if not is_alive or match_context == null:
 		return
 	if match_context.has_method("is_combat_active") and not match_context.is_combat_active():
 		_stop_navigation()
+		weapon.clear_combat_input()
 		_move_with_velocity(Vector3.ZERO, delta)
 		return
 	target_refresh -= delta
 	if target_refresh <= 0.0:
-		target_refresh = 0.24
+		target_refresh = maxf(0.12, role.reaction - difficulty_bonus * 0.55)
 		_acquire_target()
 	var movement_target := Vector3.ZERO
 	var can_see := false
-	if is_instance_valid(target) and target.get("is_alive"):
+	var target_alive := is_instance_valid(target) and bool(target.get("is_alive"))
+	if target_alive:
 		var target_position: Vector3 = target.get_target_point()
 		var distance := global_position.distance_to(target_position)
 		can_see = _has_line_of_sight(target_position)
 		if can_see:
 			target_memory_position = Vector3(target_position.x, 0.2, target_position.z)
 			target_memory_timer = 1.35
-		elif target_memory_timer > 0.0:
-			target_memory_timer = maxf(0.0, target_memory_timer - delta)
 		if can_see or target_memory_timer > 0.0:
 			movement_target = _movement_intent(target_position, distance, can_see)
-		else:
-			target = null
-	if target == null or not is_instance_valid(target):
+	elif not is_instance_valid(target) or target_memory_timer <= 0.0:
+		target = null
+	if target == null or not is_instance_valid(target) or not bool(target.get("is_alive")):
 		if target_memory_timer > 0.0:
 			movement_target = target_memory_position
 		elif match_context.has_method("get_rally_point"):
@@ -104,14 +126,20 @@ func _physics_process(delta: float) -> void:
 	if movement_target.length_squared() > 0.01:
 		movement_target.y = 0.2
 		navigation_agent.target_position = movement_target
-	var desired_velocity := _navigation_velocity(4.4 + role.aggression * 1.5)
+	var desired_velocity := _navigation_velocity(4.4 + (role.aggression + difficulty_bonus * 0.45) * 1.5)
 	_move_with_velocity(desired_velocity, delta)
-	if desired_velocity.length_squared() > 0.1:
+	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held)
+	if desired_velocity.length_squared() > 0.1 or (target_alive and can_see):
 		var facing := desired_velocity.normalized()
-		rotation.y = lerp_angle(rotation.y, atan2(-facing.x, -facing.z), delta * 6.0)
+		if target_alive and can_see:
+			facing = global_position.direction_to(target.get_target_point())
+			facing.y = 0.0
+			facing = facing.normalized()
+		if facing.length_squared() > 0.001:
+			rotation.y = lerp_angle(rotation.y, atan2(-facing.x, -facing.z), delta * 6.0)
 	if global_position.distance_to(last_position) < 0.03 and desired_velocity.length_squared() > 0.1:
 		stuck_timer += delta
-		if stuck_timer > 1.0:
+		if stuck_timer > maxf(0.72, 1.0 - difficulty_bonus * 1.6):
 			_recover_from_stuck()
 	else:
 		stuck_timer = 0.0
@@ -130,6 +158,16 @@ func _movement_intent(target_position: Vector3, distance: float, can_see: bool) 
 		return Vector3(target_position.x, 0.2, target_position.z)
 	if distance < ideal - 2.0:
 		return Vector3(target_position.x, 0.2, target_position.z) - flat_to_target * maxf(ideal, 6.0)
+	# Anchor holds the angle more often; entry creates a readable lateral move.
+	# The timer prevents random jitter every frame while still making roles
+	# observably different without a behavior-tree layer.
+	if reposition_timer > 0.0:
+		return global_position
+	var reposition_chance := clampf(role.reposition_tendency + difficulty_bonus * 0.55, 0.12, 0.9)
+	if rng.randf() > reposition_chance:
+		reposition_timer = lerpf(2.8, 1.8, role.reposition_tendency)
+		return global_position
+	reposition_timer = lerpf(2.8, 1.15, role.reposition_tendency)
 	var lateral := Vector3(-flat_to_target.z, 0.0, flat_to_target.x)
 	var orbit_distance := clampf(ideal * 0.42, 3.0, 8.0)
 	return Vector3(target_position.x, 0.2, target_position.z) + lateral * orbit_sign * orbit_distance
@@ -184,23 +222,29 @@ func _recover_from_stuck() -> void:
 		target = null
 	_stop_navigation()
 
-func take_damage(amount: float, source: Node, headshot: bool = false) -> void:
-	if not is_alive or spawn_immunity > 0.0:
-		return
+func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
+	if not can_use_combat() or spawn_immunity > 0.0:
+		return false
 	health = maxf(0.0, health - amount)
 	if match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
 	if health <= 0.0:
+		_play_feedback("res://assets/sfx/sfx_death.ogg")
 		_die(source)
+	else:
+		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+	return true
 
 func _die(killer: Node) -> void:
 	if not is_alive:
 		return
 	is_alive = false
-	visible = false
+	death_hide_timer = 0.72
 	collision_layer = 0
 	collision_mask = 0
-	weapon.set_fire_held(false)
+	weapon.clear_combat_input()
+	if visual != null:
+		visual.play_death()
 	bot_died.emit(self, killer)
 
 func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
@@ -210,6 +254,7 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	health = max_health
 	is_alive = true
 	visible = true
+	death_hide_timer = 0.0
 	spawn_immunity = immunity
 	collision_layer = 2
 	collision_mask = 1
@@ -217,9 +262,26 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	target_memory_position = Vector3.ZERO
 	target_memory_timer = 0.0
 	last_position = global_position
+	reposition_timer = rng.randf_range(0.2, 1.0)
+	weapon.clear_combat_input()
 
 func break_spawn_immunity() -> void:
 	spawn_immunity = 0.0
+
+func can_use_combat() -> bool:
+	return is_alive and (match_context == null or not match_context.has_method("is_combat_active") or bool(match_context.is_combat_active()))
+
+func preferred_weapon_index() -> int:
+	for index: int in range(WeaponController.DEFINITIONS.size()):
+		if WeaponController.DEFINITIONS[index].id == role.preferred_weapon_id:
+			return index
+	return 0
+
+func _play_feedback(path: String) -> void:
+	if feedback_audio == null:
+		return
+	feedback_audio.stream = load(path) as AudioStream
+	feedback_audio.play()
 
 func get_team() -> String:
 	return team
