@@ -1,85 +1,78 @@
 # PROJECT RULES — BLOCKFIRE
 
-Constitución estable del producto. README.md contiene los hechos cambiantes;
-CREDITS.md, las atribuciones. Si hay duda, inspeccionar y probar: no inventar.
+Constitución estable del producto. `README.md` contiene los hechos
+cambiantes; `CREDITS.md`, las atribuciones. Si hay duda, inspeccionar y
+probar: no inventar.
 
 ## 1. Producto y prioridades
 
-BLOCKFIRE es un FPS arcade estilizado, colorido, legible y rápido. El núcleo
-es moverse, apuntar, disparar, impactar, matar, morir y repetir. Las
-referencias de género sirven para ritmo y claridad; no autorizan copiar mapas,
-layouts, UI, nombres, personajes, assets, sonidos o branding.
+BLOCKFIRE es un FPS arcade estilizado, colorido, legible y rápido para
+Android en orientación horizontal. El núcleo es moverse, apuntar, disparar,
+impactar, matar, morir y repetir.
 
 Prioridades inmutables: estabilidad → gameplay → rendimiento → UX → inmersión
 → features.
 
-## 2. Alcance
+La ruta canónica es Godot 4.7.2 Standard, GDScript y renderer Mobile. El
+proyecto no debe volver a incorporar Unity, Three.js, WebGL como runtime,
+PWA, WebView o Capacitor. Linux sirve para desarrollo y pruebas headless;
+Android físico valida la plataforma.
 
-PC web y Android con WebView comparten un único runtime Three.js/WebGL.
-BLOCKFIRE es horizontal en lobby, compra, combate, muerte, espectador, fin y
-configuración. Capacitor es la vía Android canónica; la WebView mínima es
-smoke/debug y no puede divergir. Android físico valida la plataforma; el
-laboratorio responsive del navegador acelera la iteración.
+## 2. Alcance e invariantes
 
-No se añaden economía real, cuentas, backend, multijugador online, anuncios,
-ranking, chat, clanes, vehículos, campaña, loot ni matchmaking. Se mantienen
-la tienda de ronda con monedas ficticias y las skins cosméticas locales.
-
-## 3. Arquitectura e invariantes
+El juego ofrece Duelo de Escuadras 4v4 por rondas y FFA de ocho combatientes.
+La vida del jugador es 200 HP. La tienda usa monedas ficticias y las skins
+son locales y cosméticas. No hay backend, cuentas, economía real,
+multijugador online, anuncios, ranking, chat, clanes, vehículos, campaña,
+loot ni matchmaking.
 
 Un dueño y una fuente de verdad por concepto: input, daño, muerte, respawn,
-HUD, audio, colisión, VFX, navegación y assets. Game.js orquesta y conserva
-solo el estado de sesión; los sistemas poseen su comportamiento.
+HUD, audio, colisión, VFX, navegación y assets. `game/match/match.gd`
+orquesta el estado de sesión; cada sistema posee su comportamiento. Hay como
+máximo uno o dos autoloads y no se crea una colección de managers globales.
 
 Todo disparo sigue intención → cadencia/munición → trayectoria → oclusión →
 daño → feedback → muerte/score/respawn. Jugador y bots comparten colisión,
-visión y daño; la dificultad son parámetros, no trampas. Reiniciar limpia
-estado temporal. Fuego amigo está desactivado. El fallback geométrico es
-técnico y no define la dirección artística.
+visión y daño. La asistencia móvil ayuda a apuntar dentro de un cono visible,
+con línea de visión, sin autofuego, wallhack ni teletransporte de mira.
+Fuego amigo está desactivado.
 
-## 4. Tipos de cambio
+## 3. Tipos de cambio
 
-- HOTFIX: parche mínimo para una causa concreta.
-- FRENTE COMPLETO: cierra una experiencia o problema entero, incluso si
-  atraviesa varios sistemas relacionados.
-- REFACTOR CAUSAL: elimina una causa de bugs o reduce caminos duplicados de
+- `HOTFIX`: parche mínimo para una causa concreta.
+- `FRENTE COMPLETO`: cierra una experiencia o problema entero.
+- `REFACTOR CAUSAL`: elimina una causa de bugs o reduce caminos duplicados de
   forma comprobable.
 
-Aplicar el cambio causal mínimo que cierre el problema. No optimizar ni
-reorganizar lo que funciona mientras quede un defecto jugable importante.
+Aplicar el cambio causal mínimo que cierre el problema. No reorganizar lo
+que funciona mientras quede un defecto jugable importante.
 
-## 5. Rendimiento y procesos
+## 4. Rendimiento y recursos
 
-Priorizar frame estable, pocas asignaciones por frame, geometría/materiales
-reutilizados y listeners/timers con dueño y reset. tools/*.sh calcula la raíz
-desde su ubicación; nunca contiene rutas absolutas de una máquina humana.
-www/, builds/, capturas rutinarias y secretos no se versionan.
+Priorizar frame estable, pocas asignaciones por frame, geometría y materiales
+reutilizados, navegación nativa y timers con dueño y reset. `tools/*.sh`
+calcula la raíz desde su ubicación y no contiene rutas absolutas de una
+máquina humana. `.godot/`, `builds/`, imports y capturas rutinarias no son
+fuente del juego.
 
-Todo proceso iniciado durante el trabajo tiene lifecycle explícito y se cierra
-al terminar: servidor, Chromium, Node, adb, Gradle o watchers. No usar nohup
-suelto ni pkill indiscriminado.
+Todo proceso iniciado tiene lifecycle explícito y se cierra al terminar:
+editor/juego Godot, servidor, adb, Gradle, exportaciones o watchers. No usar
+procesos duplicados, emulador ni comandos destructivos de amplio alcance.
 
-## 6. Licencias y documentación
+## 5. Assets y legal
 
-Los samples assets/sfx/gshot_*.ogg son CC-BY 3.0 de Jesús Lastra. Su
-atribución canónica está en CREDITS.md y la mención de autoría permanece en el
-lobby. Los modelos Kenney usados por el runtime tienen su licencia junto a
-los assets.
+No incorporar assets sin licencia y atribución. Los samples
+`assets/sfx/gshot_*.ogg` son CC-BY 3.0 de Jesús Lastra. Los modelos Kenney
+usados por el runtime tienen su licencia junto a los assets. La atribución
+canónica está en `CREDITS.md` y la mención de audio permanece accesible en
+el lobby y Ajustes → Legal.
 
-El mapa documental es pequeño: AGENTS.md operación, este archivo
-constitución, README.md hechos, docs/PRODUCT_SPEC.md especificación,
-docs/ROADMAP.md próximos hitos y docs/CODEMAP.md navegación del código. No
-crear diarios ni duplicar reglas.
+## 6. Evidencia y Git
 
-## 7. Evidencia y pruebas
+La suite DEV, las pruebas dirigidas, el export Android y la inspección de
+procesos son gates. Al finalizar un frente se comprueban también la salida
+visual afectada y los logs propios. No inventar capturas ni declarar prueba
+física si no se ejecutó; etiquetar lo pendiente como `SIN VERIFICAR`.
 
-Conservar la suite DEV y ejecutar pruebas dirigidas durante la iteración. Al
-final, ejecutar toda la suite actual con ?runTests=1, comprobar consola, build
-de producción y registrar métricas disponibles. No inventar capturas ni
-atribuir una verificación humana o de hardware que no se haya ejecutado.
-Toda limitación se etiqueta SIN VERIFICAR; las conclusiones derivadas de logs
-o mediciones, INFERENCIA cuando corresponda.
-
-## 8. Git
-
-Cambios revisables y enfocados. No commit ni push sin petición explícita.
+Los cambios deben ser revisables y enfocados. No hacer commit ni push sin
+petición explícita.

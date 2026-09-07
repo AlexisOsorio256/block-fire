@@ -12,7 +12,7 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 - **Fuente**: Sonniss.com — Game Audio GDL ("Gun Sounds Pack")
 - **Licencia**: Creative Commons Attribution 3.0 (CC-BY 3.0)
 - **Requisito**: atribución visible dentro del juego (presente de forma
-  discreta en `index.html`, `.lobby-attribution`, y en Ajustes → Legal). Si estos samples se
+  discreta en el lobby de Godot y en Ajustes → Legal). Si estos samples se
   reemplazan por propios/CC0, este bloque y su mención pueden retirarse.
 
 ## Texturas del mapa — CC0
@@ -23,16 +23,15 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 - **Licencia**: CC0 1.0 (dominio público, sin atribución requerida —
   se registra como cortesía)
 
-## Modelo de personaje — three.js examples
+## Personajes — Kenney Blocky Characters (CC0)
 
-`assets/models/soldier.glb` (Soldier con clips Idle/Walk/Run)
+`assets/models/kenney_blocky/character-{a,b,c,d,e}.glb` y sus texturas
 
-- **Fuente**: ejemplos oficiales de three.js (`examples/models/gltf/Soldier.glb`)
-- **Licencia**: el repositorio three.js distribuye sus assets bajo
-  [MIT + licencias de los assets originales]; el modelo proviene de los
-  ejemplos con uso permitido. SIN VERIFICAR la cadena exacta del asset
-  original: si BLOCKFIRE llega a distribución comercial, verificar y
-  registrar aquí el origen preciso (o reemplazarlo por un modelo propio/CC0).
+- **Fuente**: Kenney, [Blocky Characters](https://kenney.nl/assets/blocky-characters)
+- **Licencia**: Creative Commons Zero (CC0); copia local en
+  `assets/models/kenney_blocky/LICENSE-KENNEY.txt`
+- Se usan como cinco operadores visualmente distintos y son aptos para uso
+  comercial según la licencia publicada por el autor.
 
 ## Modelos de armas — Kenney (CC0)
 

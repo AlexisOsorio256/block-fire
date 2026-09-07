@@ -1,47 +1,27 @@
-# OS
+# Sistema y editores
 .DS_Store
 Thumbs.db
 *.log
 *.tmp
-
-# Editor
+*.uid
+*.import
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Dependencies (npm es parte del build: esbuild + Capacitor — el lockfile
-# SÍ se versiona para builds reproducibles; solo se ignoran los paquetes)
+# Dependencias o herramientas locales fuera del runtime Godot
 node_modules/
-yarn.lock
-
-# Python http.server
 __pycache__/
 *.pyc
 
-# Capturas temporales
-/tmp/
+# Salidas generadas y cachés
+.godot/
+builds/
+captures/
+.tmp/
 
-# Env
+# Entorno local
 .env
 .env.local
-
-# No ignorar capturas/ — son evidencia visual del MVP
-# !capturas/
-
-# Logs de chromium
-*.png.bak
-
-# Godot
-godot/.godot/
-builds/
-*.tmp
-
-# Capacitor / Android build
-node_modules/
-www/
-android/.gradle/
-android/app/build/
-android/build/
-android/local.properties

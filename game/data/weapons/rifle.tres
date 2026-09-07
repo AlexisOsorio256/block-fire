@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/weapon_definition.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = "rifle"
+display_name = "Rifle"
+short_name = "RIFLE"
+cost = 1500
+damage = 31.0
+headshot_multiplier = 1.8
+fire_interval = 0.105
+magazine_size = 30
+reserve_ammo = 150
+reload_time = 1.7
+range = 95.0
+falloff_start = 34.0
+falloff_min = 0.58
+spread = 0.007
+recoil = 0.022
+automatic = true
+pellets = 1
+viewmodel_scene = "res://assets/models/weapons/rifle.glb"

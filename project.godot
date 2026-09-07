@@ -1,0 +1,64 @@
+; BLOCKFIRE — Godot 4.7.2 canonical project
+; Android landscape product, Linux is the autonomous development lab.
+config_version=5
+
+[application]
+
+config/name="BLOCKFIRE"
+config/icon="res://game/ui/blockfire_mark.svg"
+run/main_scene="res://game/app.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+boot_splash/bg_color=Color(0.0235294, 0.0470588, 0.0901961, 1)
+boot_splash/minimum_display_time=0
+
+[autoload]
+
+SettingsStore="*res://game/settings_store.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/size/resizable=true
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
+
+[input]
+
+move_left={"deadzone": 0.5, "events": []}
+move_right={"deadzone": 0.5, "events": []}
+move_forward={"deadzone": 0.5, "events": []}
+move_back={"deadzone": 0.5, "events": []}
+jump={"deadzone": 0.5, "events": []}
+crouch={"deadzone": 0.5, "events": []}
+sprint={"deadzone": 0.5, "events": []}
+fire={"deadzone": 0.5, "events": []}
+aim={"deadzone": 0.5, "events": []}
+reload={"deadzone": 0.5, "events": []}
+switch_weapon={"deadzone": 0.5, "events": []}
+previous_weapon={"deadzone": 0.5, "events": []}
+next_weapon={"deadzone": 0.5, "events": []}
+pause={"deadzone": 0.5, "events": []}
+
+[layer_names]
+
+3d_physics/layer_1="World"
+3d_physics/layer_2="Actors"
+3d_physics/layer_3="Hitboxes"
+3d_physics/layer_4="Interaction"
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/default_filters/use_nearest_mipmap_filter=false
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.027451, 0.0588235, 0.109804, 1)
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/max_distance=55.0
+
+[audio]
+
+default_bus_layout="res://game/audio/default_bus_layout.tres"

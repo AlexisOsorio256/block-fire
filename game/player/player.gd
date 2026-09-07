@@ -1,0 +1,297 @@
+class_name BlockfirePlayer
+extends CharacterBody3D
+
+signal health_changed(value: float, maximum: float)
+signal player_died(player: Node, killer: Node)
+
+var match_context: Node
+var mobile_controls: Node
+var team: String = "ally"
+var operator_id: String = "BRAVO"
+var is_bot: bool = false
+var is_alive: bool = true
+var input_enabled: bool = true
+var health: float = 200.0
+var max_health: float = 200.0
+var spawn_immunity: float = 0.0
+var crouched: bool = false
+var camera: Camera3D
+var camera_pivot: Node3D
+var weapon: WeaponController
+var visual: OperatorVisual
+var look_yaw: float = 0.0
+var look_pitch: float = 0.0
+var jump_requested: bool = false
+var assist_target: Node
+var gravity: float = 22.0
+var walk_speed: float = 6.6
+var sprint_speed: float = 9.2
+var crouch_speed: float = 3.7
+var acceleration: float = 32.0
+
+func configure(context: Node, team_id: String, selected_operator: String, controls: Node = null) -> void:
+	match_context = context
+	team = team_id
+	operator_id = selected_operator
+	mobile_controls = controls
+
+func _ready() -> void:
+	add_to_group("combatants")
+	collision_layer = 2
+	collision_mask = 1
+	_create_collision()
+	_create_visual()
+	_create_camera()
+	health_changed.emit(health, max_health)
+
+func _physics_process(delta: float) -> void:
+	if spawn_immunity > 0.0:
+		spawn_immunity = maxf(0.0, spawn_immunity - delta)
+	if not is_alive:
+		return
+	_update_look(delta)
+	if not input_enabled:
+		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
+		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
+		_apply_gravity(delta)
+		move_and_slide()
+		return
+	var input_vector := _movement_input()
+	var wish_direction := (transform.basis * Vector3(input_vector.x, 0, input_vector.y)).normalized()
+	var sprinting := Input.is_action_pressed("sprint")
+	if mobile_controls != null and mobile_controls.has_method("is_sprinting"):
+		sprinting = sprinting or mobile_controls.is_sprinting()
+	var target_speed := crouch_speed if crouched else (sprint_speed if sprinting else walk_speed)
+	velocity.x = move_toward(velocity.x, wish_direction.x * target_speed, acceleration * delta)
+	velocity.z = move_toward(velocity.z, wish_direction.z * target_speed, acceleration * delta)
+	_apply_gravity(delta)
+	if _jump_pressed() and is_on_floor():
+		velocity.y = 8.4
+	if _crouch_pressed():
+		crouched = not crouched
+		_update_crouch_visual()
+	if weapon != null:
+		weapon.set_fire_held(Input.is_action_pressed("fire") or _mobile_fire())
+		weapon.set_aim_held(Input.is_action_pressed("aim") or _mobile_aim())
+		if Input.is_action_just_pressed("reload") or _mobile_reload():
+			weapon.request_reload()
+		if Input.is_action_just_pressed("next_weapon") or _mobile_next_weapon():
+			weapon.next_weapon()
+	move_and_slide()
+	if camera != null:
+		var target_fov := 58.0 if (weapon != null and weapon.aim_held) else 76.0
+		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not input_enabled or is_bot:
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var settings := _settings()
+		var sensitivity := float(settings.get_value("sensitivity", 0.12) if settings != null else 0.12)
+		var motion: Vector2 = event.relative * sensitivity
+		look_yaw -= motion.x
+		look_pitch = clampf(look_pitch - motion.y, -78.0, 78.0)
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.physical_keycode:
+			KEY_1: weapon.switch_to(0)
+			KEY_2: weapon.switch_to(1)
+			KEY_3: weapon.switch_to(2)
+			KEY_4: weapon.switch_to(3)
+			KEY_ESCAPE: Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+func take_damage(amount: float, source: Node, headshot: bool = false) -> void:
+	if not is_alive or spawn_immunity > 0.0:
+		return
+	health = maxf(0.0, health - amount)
+	health_changed.emit(health, max_health)
+	if match_context != null and match_context.has_method("register_damage"):
+		match_context.register_damage(self, amount, headshot, source)
+	if health <= 0.0:
+		_die(source)
+
+func _die(killer: Node) -> void:
+	if not is_alive:
+		return
+	is_alive = false
+	input_enabled = false
+	visible = false
+	collision_layer = 0
+	collision_mask = 0
+	if weapon != null:
+		weapon.set_fire_held(false)
+	player_died.emit(self, killer)
+
+func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
+	global_position = spawn
+	velocity = Vector3.ZERO
+	health = max_health
+	is_alive = true
+	input_enabled = true
+	visible = true
+	spawn_immunity = immunity
+	collision_layer = 2
+	collision_mask = 1
+	health_changed.emit(health, max_health)
+	look_pitch = 0.0
+
+func get_team() -> String:
+	return team
+
+func get_target_point() -> Vector3:
+	return global_position + Vector3.UP * (1.35 if crouched else 1.7)
+
+func get_aim_origin() -> Vector3:
+	return camera.global_position if camera != null else global_position + Vector3.UP * 1.6
+
+func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) -> Vector3:
+	if mobile_controls == null or match_context == null or not match_context.has_method("get_combatants"):
+		return base_direction
+	var origin := get_aim_origin()
+	var chosen: Node
+	var chosen_score := -INF
+	var candidates: Array[Node] = match_context.get_combatants()
+	for candidate: Node in candidates:
+		if candidate == self or not is_instance_valid(candidate) or not candidate.get("is_alive"):
+			continue
+		if not candidate.has_method("get_team") or candidate.get_team() == team:
+			continue
+		var target_point: Vector3 = candidate.get_target_point() if candidate.has_method("get_target_point") else candidate.global_position + Vector3.UP * 1.4
+		var to_target := origin.direction_to(target_point)
+		var dot := clampf(base_direction.normalized().dot(to_target), -1.0, 1.0)
+		var angle := acos(dot)
+		var cone := deg_to_rad(19.0) if candidate == assist_target else deg_to_rad(13.0)
+		if angle > cone or origin.distance_to(target_point) > max_range:
+			continue
+		if not _assist_has_line_of_sight(origin, target_point):
+			continue
+		var distance_score := 1.0 - clampf(origin.distance_to(target_point) / max_range, 0.0, 1.0)
+		var score := dot * 0.78 + distance_score * 0.22
+		if score > chosen_score:
+			chosen_score = score
+			chosen = candidate
+	if chosen == null:
+		assist_target = null
+		return base_direction
+	assist_target = chosen
+	var assisted_point: Vector3 = chosen.get_target_point()
+	var assisted_direction := origin.direction_to(assisted_point)
+	var angle_to_target := rad_to_deg(acos(clampf(base_direction.normalized().dot(assisted_direction), -1.0, 1.0)))
+	var follow_strength := 0.54 if weapon != null and weapon.aim_held else 0.38
+	follow_strength *= 1.0 - clampf(angle_to_target / 19.0, 0.0, 1.0) * 0.35
+	return base_direction.normalized().lerp(assisted_direction, follow_strength).normalized()
+
+func _assist_has_line_of_sight(origin: Vector3, target_point: Vector3) -> bool:
+	var arena: Node = match_context.get_arena() if match_context.has_method("get_arena") else null
+	if arena != null and arena.has_method("has_line_of_sight"):
+		var excluded: Array[RID] = [get_rid()]
+		return arena.has_line_of_sight(origin, target_point, excluded)
+	return true
+
+func set_spectator_mode(enabled: bool) -> void:
+	input_enabled = not enabled and is_alive
+
+func _movement_input() -> Vector2:
+	var value := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if mobile_controls != null and mobile_controls.has_method("get_move_vector"):
+		var touch_value: Vector2 = mobile_controls.get_move_vector()
+		if touch_value.length_squared() > 0.001:
+			value = touch_value
+	return value
+
+func _update_look(delta: float) -> void:
+	if mobile_controls != null and mobile_controls.has_method("consume_look_delta"):
+		var look: Vector2 = mobile_controls.consume_look_delta()
+		var settings := _settings()
+		var sensitivity := float(settings.get_value("sensitivity", 0.12) if settings != null else 0.12)
+		look_yaw -= look.x * sensitivity * 0.72
+		look_pitch = clampf(look_pitch - look.y * sensitivity * 0.72, -78.0, 78.0)
+	rotation_degrees.y = look_yaw
+	if camera_pivot != null:
+		camera_pivot.rotation_degrees.x = look_pitch
+
+func _apply_gravity(delta: float) -> void:
+	if not is_on_floor():
+		velocity.y -= gravity * delta
+	else:
+		velocity.y = minf(velocity.y, 0.0)
+
+func _jump_pressed() -> bool:
+	if Input.is_action_just_pressed("jump"):
+		return true
+	if mobile_controls != null and mobile_controls.has_method("consume_jump"):
+		return mobile_controls.consume_jump()
+	return false
+
+func _crouch_pressed() -> bool:
+	if Input.is_action_just_pressed("crouch"):
+		return true
+	return mobile_controls != null and mobile_controls.has_method("consume_crouch") and mobile_controls.consume_crouch()
+
+func _mobile_fire() -> bool:
+	return mobile_controls != null and mobile_controls.has_method("is_firing") and mobile_controls.is_firing()
+
+func _mobile_aim() -> bool:
+	return mobile_controls != null and mobile_controls.has_method("is_aiming") and mobile_controls.is_aiming()
+
+func _mobile_reload() -> bool:
+	return mobile_controls != null and mobile_controls.has_method("consume_reload") and mobile_controls.consume_reload()
+
+func _mobile_next_weapon() -> bool:
+	return mobile_controls != null and mobile_controls.has_method("consume_switch") and mobile_controls.consume_switch()
+
+func _create_collision() -> void:
+	var collision := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.38
+	capsule.height = 1.8
+	collision.shape = capsule
+	collision.position.y = 1.0
+	add_child(collision)
+	var head := Area3D.new()
+	head.name = "HeadHitbox"
+	head.collision_layer = 4
+	head.collision_mask = 0
+	head.set_meta("damage_zone", "head")
+	var head_shape := CollisionShape3D.new()
+	var head_sphere := SphereShape3D.new()
+	head_sphere.radius = 0.27
+	head_shape.shape = head_sphere
+	head_shape.position.y = 1.95
+	head.add_child(head_shape)
+	add_child(head)
+
+func _create_visual() -> void:
+	visual = OperatorVisual.new()
+	visual.configure(operator_id, team, _team_color())
+	visual.visible = false
+	add_child(visual)
+
+func _create_camera() -> void:
+	camera_pivot = Node3D.new()
+	camera_pivot.name = "CameraPivot"
+	camera_pivot.position = Vector3(0, 1.58, 0)
+	add_child(camera_pivot)
+	camera = Camera3D.new()
+	camera.name = "PlayerCamera"
+	camera.current = true
+	camera.fov = 76.0
+	camera.near = 0.03
+	camera_pivot.add_child(camera)
+	weapon = WeaponController.new()
+	weapon.name = "WeaponController"
+	camera.add_child(weapon)
+	weapon.setup(self, camera, mobile_controls)
+
+func _update_crouch_visual() -> void:
+	if visual != null:
+		visual.scale.y = 0.72 if crouched else 1.0
+	if camera_pivot != null:
+		camera_pivot.position.y = 1.18 if crouched else 1.58
+
+func _team_color() -> Color:
+	return Color("#f0a064") if team == "ally" else Color("#da4f68")
+
+func _settings() -> Node:
+	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null

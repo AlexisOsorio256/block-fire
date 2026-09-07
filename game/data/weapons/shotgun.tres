@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/weapon_definition.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = "shotgun"
+display_name = "Shotgun"
+short_name = "SHOTGUN"
+cost = 1200
+damage = 19.0
+headshot_multiplier = 1.35
+fire_interval = 0.85
+magazine_size = 6
+reserve_ammo = 42
+reload_time = 1.95
+range = 42.0
+falloff_start = 12.0
+falloff_min = 0.3
+spread = 0.06
+recoil = 0.08
+automatic = false
+pellets = 8
+viewmodel_scene = "res://assets/models/weapons/shotgun.glb"

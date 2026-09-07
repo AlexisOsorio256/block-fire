@@ -2,7 +2,7 @@
 
 # 🔥 BLOCKFIRE
 
-**FPS arcade Three.js — navegador y Android WebView.**
+**FPS arcade Godot para Android, con laboratorio Linux headless.**
 
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 Duelo de Escuadras 4v4 por rondas o Todos contra Todos a 20 kills.
@@ -11,52 +11,57 @@ Duelo de Escuadras 4v4 por rondas o Todos contra Todos a 20 kills.
 
 ## Estado y arquitectura
 
-El runtime actual usa Three.js/WebGL y una sola ruta de juego para navegador y
-Android. Capacitor (android/) es el empaquetado Android canónico; la WebView
-mínima de tools/webview/ es una vía de smoke/debug. La dirección visual es
-estilizada, colorida, legible y rápida; la geometría primitiva solo es
-fallback técnico cuando un asset no está disponible.
+El runtime canónico usa Godot 4.7.2 Standard, GDScript y renderer Mobile. La
+entrega Android fija orientación landscape y se exporta como APK. El proyecto
+mantiene una sola ruta de juego; no depende de Unity, navegador, WebView,
+PWA, Three.js ni Capacitor.
 
 | Área | Dueño |
 |---|---|
-| Arranque y gates | src/main.js |
-| Partida, rondas, daño y espectador | src/core/Game.js, src/core/MatchSquad.js |
-| Input y configuración táctil | src/core/Input.js, src/core/ControlLayout.js |
-| Movimiento y cámara | src/player/PlayerController.js |
-| Armas y hitscan | src/combat/WeaponSystem.js |
-| Bots y navegación | src/bots/Bot.js, src/bots/Navigation.js |
-| Mundo y decoración | src/world/Map.js, src/world/MapDecor.js |
-| HUD y lobby | src/ui/HUD.js, src/ui/Lobby.js |
-| Audio y VFX | src/audio/AudioManager.js, src/fx/ |
-| Personaje | src/characters/SoldierAvatar.js |
-| Suite DEV | src/testing/suite.js |
+| Arranque y escenas | `game/app.gd`, `game/app.tscn` |
+| Partida, rondas y daño | `game/match/match.gd`, `game/match/*_rules.gd` |
+| Jugador, cámara y aim assist | `game/player/player.gd` |
+| Entrada táctil y layout | `game/ui/mobile_controls.gd`, `game/ui/control_editor.gd` |
+| Armas e impactos | `game/weapons/weapon_controller.gd` |
+| Bots y navegación | `game/bots/bot.gd`, `game/world/arena.gd` |
+| Mundo y decoración | `game/world/arena.gd` |
+| HUD y lobby | `game/ui/hud.gd`, `game/lobby/lobby.gd` |
+| Audio y ajustes | `game/audio/`, `game/settings_store.gd` |
+| Suite DEV | `tests/smoke.gd`, `tools/` |
+
+El único autoload actual es `SettingsStore`, que persiste ajustes locales y
+aplica volumen. La navegación de código está resumida en
+[`docs/CODEMAP.md`](docs/CODEMAP.md).
 
 ## Comandos
 
-~~~bash
-# servidor con lifecycle y PID controlado
-bash tools/start-server.sh
-# también: bash tools/start-server.sh --bg
-# detener una instancia propia: bash tools/start-server.sh --stop
+Los scripts encuentran Godot en PATH o mediante `BLOCKFIRE_GODOT`:
 
-# build web de producción, con BUILD_ID y sin harness DEV
-bash tools/build-web.sh
+```bash
+BLOCKFIRE_GODOT=/ruta/a/godot tools/test.sh
+BLOCKFIRE_GODOT=/ruta/a/godot tools/run-game.sh -- --qa-squad
+BLOCKFIRE_GODOT=/ruta/a/godot tools/run-game.sh -- --qa-ffa
+BLOCKFIRE_GODOT=/ruta/a/godot tools/run-game.sh -- --qa-combat
+BLOCKFIRE_GODOT=/ruta/a/godot tools/run-game.sh -- --qa-editor
+BLOCKFIRE_GODOT=/ruta/a/godot tools/run-mobile-qa.sh
+BLOCKFIRE_GODOT=/ruta/a/godot tools/build-android.sh
+```
 
-# Capacitor: vía Android canónica
-bash tools/build-web.sh
-npx cap sync android
-(cd android && ./gradlew assembleDebug)
-~~~
+`--qa-combat` omite la espera de compra para comprobaciones rápidas;
+`--qa-editor` abre el editor de controles táctiles. El APK se escribe en
+`builds/blockfire-debug.apk`, una salida generada y no versionada.
 
-La suite se abre en http://127.0.0.1:8931/?runTests=1. Para WebGL headless se
-requiere una implementación de software, por ejemplo
---enable-unsafe-swiftshader --use-angle=swiftshader.
+## Producto y controles
 
-## Plataforma y controles
-
-BLOCKFIRE es horizontal en todas las pantallas. En táctil, portrait muestra
-una compuerta de giro antes del flujo jugable; la actividad Android declara
-landscape y el navegador intenta bloquearlo al entrar en fullscreen.
+- Escuadras 4v4: compra, combate sin respawn, espectador y primero a cuatro
+  rondas; no hay empate.
+- FFA: ocho combatientes, respawn y objetivo de 20 kills.
+- Jugador a 200 HP, cuatro armas, bots con roles, percepción y
+  `NavigationAgent3D`.
+- Aim assist móvil fuerte pero acotado por cono, distancia y línea de visión;
+  no dispara ni atraviesa paredes por el jugador.
+- Lobby de operadores, tienda de ronda, skins locales, feedback de daño,
+  audio, VFX y HUD.
 
 | Acción | PC | Móvil |
 |---|---|---|
@@ -64,36 +69,20 @@ landscape y el navegador intenta bloquearlo al entrar en fullscreen.
 | Correr | Shift | CORRER o joystick a tope |
 | Mirar | Ratón | Arrastre derecho o arrastre de FUEGO |
 | Disparar | Click izquierdo | FUEGO, mantenido y arrastrable |
-| Apuntar | Click derecho | MIRA, toque con segundo FUEGO |
+| Apuntar | Click derecho | MIRA, con multitouch |
 | Agacharse | C | AGACHAR |
 | Saltar / recargar | Espacio / R | Botones |
 | Cambiar arma | 1–4, Q/E | ARMA |
 
-El layout táctil se puede mover, redimensionar y hacer más transparente desde
-CONFIGURACIÓN → EDITAR CONTROLES. window.__BLOCKFIRE__.getDiagnostics() está
-disponible en DEV y devuelve el estado de render y plataforma.
+`CONFIGURACIÓN → EDITAR CONTROLES` persiste posición normalizada, tamaño y
+opacidad, respetando la safe area. Perder foco, visibilidad u orientación
+libera los estados táctiles.
 
-## Producto disponible
+## Verificación y legal
 
-- Duelo de Escuadras 4v4, primero a cuatro rondas, con fase de compra,
-  inmunidad de spawn y sin respawn durante la ronda.
-- FFA de ocho combatientes, respawn y objetivo de 20 kills.
-- Soldado GLB animado cuando carga, con siete operadores, colores de equipo,
-  equipo modular, locomoción y feedback de disparo/impacto/muerte.
-- Rifle, pistola, escopeta y SMG con modelos Kenney, fallback técnico,
-  retroceso, ADS, recarga, cambio de arma, trazadoras e impactos.
-- Audio con samples atribuidos y fallback procedural; el SMG tiene identidad
-  sonora separada.
-- Bots con percepción, navegación, roles y distancia táctica por arma.
-- Mapa 120×120 con colliders estructurales y decoración separadas.
-- Lobby de estudio, tienda de ronda, skins cosméticas locales, HUD, números de
-  daño, feedback direccional y espectador de aliados.
+La suite `tools/test.sh` protege los contratos de gameplay, input, arsenal,
+operadores y editor. El export Android es un gate separado. Android físico
+es la autoridad para orientación, multitouch, audio, suspensión/reanudación y
+rendimiento; el laboratorio Linux no sustituye esa comprobación.
 
-La suite DEV protege contratos de juego; no se usa como sustituto de una
-comprobación física en Android.
-
-## Licencias
-
-Consulta CREDITS.md. Los disparos gshot_*.ogg son CC-BY 3.0 de Jesús Lastra y
-los modelos de armas Kenney están documentados junto a sus assets. Esta
-entrega no añade assets externos nuevos.
+Consulta [`CREDITS.md`](CREDITS.md) para las licencias y atribuciones.

@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/weapon_definition.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = "smg"
+display_name = "SMG"
+short_name = "SMG"
+cost = 1800
+damage = 22.0
+headshot_multiplier = 1.65
+fire_interval = 0.075
+magazine_size = 32
+reserve_ammo = 160
+reload_time = 1.55
+range = 70.0
+falloff_start = 22.0
+falloff_min = 0.5
+spread = 0.018
+recoil = 0.018
+automatic = true
+pellets = 1
+viewmodel_scene = "res://assets/models/weapons/smg.glb"
