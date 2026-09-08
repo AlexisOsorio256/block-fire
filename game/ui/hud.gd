@@ -27,6 +27,9 @@ var damage_label: Label
 var crosshair: Control
 var bottom_bar: HBoxContainer
 var control_editor
+var settings_panel: PanelContainer
+var settings_backdrop: ColorRect
+var return_to_settings: bool = false
 var buy_panel: PanelContainer
 var buy_title: Label
 var buy_timer: Label
@@ -37,8 +40,9 @@ var spectator_panel: PanelContainer
 var end_panel: PanelContainer
 var ui_audio: AudioStreamPlayer
 var mobile_qa: bool = false
-## Actores congelados mientras el editor está abierto (pausa causal sin managers).
+## Actores congelados mientras un overlay interactivo está abierto.
 var _editor_frozen: Array[Node] = []
+var _overlay_input_states: Dictionary = {}
 
 func setup(context: Node, use_mobile_qa: bool) -> void:
 	match_context = context
@@ -122,18 +126,17 @@ func _build() -> void:
 	bottom_bar.anchor_top = 1.0
 	bottom_bar.anchor_right = 0.5
 	bottom_bar.anchor_bottom = 1.0
-	bottom_bar.offset_left = -170
-	bottom_bar.offset_right = 170
-	# La barra contiene una etiqueta de 24 px, nombre de arma y márgenes del
-	# panel; 54 px la recortaba en pantallas Android altas. Deja una franja real
-	# y mantén el borde inferior dentro de la safe area visible.
-	bottom_bar.offset_top = -126
+	bottom_bar.offset_left = -154
+	bottom_bar.offset_right = 154
+	# Información compacta, separada de los pulgares: suficiente altura para la
+	# barra de vida y el cargador sin convertir el centro inferior en un panel.
+	bottom_bar.offset_top = -92
 	bottom_bar.offset_bottom = -18
 	bottom_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_bar.add_theme_constant_override("separation", 12)
+	bottom_bar.add_theme_constant_override("separation", 8)
 	root.add_child(bottom_bar)
 	var health_panel := PanelContainer.new()
-	health_panel.custom_minimum_size = Vector2(132, 48)
+	health_panel.custom_minimum_size = Vector2(116, 44)
 	health_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127d9"), Color("#347ea1"), 10, 1))
 	bottom_bar.add_child(health_panel)
 	var health_stack := VBoxContainer.new()
@@ -147,10 +150,12 @@ func _build() -> void:
 	health_bar.max_value = 200.0
 	health_bar.value = 200.0
 	health_bar.show_percentage = false
-	health_bar.custom_minimum_size = Vector2(100, 8)
+	health_bar.custom_minimum_size = Vector2(88, 7)
+	health_bar.add_theme_stylebox_override("background", BlockfireTheme.button_style(Color("#15233a"), Color("#2c4361"), 4))
+	health_bar.add_theme_stylebox_override("fill", BlockfireTheme.button_style(Color("#2793af"), Color("#7de1ff"), 4))
 	health_stack.add_child(health_bar)
 	var ammo_panel := PanelContainer.new()
-	ammo_panel.custom_minimum_size = Vector2(170, 48)
+	ammo_panel.custom_minimum_size = Vector2(156, 44)
 	ammo_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127d9"), Color("#49607e"), 10, 1))
 	bottom_bar.add_child(ammo_panel)
 	var ammo_stack := VBoxContainer.new()
@@ -160,7 +165,7 @@ func _build() -> void:
 	ammo_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	ammo_row.add_theme_constant_override("separation", 4)
 	ammo_stack.add_child(ammo_row)
-	ammo_label = BlockfireTheme.label("12", 24, Color.WHITE)
+	ammo_label = BlockfireTheme.label("12", 23, Color.WHITE)
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ammo_row.add_child(ammo_label)
 	reserve_label = BlockfireTheme.label("/ 72", 13, Color("#9db7db"))
@@ -233,6 +238,9 @@ func update_health(value: float, maximum: float) -> void:
 	if health_bar != null:
 		health_bar.max_value = maximum
 		health_bar.value = clampf(value, 0.0, maximum)
+		health_bar.add_theme_stylebox_override("fill", BlockfireTheme.button_style(
+		Color("#b84c5a") if value <= maximum * 0.3 else Color("#2793af"),
+		Color("#ff8b7d") if value <= maximum * 0.3 else Color("#7de1ff"), 4))
 
 func update_ammo(current: int, reserve: int, definition: WeaponDefinition) -> void:
 	if ammo_label != null:
@@ -291,12 +299,11 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		buy_panel.anchor_top = 1.0
 		buy_panel.anchor_right = 0.5
 		buy_panel.anchor_bottom = 1.0
-		buy_panel.offset_left = -430
-		buy_panel.offset_right = 430
-		# Header + créditos + aviso + cuatro tarjetas + ayuda superan 194 px
-		# cuando el tema aplica sus márgenes. La altura anterior cortaba la
-		# compra en el borde inferior del teléfono.
-		buy_panel.offset_top = -294
+		buy_panel.offset_left = -380
+		buy_panel.offset_right = 380
+		# La compra debe informar sin tapar la arena: cuatro tarjetas compactas
+		# dejan visible la acción y la cobertura del mapa.
+		buy_panel.offset_top = -254
 		buy_panel.offset_bottom = -18
 		buy_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127f0"), Color("#536f95"), 16, 2))
 		root.add_child(buy_panel)
@@ -327,16 +334,16 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 			var owned: bool = match_context != null and match_context.has_method("is_weapon_owned") and bool(match_context.is_weapon_owned(index))
 			var state_text := "EQUIPADA" if index == equipped else ("COMPRADA" if owned else "COSTE %d" % definition.cost)
 			var mode_text := "AUTO" if definition.automatic else "SEMI"
-			button.text = "%s\n%s\nDMG %d · %s · %d BALAS" % [definition.display_name, state_text, roundi(definition.damage), mode_text, definition.magazine_size]
-			button.custom_minimum_size = Vector2(0, 92)
+			button.text = "%s\n%s\n%d DMG · %s · %d" % [definition.display_name, state_text, roundi(definition.damage), mode_text, definition.magazine_size]
+			button.custom_minimum_size = Vector2(0, 78)
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			button.add_theme_font_size_override("font_size", 13)
+			button.add_theme_font_size_override("font_size", 11)
 			BlockfireTheme.apply_button(button, BlockfireTheme.GOLD)
 			button.pressed.connect(func() -> void: buy_requested.emit(index))
 			row.add_child(button)
 			buy_buttons.append(button)
 			button.modulate = Color.WHITE if index == equipped else (Color("#b6e3cb") if owned else Color("#8795a8"))
-		var hint := BlockfireTheme.label("GANA EL PRIMERO EN LLEGAR A 4 RONDAS · las rondas se ganan eliminando al equipo rival", 10, Color("#9db7db"))
+		var hint := BlockfireTheme.label("Primero en 4 rondas · compra y equipa antes del cierre", 10, Color("#9db7db"))
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		stack.add_child(hint)
 		if mobile_controls != null:
@@ -357,19 +364,42 @@ func toggle_control_editor() -> void:
 		set_status("EDITOR DISPONIBLE EN CONTROLES TÁCTILES", Color("#ffd471"))
 		return
 	if is_instance_valid(control_editor):
-		control_editor.queue_free()
-		control_editor = null
-		_resume_from_editor()
+		_close_control_editor()
 		return
-	_freeze_for_editor()
+	_open_control_editor(false)
+
+func toggle_settings() -> void:
+	if is_instance_valid(control_editor):
+		return
+	if is_instance_valid(settings_panel):
+		_close_settings_panel()
+		_resume_from_overlay()
+		return
+	_freeze_for_overlay()
+	_open_settings_panel()
+
+func _open_control_editor(from_settings: bool) -> void:
+	return_to_settings = from_settings
+	if not from_settings:
+		_freeze_for_overlay()
 	control_editor = ControlEditorScript.new()
 	control_editor.name = "ControlEditor"
 	control_editor.setup(mobile_controls)
 	control_editor.closed.connect(_close_control_editor)
 	root.add_child(control_editor)
 
-func _freeze_for_editor() -> void:
+func _freeze_for_overlay() -> void:
 	_editor_frozen.clear()
+	_overlay_input_states.clear()
+	if match_context != null and match_context.has_method("set_local_overlay_paused"):
+		match_context.set_local_overlay_paused(true)
+	# Guarda el input antes de _stop_combat_inputs(), que lo limpia para evitar
+	# que al cerrar el modal quede el jugador permanentemente deshabilitado.
+	if match_context != null and match_context.has_method("get_combatants"):
+		for actor: Node in match_context.get_combatants():
+			if is_instance_valid(actor) and bool(actor.get("is_alive")):
+				if actor.get("input_enabled") != null:
+					_overlay_input_states[actor.get_instance_id()] = bool(actor.get("input_enabled"))
 	if match_context != null and match_context.has_method("_stop_combat_inputs"):
 		match_context._stop_combat_inputs()
 	if match_context != null and match_context.has_method("get_combatants"):
@@ -380,19 +410,121 @@ func _freeze_for_editor() -> void:
 	if mobile_controls != null:
 		mobile_controls.release_all()
 
-func _resume_from_editor() -> void:
+func _resume_from_overlay() -> void:
 	for actor: Node in _editor_frozen:
 		if is_instance_valid(actor):
 			actor.set_physics_process(true)
+			var saved_input: Variant = _overlay_input_states.get(actor.get_instance_id(), null)
+			if saved_input != null and actor.get("input_enabled") != null:
+				actor.set("input_enabled", bool(saved_input))
 	_editor_frozen.clear()
+	_overlay_input_states.clear()
+	if match_context != null and match_context.has_method("set_local_overlay_paused"):
+		match_context.set_local_overlay_paused(false)
 	if mobile_controls != null:
 		mobile_controls.release_all()
+
+func _resume_from_editor() -> void:
+	# Alias de compatibilidad para la suite DEV y herramientas antiguas.
+	_resume_from_overlay()
 
 func _close_control_editor() -> void:
 	if is_instance_valid(control_editor):
 		control_editor.queue_free()
 	control_editor = null
-	_resume_from_editor()
+	if return_to_settings:
+		return_to_settings = false
+		_open_settings_panel()
+	else:
+		_resume_from_overlay()
+
+func _close_settings_panel() -> void:
+	if is_instance_valid(settings_backdrop):
+		settings_backdrop.queue_free()
+		settings_backdrop = null
+	if is_instance_valid(settings_panel):
+		settings_panel.queue_free()
+		settings_panel = null
+
+func _open_settings_panel() -> void:
+	if is_instance_valid(settings_panel):
+		return
+	if mobile_controls != null:
+		mobile_controls.visible = false
+	if bottom_bar != null:
+		bottom_bar.visible = false
+	if crosshair != null:
+		crosshair.visible = false
+	settings_backdrop = ColorRect.new()
+	settings_backdrop.name = "SettingsBackdrop"
+	settings_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	settings_backdrop.color = Color(0.01, 0.03, 0.08, 0.72)
+	settings_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	settings_backdrop.z_index = 30
+	root.add_child(settings_backdrop)
+	settings_panel = PanelContainer.new()
+	settings_panel.name = "SettingsPanel"
+	settings_panel.set_anchors_preset(Control.PRESET_CENTER)
+	settings_panel.position = Vector2(-250.0, -205.0)
+	settings_panel.size = Vector2(500.0, 410.0)
+	settings_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#08152beF"), Color("#80cfff"), 16, 2))
+	settings_panel.z_index = 31
+	root.add_child(settings_panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	settings_panel.add_child(stack)
+	var header := HBoxContainer.new()
+	stack.add_child(header)
+	var title := BlockfireTheme.label("AJUSTES", 22, Color.WHITE)
+	header.add_child(title)
+	var state := BlockfireTheme.label("PARTIDA EN PAUSA", 10, Color("#8ff1c5"))
+	state.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	header.add_child(state)
+	var hint := BlockfireTheme.label("Configura tu experiencia sin perder el estado de la ronda.", 11, Color("#a9c4e5"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(hint)
+	_add_setting_slider(stack, "VOLUMEN MASTER", "master_volume", 0.0, 1.0, 0.85)
+	_add_setting_slider(stack, "VOLUMEN SFX", "sfx_volume", 0.0, 1.0, 0.9)
+	_add_setting_slider(stack, "SENSIBILIDAD", "sensitivity", 0.04, 0.25, 0.12)
+	_add_setting_slider(stack, "MULTIPLICADOR ADS", "ads_multiplier", 0.45, 1.0, 0.72)
+	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.68)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	stack.add_child(actions)
+	var edit := Button.new()
+	edit.text = "EDITAR CONTROLES"
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	BlockfireTheme.apply_button(edit, Color("#80cfff"))
+	edit.pressed.connect(func() -> void:
+		_close_settings_panel()
+		_open_control_editor(true)
+	)
+	actions.add_child(edit)
+	var close := Button.new()
+	close.text = "CONTINUAR"
+	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	BlockfireTheme.apply_button(close, BlockfireTheme.GOLD)
+	close.pressed.connect(func() -> void:
+		_close_settings_panel()
+		_resume_from_overlay()
+	)
+	actions.add_child(close)
+
+func _add_setting_slider(stack: VBoxContainer, label_text: String, key: String, minimum: float, maximum: float, fallback: float) -> void:
+	var label := BlockfireTheme.label(label_text, 10, Color("#9db7db"))
+	stack.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = 0.01
+	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	slider.value = float(settings.get_value(key, fallback) if settings != null else fallback)
+	slider.value_changed.connect(func(value: float) -> void:
+		if settings != null:
+			settings.set_value(key, value)
+	)
+	stack.add_child(slider)
 
 func update_buy_time(seconds: float) -> void:
 	if buy_timer != null:

@@ -23,6 +23,15 @@ var _weapon_id := ""
 var _mobile := false
 var _combat := false
 var _editor := false
+var _settings := false
+var _settings_opened := false
+var _wardrobe := false
+var _armory := false
+var _lobby_settings := false
+var _change_wardrobe := false
+var _lobby_panel_opened := false
+var _cluster_bots := false
+var _clustered_bots := false
 var _reload_at := -1
 var _switch_at := -1
 var _reload_pressed := false
@@ -77,6 +86,18 @@ func _init() -> void:
 			_keepalive = true
 		elif a == "--editor":
 			_editor = true
+		elif a == "--settings":
+			_settings = true
+		elif a == "--wardrobe":
+			_wardrobe = true
+		elif a == "--armory":
+			_armory = true
+		elif a == "--lobby-settings":
+			_lobby_settings = true
+		elif a == "--change-wardrobe":
+			_change_wardrobe = true
+		elif a == "--cluster-bots":
+			_cluster_bots = true
 	print("QA_SHOT out=%s frames=%d mode=%s op=%s skin=%s weapon=%s" % [_out, _frames, _mode, _operator, _skin, _weapon_id])
 
 func _process(_delta: float) -> bool:
@@ -113,6 +134,19 @@ func _tick() -> void:
 			_app = scene.instantiate()
 			tree_root.add_child(_app)
 		return
+	if _mode == "lobby" and not _lobby_panel_opened:
+		var lobby: Node = _app.current_screen
+		if lobby != null:
+			if _wardrobe and lobby.has_method("_toggle_wardrobe"):
+				lobby.call("_toggle_wardrobe")
+			elif _armory and lobby.has_method("_toggle_armory"):
+				lobby.call("_toggle_armory")
+			elif _lobby_settings and lobby.has_method("_open_settings"):
+				lobby.call("_open_settings")
+			if _change_wardrobe and lobby.has_method("_equip_cosmetic"):
+				lobby.call("_equip_cosmetic", "top_casual")
+			_lobby_panel_opened = _wardrobe or _armory or _lobby_settings or _change_wardrobe
+		return
 	# start_requested es una SIGNAL del lobby, no un método: has_method() es
 	# siempre false para señales en Godot 4 y el arranque QA nunca se dispara.
 	if not _started and _mode != "" and _mode != "lobby" and _app.get("current_screen") != null and _app.current_screen.has_signal("start_requested"):
@@ -131,8 +165,16 @@ func _tick() -> void:
 		_player = _app.current_screen.get_node_or_null("Player")
 	if _player == null:
 		return
+	if _settings and not _settings_opened:
+		var match_screen: Node = _app.current_screen
+		var hud: Node = match_screen.get("hud") if match_screen != null else null
+		if hud != null and hud.has_method("toggle_settings"):
+			hud.toggle_settings()
+			_settings_opened = true
 	if _pos != Vector3.INF and _player is Node3D:
 		_player.global_position = _pos
+	if _cluster_bots and not _clustered_bots:
+		_cluster_bots_for_capture()
 	if _keepalive and bool(_player.get("is_alive")):
 		_player.set("health", _player.get("max_health"))
 	elif _keepalive and not bool(_player.get("is_alive")):
@@ -179,6 +221,24 @@ func _tick() -> void:
 	if _reload_at > 0 and _frames <= _reload_at and not _reload_pressed:
 		_reload_pressed = true
 		_controls.call("qa_press_reload")
+
+func _cluster_bots_for_capture() -> void:
+	var match_screen: Node = _app.current_screen
+	if match_screen == null or not match_screen.has_method("get_combatants"):
+		return
+	var combatants: Array = match_screen.get_combatants()
+	var offsets := [Vector3(0.0, 0.2, -7.0), Vector3(-3.6, 0.2, -10.5), Vector3(3.8, 0.2, -12.0), Vector3(-6.0, 0.2, -15.0)]
+	var placed := 0
+	for combatant: Node in combatants:
+		if combatant == _player or not bool(combatant.get("is_bot")):
+			continue
+		if placed >= offsets.size():
+			break
+		combatant.global_position = _player.global_position + offsets[placed]
+		combatant.set("spawn_immunity", 0.0)
+		combatant.set("target", _player)
+		placed += 1
+	_clustered_bots = placed > 0
 
 func _save_shot() -> void:
 	var img := root.get_texture().get_image()

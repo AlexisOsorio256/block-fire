@@ -161,11 +161,13 @@ func _test_visual_in_tree() -> void:
 	await process_frame
 	_check(bot.visual != null and bot.visual.model_root != null, "bot builds its own visual")
 	var bot_meshes := 0
-	if bot.visual != null and bot.visual.model_root != null:
-		for node: Node in bot.visual.model_root.find_children("*", "MeshInstance3D", true, false):
-			if (node as MeshInstance3D).visible:
+	if bot.visual != null and bot.visual.skeleton != null:
+		# El arma vive bajo la muñeca; el avatar modular mantiene cuatro prendas
+		# visibles como contrato de loadout, sin contar accesorios/arma.
+		for node: Node in bot.visual.skeleton.get_children():
+			if node is MeshInstance3D and (node as MeshInstance3D).visible:
 				bot_meshes += 1
-	_check(bot_meshes >= 4 and bot_meshes <= 7, "bot avatar resolves a deterministic loadout")
+	_check(bot_meshes == 4, "bot avatar resolves a deterministic loadout")
 	_check((bot.collision_mask & 2) != 0, "bot body blocks combatant overlap")
 	var collision_player := BlockfirePlayer.new()
 	get_root().add_child(collision_player)

@@ -39,6 +39,15 @@ static func apply_button(button: Button, accent: Color = GOLD) -> void:
 	button.add_theme_font_size_override("font_size", 16)
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
+static func set_button_selected(button: Button, selected: bool, accent: Color = GOLD) -> void:
+	if button == null:
+		return
+	button.add_theme_stylebox_override("normal", button_style(
+		Color("#234b70") if selected else PANEL_LIGHT,
+		accent if selected else Color("#395678"), 10))
+	button.add_theme_color_override("font_color", Color.WHITE if selected else ICE)
+	button.modulate = Color.WHITE
+
 static func label(text: String, size: int, color: Color = ICE) -> Label:
 	var value := Label.new()
 	value.text = text

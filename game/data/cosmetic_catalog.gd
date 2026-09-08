@@ -6,8 +6,8 @@ extends RefCounted
 ## assets/models/quaternius_modular/avatar_rig.gltf (Quaternius Ultimate
 ## Modular Characters, CC0): todos comparten CharacterArmature/Skeleton3D y
 ## se activan por visibilidad (un top, un bottom, unos shoes, una head).
-## Accesorios rígidos = primitivas con BoneAttachment3D (gafas/máscara/gorra
-## ligera) hasta integrar mallas dedicadas (deuda P2).
+## Accesorios rígidos conservan esta API y se dibujan con mallas dedicadas en
+## OperatorVisual, siempre sujetos a BoneAttachment3D.
 
 const OUTFIT_SWAT := "swat"
 const OUTFIT_CASUAL := "casual"
@@ -25,8 +25,7 @@ const OUTFIT_CASUAL2 := "casual2"
 static func items() -> Dictionary:
 	var result: Dictionary = {}
 
-	# --- Outfits (top+bottom+shoes se eligen por pieza individual,
-	# normalmente del mismo outfit para evitar mezclas incoherentes). ---
+	# --- Outfits coherentes: top+bottom+shoes comparten familia visual. ---
 	var swat_top := CosmeticItem.make("top_swat", "top", "Chaleco táctico")
 	swat_top.mesh_node = "Swat_Body"
 	var swat_bottom := CosmeticItem.make("bottom_swat", "bottom", "Pantalón táctico")
@@ -94,7 +93,7 @@ static func items() -> Dictionary:
 		head.mesh_node = head_pair[1]
 		result["head:" + head.id] = head
 
-	# --- Accesorios rígidos (primitivas con BoneAttachment3D). ---
+	# --- Accesorios rígidos (malla dedicada con BoneAttachment3D). ---
 	var shades := CosmeticItem.make("eyewear_shades", "eyewear", "Gafas de sol")
 	shades.attachment_bone = "Head"
 	shades.attachment_offset = Vector3(0.0, 0.06, -0.075)
@@ -177,18 +176,24 @@ static func item_for(slot: String, item_id: String) -> CosmeticItem:
 
 
 static func bot_loadout_for(operator_id: String, role_id: String, seed_value: int) -> Dictionary:
-	## Los bots visten del mismo catálogo con variaciones deterministas y un
-	## tronco de equipo: chaleco SWAT como top base teñido con el accent.
+	## Los bots visten una familia completa para que la variación no mezcle
+	## prendas incompatibles. Se mantiene la semilla para que cada bot sea
+	## reproducible y se priorizan siluetas urbanas/táctico-casuales.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var loadout := default_loadout()
-	var tops := ["top_swat", "top_worker", "top_punk", "top_farmer", "top_casual", "top_scifi"]
-	var bottoms := ["bottom_swat", "bottom_worker", "bottom_punk", "bottom_farmer", "bottom_casual", "bottom_scifi"]
-	var shoes := ["shoes_swat", "shoes_worker", "shoes_punk", "shoes_farmer", "shoes_casual", "shoes_scifi"]
-	loadout["top"] = tops[rng.randi() % tops.size()]
-	loadout["bottom"] = bottoms[rng.randi() % bottoms.size()]
-	loadout["shoes"] = shoes[rng.randi() % shoes.size()]
-	var heads := ["head_swat", "head_casual", "head_worker", "head_punk", "head_farmer", "head_casual2"]
+	var families: Array[Dictionary] = [
+		{"top": "top_swat", "bottom": "bottom_swat", "shoes": "shoes_swat", "heads": ["head_swat", "head_casual"]},
+		{"top": "top_casual", "bottom": "bottom_casual", "shoes": "shoes_casual", "heads": ["head_casual", "head_casual2"]},
+		{"top": "top_worker", "bottom": "bottom_worker", "shoes": "shoes_worker", "heads": ["head_worker", "head_casual"]},
+		{"top": "top_punk", "bottom": "bottom_punk", "shoes": "shoes_punk", "heads": ["head_punk", "head_casual2"]},
+		{"top": "top_suit", "bottom": "bottom_suit", "shoes": "shoes_suit", "heads": ["head_swat", "head_casual", "head_casual2"]},
+	]
+	var family: Dictionary = families[rng.randi() % families.size()]
+	loadout["top"] = family["top"]
+	loadout["bottom"] = family["bottom"]
+	loadout["shoes"] = family["shoes"]
+	var heads: Array = family["heads"]
 	loadout["head"] = heads[rng.randi() % heads.size()]
 	if rng.randf() < 0.4:
 		loadout["headwear"] = "headwear_cap" if rng.randf() < 0.6 else "headwear_beret"

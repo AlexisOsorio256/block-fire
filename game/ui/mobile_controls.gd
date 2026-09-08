@@ -327,16 +327,20 @@ func _draw() -> void:
 	if not mobile_qa and not DisplayServer.is_touchscreen_available():
 		return
 	var settings := _settings()
-	var alpha: float = float(settings.get_value("mobile_opacity", 0.68)) if settings != null else 0.68
-	var soft := Color(0.05, 0.1, 0.18, alpha * 0.62 * _control_opacity("joystick"))
-	var bright := Color(0.55, 0.78, 1.0, alpha)
+	var alpha: float = float(settings.get_value("mobile_opacity", 0.58)) if settings != null else 0.58
+	var soft := Color(0.04, 0.08, 0.15, alpha * 0.56 * _control_opacity("joystick"))
+	var bright := Color(0.55, 0.78, 1.0, alpha * 0.9)
 	var joystick_scale := _control_scale("joystick")
-	draw_circle(_move_center(), 72.0 * joystick_scale, soft)
-	draw_arc(_move_center(), 72.0 * joystick_scale, 0, TAU, 32, bright, 2.0)
-	draw_circle(_move_center() + move_vector * 40.0 * joystick_scale, 29.0 * joystick_scale, Color(0.34, 0.66, 0.92, alpha * _control_opacity("joystick")))
+	var joystick_center := _move_center()
+	var joystick_radius := 66.0 * joystick_scale
+	draw_circle(joystick_center + Vector2(0.0, 4.0), joystick_radius, Color(0.0, 0.02, 0.06, alpha * 0.24))
+	draw_circle(joystick_center, joystick_radius, soft)
+	draw_arc(joystick_center, joystick_radius, 0, TAU, 36, bright, 2.0)
+	draw_circle(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, Color(0.34, 0.66, 0.92, alpha * 0.88 * _control_opacity("joystick")))
+	draw_arc(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, 0, TAU, 24, Color(0.75, 0.91, 1.0, alpha * 0.75), 1.5)
 	for id: String in ["fire", "aim", "jump", "reload", "switch", "crouch", "sprint"]:
 		var center := _button_center(id)
-		var radius: float = (55.0 if id == "fire" else 40.0) * _control_scale(id)
+		var radius: float = (51.0 if id == "fire" else 37.0) * _control_scale(id)
 		var control_alpha := alpha * _control_opacity(id)
 		var pressed := (id == "fire" and firing) or (id == "aim" and aiming) or (id == "sprint" and sprinting)
 		var color := Color(1.0, 0.42, 0.16, control_alpha) if id == "fire" else Color(0.15, 0.28, 0.48, control_alpha)
@@ -344,11 +348,14 @@ func _draw() -> void:
 			color = Color(0.12, 0.62, 0.84, control_alpha)
 		if pressed:
 			color = color.lightened(0.28)
+		draw_circle(center + Vector2(0.0, 3.0), radius, Color(0.0, 0.02, 0.06, control_alpha * 0.24))
 		draw_circle(center, radius, color)
 		draw_arc(center, radius, 0, TAU, 24, Color(bright.r, bright.g, bright.b, control_alpha), 2.0)
+		if pressed:
+			draw_arc(center, radius - 5.0, 0, TAU, 24, Color(1.0, 1.0, 1.0, control_alpha * 0.62), 2.0)
 		_draw_icon(id, center, radius, Color(1, 1, 1, minf(1.0, control_alpha + 0.12)))
 		if edit_mode:
-			var context_name: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "RECARGAR", "switch": "CAMBIAR", "crouch": "AGACHAR", "sprint": "CORRER"}.get(id, id.to_upper()))
+			var context_name: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "RECARGAR", "switch": "CAMBIAR ARMA", "crouch": "AGACHARSE", "sprint": "CORRER"}.get(id, id.to_upper()))
 			draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 18), context_name, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11, Color.WHITE)
 	if edit_mode:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.4, 0.7, 1.0, 0.08), false, 2.0)

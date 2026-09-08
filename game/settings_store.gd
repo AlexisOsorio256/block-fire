@@ -9,7 +9,7 @@ var values: Dictionary = {
 	"sfx_volume": 0.9,
 	"sensitivity": 0.12,
 	"ads_multiplier": 0.72,
-	"mobile_opacity": 0.68,
+	"mobile_opacity": 0.58,
 	"operator": "BRAVO",
 	"weapon_skin": "Estándar",
 	"quality": "mobile",

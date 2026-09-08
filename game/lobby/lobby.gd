@@ -1,6 +1,8 @@
 class_name BlockfireLobby
 extends Node3D
 
+const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
+
 signal start_requested(mode: String, operator_id: String, weapon_skin: String)
 
 var mobile_qa: bool = false
@@ -18,6 +20,7 @@ var armory_panel: PanelContainer
 var ui_root: Control
 var wardrobe_category: String = "top"
 var wardrobe_grid: GridContainer
+var wardrobe_category_buttons: Dictionary = {}
 var armory_label: Label3D
 var weapon_display_root: Node3D
 var _time: float = 0.0
@@ -44,7 +47,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	if is_instance_valid(weapon_display_root):
-		weapon_display_root.rotation_degrees.y += delta * 18.0
+		# Rotación de exposición lenta: conserva la lectura lateral del arma y no
+		# la deja en una orientación caótica durante una captura o un toque.
+		weapon_display_root.rotation_degrees.y += delta * 5.0
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -77,11 +82,11 @@ func _build_world() -> void:
 	add_child(rim)
 
 	var camera := Camera3D.new()
-	camera.position = Vector3(2.3, 1.5, 3.2)
-	camera.fov = 36.0
+	camera.position = Vector3(2.55, 1.52, 3.85)
+	camera.fov = 39.0
 	camera.current = true
 	add_child(camera)
-	camera.look_at(Vector3(1.35, 1.0, 0), Vector3.UP)
+	camera.look_at(Vector3(1.65, 0.98, 0.15), Vector3.UP)
 
 	# Patio: suelo asfaltado oscuro + círculo pintado donde apoya el héroe.
 	var ground := MeshInstance3D.new()
@@ -101,11 +106,11 @@ func _build_world() -> void:
 	add_child(ground_body)
 	var pad := MeshInstance3D.new()
 	var pad_mesh := TorusMesh.new()
-	pad_mesh.inner_radius = 0.55
-	pad_mesh.outer_radius = 0.62
+	pad_mesh.inner_radius = 0.48
+	pad_mesh.outer_radius = 0.54
 	pad.mesh = pad_mesh
-	pad.position = Vector3(1.4, 0.02, 0)
-	pad.material_override = _emissive(Color("#ffb73e"), 0.25)
+	pad.position = Vector3(1.55, 0.02, 0)
+	pad.material_override = _emissive(Color("#d59136"), 0.16)
 	add_child(pad)
 	for i: int in range(3):
 		var dash := MeshInstance3D.new()
@@ -125,7 +130,7 @@ func _build_world() -> void:
 	_add_lamp(Vector3(5.8, 0.0, 2.4))
 
 	hero = OperatorVisual.new()
-	hero.position = Vector3(1.4, 0.0, 0)
+	hero.position = Vector3(1.55, 0.0, 0)
 	hero.rotation_degrees.y = -28.0
 	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
@@ -190,17 +195,17 @@ func _create_weapon_display() -> void:
 	var base := MeshInstance3D.new()
 	base.name = "ArmoryPreviewBase"
 	var base_mesh := BoxMesh.new()
-	base_mesh.size = Vector3(1.1, 0.45, 0.7)
+	base_mesh.size = Vector3(0.92, 0.18, 0.58)
 	base.mesh = base_mesh
-	base.position = Vector3(2.75, 0.22, 0.5)
-	base.material_override = _material(Color("#232f45"))
+	base.position = Vector3(3.05, 0.11, 0.38)
+	base.material_override = _material(Color("#17263d"))
 	add_child(base)
 	weapon_display_root = _recreate_weapon_display()
 	armory_label = Label3D.new()
 	armory_label.name = "ArmoryPreviewLabel"
 	armory_label.text = "RIFLE · " + selected_skin.to_upper()
-	armory_label.position = Vector3(2.15, 1.8, 0.6)
-	armory_label.font_size = 32
+	armory_label.position = Vector3(3.05, 1.72, 0.38)
+	armory_label.font_size = 27
 	armory_label.pixel_size = 0.003
 	armory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	armory_label.modulate = BlockfireTheme.GOLD
@@ -211,15 +216,14 @@ func _create_weapon_display() -> void:
 	add_child(armory_label)
 
 func _recreate_weapon_display() -> Node3D:
-	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
-	if packed == null:
-		return null
-	var display := Node3D.new()
+	var display := WeaponVisualScript.new()
 	display.name = "ArmoryPreview"
-	display.position = Vector3(2.75, 0.85, 0.5)
-	display.rotation_degrees = Vector3(-8.0, 24.0, -10.0)
-	display.scale = Vector3.ONE * 0.85
-	display.add_child(packed.instantiate())
+	display.configure("rifle")
+	display.position = Vector3(3.05, 0.66, 0.38)
+	# El preview está libre del esqueleto: aquí se usa la vista lateral limpia
+	# del eje del rifle, distinta de la compensación local de la muñeca.
+	display.rotation_degrees = Vector3(3.0, 102.0, 60.0)
+	display.scale = Vector3.ONE * 0.52
 	WeaponSkin.apply(display, selected_skin)
 	add_child(display)
 	return display
@@ -234,30 +238,41 @@ func _build_ui() -> void:
 	ui_root = root
 	layer.add_child(root)
 
+	var left_shell := Panel.new()
+	left_shell.anchor_right = 0.39
+	left_shell.anchor_bottom = 0.0
+	left_shell.offset_left = 24.0
+	left_shell.offset_top = 20.0
+	left_shell.offset_right = -20.0
+	left_shell.offset_bottom = 444.0
+	left_shell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_shell.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0711279c"), Color("#6c8db766"), 16, 1))
+	root.add_child(left_shell)
+
 	var left := VBoxContainer.new()
 	left.anchor_left = 0.0
 	left.anchor_top = 0.0
-	left.anchor_right = 0.42
+	left.anchor_right = 0.39
 	left.anchor_bottom = 1.0
 	left.offset_left = 40.0
 	left.offset_top = 32.0
-	left.offset_right = -12.0
+	left.offset_right = -28.0
 	left.offset_bottom = -28.0
-	left.add_theme_constant_override("separation", 10)
+	left.add_theme_constant_override("separation", 8)
 	root.add_child(left)
 
-	var title := BlockfireTheme.label("BLOCKFIRE", 46 if not mobile_qa else 34, Color.WHITE)
+	var title := BlockfireTheme.label("BLOCKFIRE", 43 if not mobile_qa else 32, Color.WHITE)
 	title.add_theme_color_override("font_shadow_color", Color("#000000aa"))
 	title.add_theme_constant_override("shadow_offset_x", 3)
 	title.add_theme_constant_override("shadow_offset_y", 3)
 	left.add_child(title)
-	var subtitle := BlockfireTheme.label("FPS ARCADE · ESCUADRAS 4v4 · TODOS CONTRA TODOS", 12, Color("#9db7db"))
+	var subtitle := BlockfireTheme.label("FPS MÓVIL · 4v4 / FFA", 12, Color("#9db7db"))
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(subtitle)
 
 	var play := Button.new()
 	play.text = "JUGAR"
-	play.custom_minimum_size = Vector2(0, 62 if not mobile_qa else 50)
+	play.custom_minimum_size = Vector2(0, 58 if not mobile_qa else 48)
 	play.add_theme_font_size_override("font_size", 25 if not mobile_qa else 20)
 	BlockfireTheme.apply_button(play, BlockfireTheme.GOLD)
 	play.add_theme_stylebox_override("normal", BlockfireTheme.button_style(Color("#ffb73e"), Color("#ffd477"), 12))
@@ -321,7 +336,7 @@ func _select_mode(mode: String) -> void:
 	selected_mode = mode
 	for id: String in mode_buttons:
 		var button: Button = mode_buttons[id]
-		button.modulate = Color.WHITE if id == mode else Color("#8292a8")
+		BlockfireTheme.set_button_selected(button, id == mode, BlockfireTheme.GOLD)
 
 func _select_skin(skin: String) -> void:
 	selected_skin = skin
@@ -329,7 +344,7 @@ func _select_skin(skin: String) -> void:
 	if settings != null:
 		settings.set_value("weapon_skin", skin)
 	for key: String in skin_buttons:
-		skin_buttons[key].modulate = Color.WHITE if key == skin else Color("#8292a8")
+		BlockfireTheme.set_button_selected(skin_buttons[key], key == skin, BlockfireTheme.GOLD)
 	if armory_label != null:
 		armory_label.text = "RIFLE · " + skin.to_upper()
 	if is_instance_valid(hero):
@@ -346,21 +361,24 @@ func _toggle_wardrobe() -> void:
 	wardrobe_panel = PanelContainer.new()
 	wardrobe_panel.anchor_left = 0.0
 	wardrobe_panel.anchor_top = 0.0
-	wardrobe_panel.anchor_right = 0.42
+	wardrobe_panel.anchor_right = 0.39
 	wardrobe_panel.anchor_bottom = 1.0
 	wardrobe_panel.offset_left = 40.0
 	wardrobe_panel.offset_top = 300.0
-	wardrobe_panel.offset_right = -12.0
+	wardrobe_panel.offset_right = -28.0
 	wardrobe_panel.offset_bottom = -28.0
 	wardrobe_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), Color("#7fbfff"), 14, 2))
 	ui_root.add_child(wardrobe_panel)
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 8)
+	stack.add_theme_constant_override("separation", 6)
 	wardrobe_panel.add_child(stack)
 	var heading := BlockfireTheme.label("ROPA · PERSONALIZA TU PERSONAJE", 15, BlockfireTheme.GOLD)
 	stack.add_child(heading)
-	var cats := HBoxContainer.new()
-	cats.add_theme_constant_override("separation", 5)
+	wardrobe_category_buttons.clear()
+	var cats := GridContainer.new()
+	cats.columns = 4
+	cats.add_theme_constant_override("h_separation", 5)
+	cats.add_theme_constant_override("v_separation", 5)
 	stack.add_child(cats)
 	for pair: Array in WARDROBE_CATEGORIES:
 		var cat_button := Button.new()
@@ -370,6 +388,7 @@ func _toggle_wardrobe() -> void:
 		cat_button.add_theme_font_size_override("font_size", 10)
 		BlockfireTheme.apply_button(cat_button, Color("#80cfff"))
 		var slot := str(pair[1])
+		wardrobe_category_buttons[slot] = cat_button
 		cat_button.pressed.connect(func() -> void:
 			wardrobe_category = slot
 			_refresh_wardrobe()
@@ -395,6 +414,8 @@ func _refresh_wardrobe() -> void:
 		child.queue_free()
 	var settings := _settings()
 	var equipped := str(settings.get_value("cosmetic_" + wardrobe_category, "") if settings != null else "")
+	for slot: String in wardrobe_category_buttons:
+		BlockfireTheme.set_button_selected(wardrobe_category_buttons[slot], slot == wardrobe_category, Color("#80cfff"))
 	# "Ninguno" para accesorios; las prendas siempre llevan algo equipado.
 	if wardrobe_category in ["headwear", "eyewear", "mask"]:
 		var none := _make_wardrobe_card("Ninguno", equipped.is_empty())
@@ -432,12 +453,12 @@ func _toggle_armory() -> void:
 	armory_panel = PanelContainer.new()
 	armory_panel.anchor_left = 0.0
 	armory_panel.anchor_top = 0.0
-	armory_panel.anchor_right = 0.42
-	armory_panel.anchor_bottom = 1.0
+	armory_panel.anchor_right = 0.39
+	armory_panel.anchor_bottom = 0.0
 	armory_panel.offset_left = 40.0
 	armory_panel.offset_top = 300.0
-	armory_panel.offset_right = -12.0
-	armory_panel.offset_bottom = -28.0
+	armory_panel.offset_right = -28.0
+	armory_panel.offset_bottom = 520.0
 	armory_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), BlockfireTheme.GOLD, 14, 2))
 	ui_root.add_child(armory_panel)
 	var stack := VBoxContainer.new()
@@ -490,12 +511,12 @@ func _open_settings() -> void:
 	settings_popup = PanelContainer.new()
 	settings_popup.anchor_left = 0.0
 	settings_popup.anchor_top = 0.0
-	settings_popup.anchor_right = 0.42
-	settings_popup.anchor_bottom = 1.0
+	settings_popup.anchor_right = 0.39
+	settings_popup.anchor_bottom = 0.0
 	settings_popup.offset_left = 40.0
 	settings_popup.offset_top = 120.0
-	settings_popup.offset_right = -12.0
-	settings_popup.offset_bottom = -28.0
+	settings_popup.offset_right = -28.0
+	settings_popup.offset_bottom = 524.0
 	settings_popup.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), Color("#7fbfff"), 14, 2))
 	ui_root.add_child(settings_popup)
 	settings_popup.z_index = 20
@@ -507,7 +528,7 @@ func _open_settings() -> void:
 	_add_setting_slider(stack, "VOLUMEN SFX", "sfx_volume", 0.0, 1.0, 0.9)
 	_add_setting_slider(stack, "SENSIBILIDAD", "sensitivity", 0.04, 0.25, 0.12)
 	_add_setting_slider(stack, "MULTIPLICADOR ADS", "ads_multiplier", 0.45, 1.0, 0.72)
-	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.68)
+	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.58)
 	stack.add_child(BlockfireTheme.label("LEGAL / CRÉDITOS", 10, Color("#9db7db")))
 	var legal := BlockfireTheme.label("Audio: Jesús Lastra · CC-BY 3.0 · Ver CREDITS.md\nAvatar: Quaternius UMC · CC0 · Armas: Kenney · CC0", 10, Color("#6d86a6"))
 	legal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

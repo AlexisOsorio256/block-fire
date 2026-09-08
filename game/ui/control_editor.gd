@@ -10,9 +10,19 @@ var drag_pointer: int = -1
 var scale_slider: HSlider
 var opacity_slider: HSlider
 var selected_label: Label
-var panel_rect := Rect2(20, 20, 330, 310)
+var panel_rect := Rect2(24, 24, 410, 380)
 
 const CONTROL_IDS: Array[String] = ["joystick", "fire", "aim", "jump", "reload", "switch", "crouch", "sprint"]
+const CONTROL_LABELS: Dictionary = {
+	"joystick": "MOVIMIENTO",
+	"fire": "FUEGO",
+	"aim": "MIRA",
+	"jump": "SALTO",
+	"reload": "RECARGAR",
+	"switch": "CAMBIAR ARMA",
+	"crouch": "AGACHARSE",
+	"sprint": "CORRER",
+}
 
 func setup(controls: BlockfireMobileControls) -> void:
 	mobile_controls = controls
@@ -41,23 +51,23 @@ func _build_panel() -> void:
 	panel.add_child(stack)
 	var title := BlockfireTheme.label("EDITAR CONTROLES", 19, Color.WHITE)
 	stack.add_child(title)
-	var hint := BlockfireTheme.label("Arrastra un control. Solo se limita el área segura.", 10, Color("#a9c4e5"))
+	var hint := BlockfireTheme.label("Arrastra un control · los botones respetan el área segura.", 10, Color("#a9c4e5"))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(hint)
 	var grid := GridContainer.new()
-	grid.columns = 4
+	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 5)
 	grid.add_theme_constant_override("v_separation", 5)
 	stack.add_child(grid)
 	for id: String in CONTROL_IDS:
 		var button := Button.new()
-		button.text = id.to_upper()
-		button.custom_minimum_size = Vector2(69, 30)
-		button.add_theme_font_size_override("font_size", 10)
+		button.text = CONTROL_LABELS.get(id, id.to_upper())
+		button.custom_minimum_size = Vector2(0, 32)
+		button.add_theme_font_size_override("font_size", 11)
 		BlockfireTheme.apply_button(button, Color("#80cfff"))
 		button.pressed.connect(func() -> void: _select(id))
 		grid.add_child(button)
-	selected_label = BlockfireTheme.label("SELECCIONADO: " + selected_id.to_upper(), 11, BlockfireTheme.GOLD)
+	selected_label = BlockfireTheme.label("SELECCIONADO: " + CONTROL_LABELS.get(selected_id, selected_id.to_upper()), 11, BlockfireTheme.GOLD)
 	stack.add_child(selected_label)
 	var scale_text := BlockfireTheme.label("TAMAÑO", 10, Color("#a9c4e5"))
 	stack.add_child(scale_text)
@@ -124,7 +134,7 @@ func _gui_input(event: InputEvent) -> void:
 func _select(id: String) -> void:
 	selected_id = id
 	if selected_label != null:
-		selected_label.text = "SELECCIONADO: " + selected_id.to_upper()
+		selected_label.text = "SELECCIONADO: " + CONTROL_LABELS.get(selected_id, selected_id.to_upper())
 	if mobile_controls != null:
 		scale_slider.value = mobile_controls.get_control_scale(selected_id)
 		opacity_slider.value = mobile_controls.get_control_opacity(selected_id)

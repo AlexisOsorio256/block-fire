@@ -6,14 +6,16 @@ extends Node3D
 ## variación determinista de los bots. La identidad visible vive en la ROPA
 ## (CosmeticCatalog sobre el rig modular compartido) y en un pequeño accesorio
 ## de equipo (banda en el brazo), nunca en un aro gigante ni un tinte global.
-## Rig: assets/models/quaternius_modular/avatar_rig.gltf (CC0, Quaternius
-## Ultimate Modular Characters). Un solo Skeleton3D; top/bottom/shoes/head se
-## activan por visibilidad; accesorios rígidos cuelgan de BoneAttachment3D.
+## Rig base: assets/models/quaternius_modular/avatar_rig.gltf (CC0, Quaternius
+## Ultimate Modular Characters). Un Skeleton3D humanoide comparte las
+## animaciones y las prendas urbanas; el arsenal visual se monta en la muñeca
+## para acompañar Idle/Run/Shoot/Death sin un objeto flotante.
 
 const AVATAR_SCENE := "res://assets/models/quaternius_modular/avatar_rig.gltf"
+const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
 
-## Escala del rig modular (altura ~1.97 unidades) al tamaño de gameplay (~1.75).
-const MODEL_SCALE := 0.885
+## Altura importada ~2.0 unidades; esta escala la acerca a la cápsula de 1.8.
+const MODEL_SCALE := 0.72
 const MODEL_Y_OFFSET := 0.0
 
 const BAND_COLOR_ALLY := Color("#4fd6e9")
@@ -39,6 +41,7 @@ var team_band_color: Color = BAND_COLOR_ALLY
 var showcase_mode: bool = false
 var showcase_weapon_scene: String = ""
 var showcase_weapon_skin: String = "Estándar"
+var _weapon_mount: BoneAttachment3D
 
 ## Índice de skin del skeleton (una sola copia compartida por instancias del
 ## mismo PackedScene: Godot instancia Skeleton3D por escena, sin coste extra).
@@ -65,10 +68,11 @@ func set_showcase_mode(enabled: bool, weapon_scene: String = "", weapon_skin: St
 		return
 	if showcase_mode:
 		_remove_team_markers()
-		_remove_showcase_weapon()
+		_remove_mounted_weapon()
 		_add_showcase_weapon()
+		_apply_showcase_pose()
 	else:
-		_remove_showcase_weapon()
+		_remove_mounted_weapon()
 		_add_team_marker()
 
 
@@ -76,8 +80,9 @@ func set_showcase_weapon_skin(weapon_skin: String) -> void:
 	showcase_weapon_skin = weapon_skin
 	if not showcase_mode or skeleton == null or not is_instance_valid(skeleton):
 		return
-	_remove_showcase_weapon()
+	_remove_mounted_weapon()
 	_add_showcase_weapon()
+	_apply_showcase_pose()
 
 
 ## Compatibilidad: firma antigua configure(id, team, color) sigue válida.
@@ -132,6 +137,7 @@ func _build() -> void:
 		_play_animation(&"Idle")
 		if showcase_mode:
 			_add_showcase_weapon()
+			_apply_showcase_pose()
 		else:
 			_add_team_marker()
 		return
@@ -171,6 +177,9 @@ func _play_animation(animation_name: StringName) -> void:
 func _apply_loadout(effective: Dictionary) -> void:
 	if skeleton == null:
 		return
+	if model_root.find_child("Body", true, false) != null and model_root.find_child("Head", true, false) != null:
+		_apply_toon_shooter_loadout(effective)
+		return
 	# 1) Todo oculto salvo lo pedido: primero apagamos TODAS las prendas.
 	for child: Node in skeleton.get_children():
 		if child is MeshInstance3D:
@@ -199,6 +208,103 @@ func _apply_loadout(effective: Dictionary) -> void:
 		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
 		if accessory != null:
 			_add_accessory(accessory)
+
+
+func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
+	# El pack Toon Shooter trae varias armas de ejemplo colgadas del dedo. Se
+	# ocultan para que WeaponController/attach_weapon_to_hand sea el único dueño
+	# del arma visible y no haya dos representaciones compitiendo.
+	var weapon_meshes := [
+		"AK", "GrenadeLauncher", "Knife_1", "Knife_2", "Pistol", "Revolver",
+		"Revolver_Small", "RocketLauncher", "ShortCannon", "Shotgun", "Shovel",
+		"SMG", "Sniper", "Sniper_2"
+	]
+	for node: Node in model_root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		mesh_instance.visible = node.name in ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R"]
+	for weapon_name: String in weapon_meshes:
+		var weapon_node := model_root.find_child(weapon_name, true, false)
+		if weapon_node is MeshInstance3D:
+			(weapon_node as MeshInstance3D).visible = false
+
+	# La ropa sigue siendo una decisión visible: el rig integrado se tiñe por
+	# familia de outfit y por pantalón, sin mezclar prendas incompatibles.
+	var top_color := _toon_outfit_color(String(effective.get("top", "top_swat")))
+	var bottom_color := _toon_outfit_color(String(effective.get("bottom", "bottom_swat")))
+	var outfit_color := top_color.lerp(bottom_color, 0.28)
+	for mesh_name: String in ["Body", "ShoulderPad_L", "ShoulderPad_R"]:
+		var mesh_node := model_root.find_child(mesh_name, true, false) as MeshInstance3D
+		if mesh_node != null:
+			_tint_toon_mesh(mesh_node, outfit_color, 0.42)
+	var head := model_root.find_child("Head", true, false) as MeshInstance3D
+	if head != null:
+		# La cabeza del pack tiene una silueta heroica muy grande. Reducirla en la
+		# capa visual recupera proporción humana sin tocar cápsula ni hitboxes.
+		head.scale = Vector3.ONE * 0.82
+		_tint_toon_mesh(head, _toon_head_color(String(effective.get("head", "head_swat"))), 0.28)
+		_tint_toon_skin(head, _toon_skin_color(String(effective.get("skin", "skin_light"))))
+
+
+func _toon_outfit_color(item_id: String) -> Color:
+	if item_id.contains("casual"):
+		return Color("#756184")
+	if item_id.contains("worker"):
+		return Color("#ba7e42")
+	if item_id.contains("suit"):
+		return Color("#3d4d67")
+	if item_id.contains("punk"):
+		return Color("#8f4b5f")
+	if item_id.contains("farmer"):
+		return Color("#667b4e")
+	if item_id.contains("scifi"):
+		return Color("#4a7da5")
+	return Color("#466b7d")
+
+
+func _toon_head_color(item_id: String) -> Color:
+	if item_id.contains("punk"):
+		return Color("#7e4354")
+	if item_id.contains("worker"):
+		return Color("#d39a43")
+	if item_id.contains("farmer"):
+		return Color("#73854a")
+	if item_id.contains("casual"):
+		return Color("#607d9d")
+	return Color("#4b7588")
+
+
+func _toon_skin_color(item_id: String) -> Color:
+	if item_id.contains("medium"):
+		return Color("#c99168")
+	if item_id.contains("tan"):
+		return Color("#aa704e")
+	if item_id.contains("dark"):
+		return Color("#7f523a")
+	return Color("#e0ad82")
+
+
+func _tint_toon_mesh(mesh_instance: MeshInstance3D, target: Color, strength: float) -> void:
+	if mesh_instance.mesh == null:
+		return
+	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+		var source := mesh_instance.get_active_material(surface_index)
+		if not source is StandardMaterial3D:
+			continue
+		var material := source.duplicate() as StandardMaterial3D
+		material.albedo_color = material.albedo_color.lerp(target, strength)
+		mesh_instance.set_surface_override_material(surface_index, material)
+
+
+func _tint_toon_skin(mesh_instance: MeshInstance3D, tone: Color) -> void:
+	if mesh_instance.mesh == null:
+		return
+	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+		var source := mesh_instance.get_active_material(surface_index)
+		if not source is StandardMaterial3D or String(source.resource_name) != "Skin":
+			continue
+		var material := source.duplicate() as StandardMaterial3D
+		material.albedo_color = tone
+		mesh_instance.set_surface_override_material(surface_index, material)
 
 
 func _fallback_for(slot: String) -> String:
@@ -298,33 +404,113 @@ func _remove_team_markers() -> void:
 
 
 func _remove_showcase_weapon() -> void:
-	var attachment := get_node_or_null("ShowcaseWeaponAttachment")
-	if attachment != null:
-		attachment.free()
+	_remove_mounted_weapon()
 
 
 func _add_showcase_weapon() -> void:
 	if showcase_weapon_scene.is_empty():
 		return
-	var packed := load(showcase_weapon_scene) as PackedScene
-	if packed == null:
-		return
-	# El rig modular trae poses y prendas con escalas distintas. Un prop local
-	# estable conserva la calibración del expositor y evita que un BoneAttachment
-	# herede una transformación que descomponga el arma en el escaparate.
-	var attachment := Node3D.new()
-	attachment.name = "ShowcaseWeaponAttachment"
-	add_child(attachment)
-	var gun := packed.instantiate() as Node3D
+	var gun := _new_weapon_visual(showcase_weapon_scene)
 	if gun == null:
-		attachment.free()
 		return
-	attachment.position = Vector3(0.42, 1.08, 0.24)
-	attachment.rotation_degrees = Vector3(-8.0, 24.0, -10.0)
-	attachment.scale = Vector3.ONE * 0.70
-	gun.scale = Vector3.ONE * 0.85
-	attachment.add_child(gun)
-	WeaponSkin.apply(gun, showcase_weapon_skin)
+	attach_weapon_to_hand(gun, _weapon_id_from_scene(showcase_weapon_scene), showcase_weapon_skin, true)
+
+
+## Monta el arma del gameplay en la muñeca del rig. WeaponController conserva
+## toda la lógica de daño/cadencia; este método solo posee el transform visual.
+## BoneAttachment3D hace que el arma siga Idle_Gun, Run_Gun y Death sin un
+## parche por frame ni una copia de la pose del actor.
+func attach_weapon_to_hand(weapon: Node3D, weapon_id: String, weapon_skin: String = "Estándar", showcase: bool = false) -> Node3D:
+	if weapon == null or skeleton == null or not is_instance_valid(skeleton):
+		return weapon
+	_remove_mounted_weapon()
+	var marker := Node3D.new()
+	marker.name = "ShowcaseWeaponAttachment" if showcase else "ThirdPersonWeaponAttachment"
+	add_child(marker)
+	var mount := _ensure_weapon_mount()
+	mount.add_child(weapon)
+	weapon.name = "MountedWeapon"
+	var pose := _weapon_mount_pose(weapon_id, showcase)
+	weapon.position = pose["position"]
+	weapon.rotation_degrees = pose["rotation"]
+	weapon.scale = Vector3.ONE * float(pose["scale"])
+	WeaponSkin.apply(weapon, weapon_skin)
+	if showcase:
+		_apply_showcase_pose()
+	return weapon
+
+
+func _ensure_weapon_mount() -> BoneAttachment3D:
+	if _weapon_mount != null and is_instance_valid(_weapon_mount):
+		return _weapon_mount
+	_weapon_mount = BoneAttachment3D.new()
+	_weapon_mount.name = "WeaponHandMount"
+	for bone_name: String in ["Wrist.R", "Index1.R", "LowerArm.R"]:
+		if skeleton.find_bone(bone_name) >= 0:
+			_weapon_mount.bone_name = bone_name
+			break
+	skeleton.add_child(_weapon_mount)
+	return _weapon_mount
+
+
+func _remove_mounted_weapon() -> void:
+	for marker_name: String in ["ShowcaseWeaponAttachment", "ThirdPersonWeaponAttachment"]:
+		var marker := get_node_or_null(marker_name)
+		if marker != null:
+			marker.free()
+	if _weapon_mount != null and is_instance_valid(_weapon_mount):
+		for child: Node in _weapon_mount.get_children():
+			child.free()
+
+
+func _apply_showcase_pose() -> void:
+	if not showcase_mode:
+		return
+	if animation_player == null or not is_instance_valid(animation_player):
+		return
+	var pose: StringName = &"Idle_Shoot" if animation_player.has_animation(&"Idle_Shoot") else &"Idle_Gun"
+	_play_animation(pose)
+
+
+func _new_weapon_visual(scene_path: String) -> Node3D:
+	var weapon := WeaponVisualScript.new()
+	weapon.configure(_weapon_id_from_scene(scene_path))
+	return weapon
+
+
+func _weapon_id_from_scene(scene_path: String) -> String:
+	var path := scene_path.to_lower()
+	if path.contains("shotgun"):
+		return "shotgun"
+	if path.contains("pistol"):
+		return "pistol"
+	if path.contains("smg"):
+		return "smg"
+	return "rifle"
+
+
+func _weapon_mount_pose(weapon_id: String, showcase: bool) -> Dictionary:
+	# Las cuatro mallas comparten el mismo eje artesanal: el cañón apunta por +Z.
+	# Esta compensación alinea ese eje con la pose de muñeca del rig modular; la
+	# geometría ya contiene sus diferencias de escala y proporción por familia.
+	var pose := {
+		"position": Vector3(0.0, 0.145, -0.055),
+		"rotation": Vector3(3.0, 12.0, 60.0),
+		"scale": 0.45
+	}
+	match weapon_id:
+		"pistol":
+			pose["position"] = Vector3(0.0, 0.136, -0.055)
+			pose["scale"] = 0.42
+		"shotgun":
+			pose["position"] = Vector3(0.0, 0.135, -0.07)
+			pose["scale"] = 0.45
+		"smg":
+			pose["position"] = Vector3(0.0, 0.14, -0.055)
+			pose["scale"] = 0.44
+	if showcase:
+		pose["scale"] = float(pose["scale"]) * 1.08
+	return pose
 
 
 func _add_accessory(item: CosmeticItem) -> void:
@@ -354,22 +540,96 @@ func _add_accessory(item: CosmeticItem) -> void:
 
 
 func _eyewear_mesh() -> Mesh:
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.16, 0.035, 0.035)
-	return mesh
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_append_rounded_prism(tool, Vector3(-0.062, 0.0, 0.0), Vector3(0.09, 0.045, 0.025), 0.012)
+	_append_rounded_prism(tool, Vector3(0.062, 0.0, 0.0), Vector3(0.09, 0.045, 0.025), 0.012)
+	_append_rounded_prism(tool, Vector3(0.0, 0.0, 0.0), Vector3(0.042, 0.016, 0.022), 0.006)
+	_append_rounded_prism(tool, Vector3(-0.125, 0.0, 0.006), Vector3(0.045, 0.012, 0.018), 0.004)
+	_append_rounded_prism(tool, Vector3(0.125, 0.0, 0.006), Vector3(0.045, 0.012, 0.018), 0.004)
+	tool.generate_normals()
+	return tool.commit()
 
 
 func _mask_mesh() -> Mesh:
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.13, 0.11, 0.06)
-	return mesh
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_append_profile(tool, PackedVector2Array([
+		Vector2(-0.105, 0.065), Vector2(0.105, 0.065), Vector2(0.12, 0.015),
+		Vector2(0.09, -0.075), Vector2(-0.09, -0.075), Vector2(-0.12, 0.015)
+	]), 0.055, 0.0)
+	# Una costura fina da lectura de tela sin añadir otro nodo ni una textura
+	# compartida que pueda contaminar los materiales del rig.
+	_append_rounded_prism(tool, Vector3(0.0, 0.018, -0.031), Vector3(0.19, 0.012, 0.008), 0.003)
+	tool.generate_normals()
+	return tool.commit()
 
 
 func _cap_mesh() -> Mesh:
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.115
-	mesh.height = 0.10
-	return mesh
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 12
+	var rings := 4
+	var center_y := 0.0
+	var radius := 0.12
+	for ring_index: int in range(rings):
+		var y0 := float(ring_index) * 0.026
+		var y1 := float(ring_index + 1) * 0.026
+		var r0 := radius * (1.0 - float(ring_index) * 0.12)
+		var r1 := radius * (1.0 - float(ring_index + 1) * 0.12)
+		for side: int in sides:
+			var next := (side + 1) % sides
+			var a0 := TAU * float(side) / float(sides)
+			var a1 := TAU * float(next) / float(sides)
+			var p00 := Vector3(cos(a0) * r0, center_y + y0, sin(a0) * r0)
+			var p01 := Vector3(cos(a1) * r0, center_y + y0, sin(a1) * r0)
+			var p10 := Vector3(cos(a0) * r1, center_y + y1, sin(a0) * r1)
+			var p11 := Vector3(cos(a1) * r1, center_y + y1, sin(a1) * r1)
+			_add_triangle(tool, p00, p10, p11)
+			_add_triangle(tool, p00, p11, p01)
+	var brim := PackedVector2Array([
+		Vector2(-0.15, -0.045), Vector2(0.15, -0.045), Vector2(0.13, 0.025),
+		Vector2(-0.13, 0.025)
+	])
+	_append_profile(tool, brim, 0.025, -0.10)
+	tool.generate_normals()
+	return tool.commit()
+
+
+func _append_rounded_prism(tool: SurfaceTool, center: Vector3, dimensions: Vector3, bevel: float) -> void:
+	var half := Vector2(dimensions.x * 0.5, dimensions.y * 0.5)
+	var b := clampf(bevel, 0.0, minf(half.x, half.y) * 0.8)
+	var points := PackedVector2Array([
+		Vector2(-half.x + b, -half.y), Vector2(half.x - b, -half.y),
+		Vector2(half.x, -half.y + b), Vector2(half.x, half.y - b),
+		Vector2(half.x - b, half.y), Vector2(-half.x + b, half.y),
+		Vector2(-half.x, half.y - b), Vector2(-half.x, -half.y + b)
+	])
+	_append_profile(tool, points, dimensions.z, center.z, Vector2(center.x, center.y))
+
+
+func _append_profile(tool: SurfaceTool, points: PackedVector2Array, depth: float, z_center: float, offset: Vector2 = Vector2.ZERO) -> void:
+	if points.size() < 3:
+		return
+	var front := z_center - depth * 0.5
+	var back := z_center + depth * 0.5
+	for index: int in range(1, points.size() - 1):
+		_add_triangle(tool, _accessory_point(points[0], front, offset), _accessory_point(points[index + 1], front, offset), _accessory_point(points[index], front, offset))
+		_add_triangle(tool, _accessory_point(points[0], back, offset), _accessory_point(points[index], back, offset), _accessory_point(points[index + 1], back, offset))
+	for index: int in points.size():
+		var next := (index + 1) % points.size()
+		_add_triangle(tool, _accessory_point(points[index], front, offset), _accessory_point(points[index], back, offset), _accessory_point(points[next], back, offset))
+		_add_triangle(tool, _accessory_point(points[index], front, offset), _accessory_point(points[next], back, offset), _accessory_point(points[next], front, offset))
+
+
+func _accessory_point(point: Vector2, z: float, offset: Vector2) -> Vector3:
+	return Vector3(point.x + offset.x, point.y + offset.y, z)
+
+
+func _add_triangle(tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	tool.add_vertex(a)
+	tool.add_vertex(b)
+	tool.add_vertex(c)
 
 
 func _build_fallback() -> void:

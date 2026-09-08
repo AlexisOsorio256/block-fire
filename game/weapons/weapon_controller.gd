@@ -1,6 +1,8 @@
 class_name WeaponController
 extends Node3D
 
+const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
+
 signal weapon_fired(definition: WeaponDefinition)
 signal weapon_changed(definition: WeaponDefinition)
 signal ammo_changed(current: int, reserve: int, definition: WeaponDefinition)
@@ -64,7 +66,10 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	else:
 		viewmodel_base_position = Vector3(0.28, -0.22, -0.46)
 		viewmodel_base_rotation = Vector3(0.0, 180.0, 0.0)
-		viewmodel_scale = 0.36
+		# The custom meshes carry more silhouette detail than the legacy GLBs;
+		# keep the same readable lower-right footprint instead of covering the
+		# mobile controls and ammo block.
+		viewmodel_scale = 0.26
 	_apply_definition_pose()
 	rng.randomize()
 	shot_audio = AudioStreamPlayer3D.new()
@@ -355,15 +360,25 @@ func _refresh_viewmodel() -> void:
 	muzzle_anchor = null
 	var definition := current_definition()
 	_apply_definition_pose()
-	var model_scene := load(definition.viewmodel_scene) as PackedScene
-	if model_scene != null:
-		viewmodel = model_scene.instantiate() as Node3D
-	if viewmodel == null:
-		viewmodel = _fallback_weapon(definition.id)
-	add_child(viewmodel)
-	viewmodel.position = viewmodel_base_position
-	viewmodel.rotation_degrees = viewmodel_base_rotation
-	viewmodel.scale = Vector3.ONE * viewmodel_scale
+	# Las mallas antiguas siguen en el repositorio como referencia/licencia, pero
+	# la representación activa usa un asset visual ligero con silueta propia.
+	# En third-person el dueño es el visual del actor, no este controller.
+	viewmodel = WeaponVisualScript.new()
+	viewmodel.configure(definition.id)
+	var mounted := false
+	if third_person and actor != null:
+		var actor_visual := actor.get("visual") as Node
+		if actor_visual != null and actor_visual.has_method("attach_weapon_to_hand"):
+			var attached := actor_visual.call("attach_weapon_to_hand", viewmodel, definition.id, _current_weapon_skin(), false) as Node3D
+			if attached != null:
+				viewmodel = attached
+				mounted = true
+	if not mounted:
+		add_child(viewmodel)
+	if not third_person:
+		viewmodel.position = viewmodel_base_position
+		viewmodel.rotation_degrees = viewmodel_base_rotation
+		viewmodel.scale = Vector3.ONE * viewmodel_scale
 	_create_muzzle_anchor()
 	_apply_weapon_skin()
 
@@ -385,13 +400,23 @@ func _create_muzzle_anchor() -> void:
 		return
 	muzzle_anchor = Node3D.new()
 	muzzle_anchor.name = "MuzzleAnchor"
-	# Weapon models are origin-centered with the barrel tip pointing +Z
-	# (rifle tip z=+0.43, shotgun +1.39, pistol/smg +0.32). Place the anchor
-	# at the real muzzle tip so the flash leaves the barrel, not the stock.
-	muzzle_anchor.position = muzzle_local
-	if third_person:
-		muzzle_anchor.position = Vector3(0.0, 0.0, -0.78)
+	# All active visual meshes share +Z toward the muzzle. Keep a distinct
+	# third-person calibration because the hand mount rotates the whole weapon.
+	muzzle_anchor.position = _third_person_muzzle_offset(current_definition().id) if third_person else muzzle_local
 	viewmodel.add_child(muzzle_anchor)
+
+
+func _third_person_muzzle_offset(weapon_id: String) -> Vector3:
+	match weapon_id:
+		"pistol": return Vector3(0.0, 0.10, 0.46)
+		"shotgun": return Vector3(0.0, 0.10, 1.28)
+		"smg": return Vector3(0.0, 0.08, 0.78)
+	return Vector3(0.0, 0.09, 0.86)
+
+
+func _current_weapon_skin() -> String:
+	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	return str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
 
 func _create_arms() -> void:
 	if is_instance_valid(arms_root):
@@ -501,6 +526,10 @@ func _arm_material(color: Color) -> StandardMaterial3D:
 	return material
 
 func _animate_viewmodel(delta: float) -> void:
+	if third_person:
+		# Third-person weapons are owned by OperatorVisual's BoneAttachment3D.
+		# Moving them here would detach them from the animated wrist again.
+		return
 	if not is_instance_valid(viewmodel):
 		return
 	var aiming_now := 1.0 if aim_held else 0.0

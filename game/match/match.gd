@@ -34,6 +34,9 @@ var ffa_winner: Node
 var round_start_count: int = 0
 var qa_skip_buy: bool = false
 var spawn_status_active: bool = false
+## Pausa local de overlays: el HUD sigue vivo para recibir touch, pero la ronda
+## no consume tiempo ni evalúa eliminaciones mientras Ajustes está abierto.
+var local_overlay_paused: bool = false
 
 func configure(selected_mode: String, selected_operator: String, selected_skin: String, use_mobile_qa: bool) -> void:
 	mode = selected_mode
@@ -60,6 +63,8 @@ func _ready() -> void:
 	_start_round()
 
 func _process(delta: float) -> void:
+	if local_overlay_paused:
+		return
 	if state == "BUY":
 		round_timer = maxf(0.0, round_timer - delta)
 		hud.update_buy_time(round_timer)
@@ -229,7 +234,12 @@ func _on_arsenal_requested() -> void:
 
 func _on_settings_requested() -> void:
 	if hud != null:
-		hud.toggle_control_editor()
+		hud.toggle_settings()
+
+func set_local_overlay_paused(paused: bool) -> void:
+	local_overlay_paused = paused
+	if paused:
+		_stop_combat_inputs()
 
 func _on_player_died(dead: Node, killer: Node) -> void:
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "enemy"
