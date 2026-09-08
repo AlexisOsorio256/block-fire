@@ -83,8 +83,8 @@ func _build() -> void:
 	settings.tooltip_text = "Ajustes y controles"
 	settings.anchor_left = 1.0
 	settings.anchor_right = 1.0
-	settings.offset_left = -166
-	settings.offset_right = -88
+	settings.offset_left = -182
+	settings.offset_right = -104
 	settings.offset_top = 14
 	settings.offset_bottom = 56
 	settings.z_index = 5
@@ -94,11 +94,11 @@ func _build() -> void:
 	root.add_child(settings)
 
 	var arsenal := Button.new()
-	arsenal.text = "ARMA"
+	arsenal.text = "CAMBIAR"
 	arsenal.tooltip_text = "Cambiar arma"
 	arsenal.anchor_left = 1.0
 	arsenal.anchor_right = 1.0
-	arsenal.offset_left = -76
+	arsenal.offset_left = -96
 	arsenal.offset_right = -16
 	arsenal.offset_top = 14
 	arsenal.offset_bottom = 56
@@ -228,7 +228,7 @@ func update_score(ally: int, enemy: int, round_number: int) -> void:
 
 func update_ffa_score(kills: int, target: int) -> void:
 	if score_label != null:
-		score_label.text = "KILLS %d / %d" % [kills, target]
+		score_label.text = "BAJAS %d / %d" % [kills, target]
 		round_label.text = "FFA"
 
 func update_health(value: float, maximum: float) -> void:

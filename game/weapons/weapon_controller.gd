@@ -66,10 +66,9 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	else:
 		viewmodel_base_position = Vector3(0.28, -0.22, -0.46)
 		viewmodel_base_rotation = Vector3(0.0, 180.0, 0.0)
-		# The custom meshes carry more silhouette detail than the legacy GLBs;
-		# keep the same readable lower-right footprint instead of covering the
-		# mobile controls and ammo block.
-		viewmodel_scale = 0.26
+		# La geometría procedural ocupa mucha pantalla a 0.26: 0.20 le da
+		# presencia sin tapar crosshair, controles ni bloque de munición.
+		viewmodel_scale = 0.20
 	_apply_definition_pose()
 	rng.randomize()
 	shot_audio = AudioStreamPlayer3D.new()
@@ -566,8 +565,9 @@ func _animate_viewmodel(delta: float) -> void:
 	viewmodel.rotation_degrees = viewmodel.rotation_degrees.lerp(target_rotation, clampf(delta * 18.0, 0.0, 1.0))
 	if is_instance_valid(arms_root):
 		# Hands stay glued to the grip: arms follow the gun transform every frame.
-		# In ADS the gun moves to screen center; the arms keep the hip anchor so
-		# the hands stay on the grip instead of teleporting with the weapon.
+		# In ADS the gun rises to the sight line while the arms keep a lower
+		# anchor: rising with the weapon swings the posed elbows into the frame
+		# as giant limbs, so the hands stay near the grip from below.
 		var arms_pos := viewmodel_base_position.lerp(ads_base_position, ads_weight * 0.35) + Vector3(0.0, 0.0, 0.08)
 		arms_pos += viewmodel.position - (viewmodel_base_position.lerp(ads_base_position, ads_weight))
 		arms_root.position = arms_pos
@@ -702,7 +702,18 @@ func _play_shot(weapon_id: String) -> void:
 	if not shot_streams.has(weapon_id):
 		shot_streams[weapon_id] = load(str(paths.get(weapon_id, ""))) as AudioStream
 	shot_audio.stream = shot_streams[weapon_id]
-	shot_audio.pitch_scale = 1.08 if weapon_id == "smg" else (0.88 if weapon_id == "shotgun" else 1.0)
+	# Sin sample propio de SMG en el repo: comparte el de rifle una octava de
+	# cadencia más rápido y medio tono más grave (no acelerado-agudo), con un
+	# poco menos de nivel porque su cadencia apila más energía.
+	if weapon_id == "smg":
+		shot_audio.pitch_scale = 0.94
+		shot_audio.volume_db = -2.0
+	elif weapon_id == "shotgun":
+		shot_audio.pitch_scale = 0.88
+		shot_audio.volume_db = 0.0
+	else:
+		shot_audio.pitch_scale = 1.0
+		shot_audio.volume_db = 0.0
 	shot_audio.play()
 
 func _play_reload(phase: String) -> void:

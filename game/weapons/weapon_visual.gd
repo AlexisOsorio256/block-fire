@@ -93,7 +93,10 @@ func _build_rifle() -> void:
 	]), 0.16, 0.04, GRIP_RIFLE, Vector3(0.0, -0.19, 0.03), Vector3(-10.0, 0.0, 0.0))
 	_box_part("Foregrip", Vector3(0.12, 0.16, 0.20), 0.032, Vector3(0.0, -0.13, 0.41), GRIP_RIFLE, Vector3(-8.0, 0.0, 0.0))
 	_box_part("TopRail", Vector3(0.12, 0.045, 0.43), 0.016, Vector3(0.0, 0.215, 0.25), GRIP_RIFLE)
-	_box_part("RearSight", Vector3(0.10, 0.10, 0.07), 0.018, Vector3(0.0, 0.28, -0.10), ACCENT_RIFLE)
+	# Mira trasera en dos postes con calado central: en ADS se alinea el punto
+	# delantero en el hueco, bajo el crosshair.
+	_box_part("RearSightL", Vector3(0.032, 0.10, 0.07), 0.012, Vector3(-0.055, 0.28, -0.10), ACCENT_RIFLE)
+	_box_part("RearSightR", Vector3(0.032, 0.10, 0.07), 0.012, Vector3(0.055, 0.28, -0.10), ACCENT_RIFLE)
 	_box_part("FrontSight", Vector3(0.055, 0.10, 0.055), 0.014, Vector3(0.0, 0.18, 0.64), ACCENT_RIFLE)
 
 
@@ -116,7 +119,8 @@ func _build_pistol() -> void:
 		Vector2(-0.06, -0.25)
 	]), 0.12, -0.07, BODY_PISTOL, Vector3(0.0, -0.08, 0.0), Vector3(-8.0, 0.0, 0.0))
 	_box_part("FrontSight", Vector3(0.045, 0.08, 0.05), 0.012, Vector3(0.0, 0.23, 0.34), ACCENT_PISTOL)
-	_box_part("RearSight", Vector3(0.10, 0.065, 0.05), 0.012, Vector3(0.0, 0.25, -0.03), ACCENT_PISTOL)
+	_box_part("RearSightL", Vector3(0.028, 0.065, 0.05), 0.010, Vector3(-0.048, 0.25, -0.03), ACCENT_PISTOL)
+	_box_part("RearSightR", Vector3(0.028, 0.065, 0.05), 0.010, Vector3(0.048, 0.25, -0.03), ACCENT_PISTOL)
 	_box_part("TriggerGuardTop", Vector3(0.16, 0.035, 0.08), 0.012, Vector3(0.0, -0.08, 0.10), GRIP_PISTOL)
 	_box_part("TriggerGuardFront", Vector3(0.035, 0.10, 0.08), 0.012, Vector3(0.075, -0.13, 0.10), GRIP_PISTOL)
 
@@ -165,6 +169,8 @@ func _build_smg() -> void:
 	]), 0.17, -0.04, GRIP_SMG, Vector3(0.0, -0.17, 0.0), Vector3(-9.0, 0.0, 0.0))
 	_box_part("TopRail", Vector3(0.12, 0.045, 0.38), 0.016, Vector3(0.0, 0.21, 0.20), GRIP_SMG)
 	_box_part("StockHinge", Vector3(0.13, 0.11, 0.10), 0.02, Vector3(0.0, 0.05, -0.25), ACCENT_SMG)
+	_box_part("RearSightL", Vector3(0.028, 0.085, 0.05), 0.010, Vector3(-0.05, 0.19, -0.16), ACCENT_SMG)
+	_box_part("RearSightR", Vector3(0.028, 0.085, 0.05), 0.010, Vector3(0.05, 0.19, -0.16), ACCENT_SMG)
 	_box_part("FrontSight", Vector3(0.055, 0.10, 0.055), 0.014, Vector3(0.0, 0.18, 0.57), ACCENT_SMG)
 
 

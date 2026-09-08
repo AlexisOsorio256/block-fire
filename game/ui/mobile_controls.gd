@@ -354,6 +354,10 @@ func _draw() -> void:
 		if pressed:
 			draw_arc(center, radius - 5.0, 0, TAU, 24, Color(1.0, 1.0, 1.0, control_alpha * 0.62), 2.0)
 		_draw_icon(id, center, radius, Color(1, 1, 1, minf(1.0, control_alpha + 0.12)))
+		# CORRER lleva rótulo permanente fuera del editor (dentro ya muestra el
+		# suyo y se duplicaría).
+		if id == "sprint" and not edit_mode:
+			draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 6), "CORRER", HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 10, Color(1, 1, 1, minf(1.0, control_alpha + 0.2)))
 		if edit_mode:
 			var context_name: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "RECARGAR", "switch": "CAMBIAR ARMA", "crouch": "AGACHARSE", "sprint": "CORRER"}.get(id, id.to_upper()))
 			draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 18), context_name, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11, Color.WHITE)
@@ -394,12 +398,21 @@ func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> voi
 			draw_line(center + Vector2(0, r * 0.45), center + Vector2(r * 0.72, r * 0.72), color, ICON_STROKE, true)
 			draw_line(center + Vector2(-r * 0.35, r * 0.72), center + Vector2(r * 0.78, r * 0.72), color, ICON_STROKE, true)
 		"sprint":
-			draw_line(center + Vector2(-r * 0.75, -r * 0.45), center + Vector2(r * 0.08, -r * 0.45), color, ICON_STROKE, true)
-			draw_line(center + Vector2(-r * 0.9, 0), center + Vector2(-r * 0.08, 0), color, ICON_STROKE, true)
-			draw_line(center + Vector2(-r * 0.75, r * 0.45), center + Vector2(r * 0.08, r * 0.45), color, ICON_STROKE, true)
-			draw_line(center + Vector2(r * 0.06, r * 0.18), center + Vector2(r * 0.78, r * 0.18), color, ICON_STROKE, true)
-			draw_line(center + Vector2(r * 0.78, r * 0.18), center + Vector2(r * 0.5, -r * 0.12), color, ICON_STROKE, true)
-			draw_line(center + Vector2(r * 0.78, r * 0.18), center + Vector2(r * 0.5, r * 0.48), color, ICON_STROKE, true)
+			# Corredor inequívoco: cabeza + tronco + brazos/piernas en zancada
+			# + líneas de velocidad. Nada de flechas abstractas.
+			draw_circle(center + Vector2(r * 0.28, -r * 0.58), r * 0.17, color)
+			var hip := center + Vector2(-r * 0.05, r * 0.15)
+			var shoulder := center + Vector2(r * 0.12, -r * 0.30)
+			draw_line(shoulder, hip, color, ICON_STROKE, true)
+			draw_line(hip, center + Vector2(r * 0.42, r * 0.32), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.42, r * 0.32), center + Vector2(r * 0.36, r * 0.68), color, ICON_STROKE, true)
+			draw_line(hip, center + Vector2(-r * 0.48, r * 0.42), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.48, r * 0.42), center + Vector2(-r * 0.30, r * 0.68), color, ICON_STROKE, true)
+			draw_line(shoulder, center + Vector2(r * 0.50, -r * 0.02), color, ICON_STROKE, true)
+			draw_line(center + Vector2(r * 0.50, -r * 0.02), center + Vector2(r * 0.24, r * 0.18), color, ICON_STROKE, true)
+			draw_line(shoulder, center + Vector2(-r * 0.32, -r * 0.08), color, ICON_STROKE, true)
+			draw_line(center + Vector2(-r * 0.95, -r * 0.28), center + Vector2(-r * 0.45, -r * 0.28), color, ICON_STROKE - 1.0, true)
+			draw_line(center + Vector2(-r * 0.95, r * 0.02), center + Vector2(-r * 0.52, r * 0.02), color, ICON_STROKE - 1.0, true)
 
 func _settings() -> Node:
 	if not is_inside_tree():

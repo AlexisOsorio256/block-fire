@@ -94,38 +94,44 @@ static func items() -> Dictionary:
 		result["head:" + head.id] = head
 
 	# --- Accesorios rígidos (malla dedicada con BoneAttachment3D). ---
+	# Offsets en espacio del hueso de la cabeza (rostro +Z; centro de la cabeza
+	# ~+0.35 sobre el hueso y corona ~+0.70 tras el reasentado del visual).
 	var shades := CosmeticItem.make("eyewear_shades", "eyewear", "Gafas de sol")
 	shades.attachment_bone = "Head"
-	shades.attachment_offset = Vector3(0.0, 0.06, -0.075)
-	shades.attachment_scale = 1.0
+	shades.attachment_offset = Vector3(0.0, 0.40, 0.62)
+	shades.attachment_scale = 2.1
 	shades.color = Color("#1c2026")
 
 	var glasses := CosmeticItem.make("eyewear_glasses", "eyewear", "Gafas claras")
 	glasses.attachment_bone = "Head"
-	glasses.attachment_offset = Vector3(0.0, 0.06, -0.075)
+	glasses.attachment_offset = Vector3(0.0, 0.40, 0.62)
+	glasses.attachment_scale = 2.1
 	glasses.color = Color("#cfe8ef")
 
 	var mask := CosmeticItem.make("mask_bandana", "mask", "Bandana")
 	mask.attachment_bone = "Head"
-	mask.attachment_offset = Vector3(0.0, -0.045, -0.055)
-	mask.attachment_scale = 1.0
+	mask.attachment_offset = Vector3(0.0, 0.18, 0.48)
+	mask.attachment_scale = 2.2
 	mask.color = Color("#3a4148")
 
 	var mask_dark := CosmeticItem.make("mask_dark", "mask", "Máscara urbana")
 	mask_dark.attachment_bone = "Head"
-	mask_dark.attachment_offset = Vector3(0.0, -0.045, -0.055)
+	mask_dark.attachment_offset = Vector3(0.0, 0.18, 0.48)
+	mask_dark.attachment_scale = 2.2
 	mask_dark.color = Color("#23262e")
 
 	var cap := CosmeticItem.make("headwear_cap", "headwear", "Gorra urbana")
 	cap.attachment_bone = "Head"
-	cap.attachment_offset = Vector3(0.0, 0.115, -0.01)
+	cap.attachment_offset = Vector3(0.0, 0.56, 0.02)
 	cap.attachment_rotation_deg = Vector3(-12.0, 0.0, 0.0)
+	cap.attachment_scale = 2.4
 	cap.color = Color("#46536b")
 
 	var beret := CosmeticItem.make("headwear_beret", "headwear", "Boina")
 	beret.attachment_bone = "Head"
-	beret.attachment_offset = Vector3(0.015, 0.125, 0.0)
+	beret.attachment_offset = Vector3(0.015, 0.57, 0.0)
 	beret.attachment_rotation_deg = Vector3(0.0, 0.0, -9.0)
+	beret.attachment_scale = 2.4
 	beret.color = Color("#5d6b46")
 
 	for accessory: CosmeticItem in [shades, glasses, mask, mask_dark, cap, beret]:

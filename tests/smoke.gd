@@ -98,12 +98,21 @@ func _test_visual_in_tree() -> void:
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "avatar rig exposes death animation")
 	_check(visual.model_root != null, "avatar visual builds a model root")
 	_check(visual.skeleton != null, "avatar keeps a shared Skeleton3D")
-	var visible_meshes := 0
+	var avatar_parts := 0
 	if visual.model_root != null:
+		# Solo piezas del avatar: el arma de escaparate vive bajo el mount de
+		# la muñeca y no debe contar como prenda (su número de meshes varía por
+		# arma y no forma parte del contrato de ropa).
+		for part_name: String in ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R"]:
+			var part := visual.model_root.find_child(part_name, true, false) as MeshInstance3D
+			if part != null and part.visible:
+				avatar_parts += 1
+		var band_found := false
 		for node: Node in visual.model_root.find_children("*", "MeshInstance3D", true, false):
-			if (node as MeshInstance3D).visible:
-				visible_meshes += 1
-	_check(visible_meshes == 5, "avatar shows head+top+bottom+shoes plus the team band")
+			var mesh_instance := node as MeshInstance3D
+			if mesh_instance != null and mesh_instance.visible and String(mesh_instance.name) == "TeamBand":
+				band_found = true
+		_check(avatar_parts == 4 and band_found, "avatar shows head+top+bottom+shoes plus the team band")
 	var attachments := 0
 	if visual.skeleton != null:
 		for node: Node in visual.skeleton.get_children():
@@ -162,12 +171,12 @@ func _test_visual_in_tree() -> void:
 	_check(bot.visual != null and bot.visual.model_root != null, "bot builds its own visual")
 	var bot_meshes := 0
 	if bot.visual != null and bot.visual.skeleton != null:
-		# El arma vive bajo la muñeca; el avatar modular mantiene cuatro prendas
-		# visibles como contrato de loadout, sin contar accesorios/arma.
+		# El bando enemigo viste el rig Enemy: cuerpo + cabeza como meshes
+		# directos del esqueleto (sin hombreras), sin contar arma ni banda.
 		for node: Node in bot.visual.skeleton.get_children():
 			if node is MeshInstance3D and (node as MeshInstance3D).visible:
 				bot_meshes += 1
-	_check(bot_meshes == 4, "bot avatar resolves a deterministic loadout")
+	_check(bot_meshes == 2, "bot avatar resolves a deterministic loadout")
 	_check((bot.collision_mask & 2) != 0, "bot body blocks combatant overlap")
 	var collision_player := BlockfirePlayer.new()
 	get_root().add_child(collision_player)

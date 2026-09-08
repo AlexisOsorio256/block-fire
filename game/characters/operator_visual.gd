@@ -6,16 +6,24 @@ extends Node3D
 ## variación determinista de los bots. La identidad visible vive en la ROPA
 ## (CosmeticCatalog sobre el rig modular compartido) y en un pequeño accesorio
 ## de equipo (banda en el brazo), nunca en un aro gigante ni un tinte global.
-## Rig base: assets/models/quaternius_modular/avatar_rig.gltf (CC0, Quaternius
-## Ultimate Modular Characters). Un Skeleton3D humanoide comparte las
-## animaciones y las prendas urbanas; el arsenal visual se monta en la muñeca
-## para acompañar Idle/Run/Shoot/Death sin un objeto flotante.
+## Rig base: Quaternius Toon Shooter (CC0): Character_Soldier para el bando
+## aliado/jugador y Character_Enemy para el rival. Son rigs de un solo
+## personaje con pesos de manos/dedos limpios y animaciones de sujetar arma
+## (Idle_Shoot/Run_Shoot/Run_Gun); el arma montada solo tiene que posarse
+## entre ambas manos. El rig modular fusionado UMC queda como fallback si un
+## Toon no carga. Un Skeleton3D humanoide comparte las animaciones y las
+## prendas urbanas; el arsenal visual se monta en el antebrazo para acompañar
+## Idle/Run/Shoot/Death sin un objeto flotante.
 
-const AVATAR_SCENE := "res://assets/models/quaternius_modular/avatar_rig.gltf"
+const AVATAR_SOLDIER := "res://assets/models/quaternius_toon_shooter/Character_Soldier.gltf"
+const AVATAR_ENEMY := "res://assets/models/quaternius_toon_shooter/Character_Enemy.gltf"
+const AVATAR_FALLBACK := "res://assets/models/quaternius_modular/avatar_rig.gltf"
+const AVATAR_SCENE := AVATAR_SOLDIER
 const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
 
-## Altura importada ~2.0 unidades; esta escala la acerca a la cápsula de 1.8.
-const MODEL_SCALE := 0.72
+## Los Toon se authoran a ~2.3 unidades de altura: esta escala los deja a la
+## altura de la cápsula (1.8), puertas y coberturas, sin enemigos de juguete.
+const MODEL_SCALE := 0.8
 const MODEL_Y_OFFSET := 0.0
 
 const BAND_COLOR_ALLY := Color("#4fd6e9")
@@ -124,9 +132,14 @@ func _build() -> void:
 	animation_state = &""
 	_attachments.clear()
 	var effective := loadout if not loadout.is_empty() else resolve_default_loadout(hash(operator_id) + hash(name))
-	var packed := load(AVATAR_SCENE) as PackedScene
-	if packed != null:
+	for scene_path: String in [_avatar_scene_for_team(), AVATAR_FALLBACK]:
+		var packed := load(scene_path) as PackedScene
+		if packed == null:
+			continue
 		model_root = packed.instantiate() as Node3D
+		if model_root == null:
+			continue
+		break
 	if model_root != null:
 		add_child(model_root)
 		model_root.scale = Vector3.ONE * MODEL_SCALE
@@ -142,6 +155,14 @@ func _build() -> void:
 			_add_team_marker()
 		return
 	_build_fallback()
+
+
+## El aliado/jugador viste Soldier y el rival Enemy: variación de silueta por
+## bando sin teñir el cuerpo entero (la lectura de equipo sigue en la banda).
+func _avatar_scene_for_team() -> String:
+	if team == "enemy":
+		return AVATAR_ENEMY
+	return AVATAR_SOLDIER
 
 
 func _find_skeleton(node: Node) -> Skeleton3D:
@@ -177,7 +198,7 @@ func _play_animation(animation_name: StringName) -> void:
 func _apply_loadout(effective: Dictionary) -> void:
 	if skeleton == null:
 		return
-	if model_root.find_child("Body", true, false) != null and model_root.find_child("Head", true, false) != null:
+	if _is_toon_rig():
 		_apply_toon_shooter_loadout(effective)
 		return
 	# 1) Todo oculto salvo lo pedido: primero apagamos TODAS las prendas.
@@ -210,6 +231,17 @@ func _apply_loadout(effective: Dictionary) -> void:
 			_add_accessory(accessory)
 
 
+## Soldier trae nodos Body/Head; Enemy trae Character_Enemy(_Head). El UMC
+## trae Swat_Body/Casual_Body/etc. y nunca estos nombres exactos.
+func _is_toon_rig() -> bool:
+	if model_root == null:
+		return false
+	if model_root.find_child("Character_Enemy", true, false) != null:
+		return true
+	return model_root.find_child("Body", true, false) != null \
+		and model_root.find_child("Head", true, false) != null
+
+
 func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
 	# El pack Toon Shooter trae varias armas de ejemplo colgadas del dedo. Se
 	# ocultan para que WeaponController/attach_weapon_to_hand sea el único dueño
@@ -219,9 +251,13 @@ func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
 		"Revolver_Small", "RocketLauncher", "ShortCannon", "Shotgun", "Shovel",
 		"SMG", "Sniper", "Sniper_2"
 	]
+	# El Soldier nombra sus huesos Head_2/Body_2 en el esqueleto importado (el
+	# Enemy usa Head/Body): todo lo que cuelgue de la cabeza debe resolver el
+	# nombre real. El attachment fuente Head_2 ya apunta al hueso correcto.
+	var keep := ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R", "Character_Enemy", "Character_Enemy_Head"]
 	for node: Node in model_root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
-		mesh_instance.visible = node.name in ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R"]
+		mesh_instance.visible = node.name in keep
 	for weapon_name: String in weapon_meshes:
 		var weapon_node := model_root.find_child(weapon_name, true, false)
 		if weapon_node is MeshInstance3D:
@@ -232,17 +268,50 @@ func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
 	var top_color := _toon_outfit_color(String(effective.get("top", "top_swat")))
 	var bottom_color := _toon_outfit_color(String(effective.get("bottom", "bottom_swat")))
 	var outfit_color := top_color.lerp(bottom_color, 0.28)
-	for mesh_name: String in ["Body", "ShoulderPad_L", "ShoulderPad_R"]:
+	for mesh_name: String in ["Body", "ShoulderPad_L", "ShoulderPad_R", "Character_Enemy"]:
 		var mesh_node := model_root.find_child(mesh_name, true, false) as MeshInstance3D
 		if mesh_node != null:
 			_tint_toon_mesh(mesh_node, outfit_color, 0.42)
-	var head := model_root.find_child("Head", true, false) as MeshInstance3D
-	if head != null:
+	for head_name: String in ["Head", "Character_Enemy_Head"]:
+		var head := model_root.find_child(head_name, true, false) as MeshInstance3D
+		if head == null:
+			continue
 		# La cabeza del pack tiene una silueta heroica muy grande. Reducirla en la
 		# capa visual recupera proporción humana sin tocar cápsula ni hitboxes.
-		head.scale = Vector3.ONE * 0.82
+		# Se escala sobre su propio centro para no hundirla en el torso.
+		_scale_head_in_place(head, 0.70)
 		_tint_toon_mesh(head, _toon_head_color(String(effective.get("head", "head_swat"))), 0.28)
 		_tint_toon_skin(head, _toon_skin_color(String(effective.get("skin", "skin_light"))))
+	# Accesorios rígidos: sin este bucle GORRA/LENTES/MÁSCARA no aparecerían.
+	for slot: String in ["headwear", "eyewear", "mask"]:
+		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
+		if accessory != null:
+			_add_accessory(accessory)
+
+
+## Hueso real de la cabeza según rig: Soldier lo importa como Head_2.
+func _head_bone() -> String:
+	if skeleton != null and skeleton.find_bone("Head") >= 0:
+		return "Head"
+	return "Head_2"
+
+
+## Encoge la cabeza conservando su posición visual.
+## - Hija directa del esqueleto (Enemy): el asset la trae sentada; se conserva
+##   su centro.
+## - Bajo attachment (Soldier): la geometría queda +1.83 sobre el hueso y
+##   flotaría; se reasienta a +0.35 sobre el origen del attachment (el
+##   attachment fuente está sobre el hueso con rotación ~identidad).
+func _scale_head_in_place(head: MeshInstance3D, factor: float) -> void:
+	if head.mesh == null:
+		head.scale = Vector3.ONE * factor
+		return
+	var center := head.mesh.get_aabb().get_center()
+	if head.get_parent() is BoneAttachment3D:
+		head.position = Vector3(head.position.x, 0.35 - center.y * factor, head.position.z)
+	else:
+		head.position += center * (1.0 - factor)
+	head.scale = Vector3.ONE * factor
 
 
 func _toon_outfit_color(item_id: String) -> Color:
@@ -445,7 +514,9 @@ func _ensure_weapon_mount() -> BoneAttachment3D:
 		return _weapon_mount
 	_weapon_mount = BoneAttachment3D.new()
 	_weapon_mount.name = "WeaponHandMount"
-	for bone_name: String in ["Wrist.R", "Index1.R", "LowerArm.R"]:
+	# UMC conserva su muñeca; el Toon no tiene hueso de muñeca (su cadena es
+	# LowerArm -> dedos) y monta en el antebrazo, estable ante el curl de dedos.
+	for bone_name: String in ["Wrist.R", "LowerArm.R", "Index1.R"]:
 		if skeleton.find_bone(bone_name) >= 0:
 			_weapon_mount.bone_name = bone_name
 			break
@@ -490,23 +561,24 @@ func _weapon_id_from_scene(scene_path: String) -> String:
 
 
 func _weapon_mount_pose(weapon_id: String, showcase: bool) -> Dictionary:
-	# Las cuatro mallas comparten el mismo eje artesanal: el cañón apunta por +Z.
-	# Esta compensación alinea ese eje con la pose de muñeca del rig modular; la
-	# geometría ya contiene sus diferencias de escala y proporción por familia.
+	# Calibrado por sonda en pose Idle_Shoot (ambos rigs idénticos): el +Z del
+	# esqueleto (hacia dónde mira) es casi el +Y del antebrazo, y el nudillo
+	# queda 0.44 sobre el mount. Este euler lleva el cañón (+Z) al frente y el
+	# lomo (+Y) arriba; la empuñadura cae sobre los dedos.
 	var pose := {
-		"position": Vector3(0.0, 0.145, -0.055),
-		"rotation": Vector3(3.0, 12.0, 60.0),
+		"position": Vector3(-0.05, 0.50, 0.02),
+		"rotation": Vector3(-88.0, 137.0, -27.0),
 		"scale": 0.45
 	}
 	match weapon_id:
 		"pistol":
-			pose["position"] = Vector3(0.0, 0.136, -0.055)
+			pose["position"] = Vector3(-0.04, 0.44, 0.02)
 			pose["scale"] = 0.42
 		"shotgun":
-			pose["position"] = Vector3(0.0, 0.135, -0.07)
+			pose["position"] = Vector3(-0.05, 0.50, 0.02)
 			pose["scale"] = 0.45
 		"smg":
-			pose["position"] = Vector3(0.0, 0.14, -0.055)
+			pose["position"] = Vector3(-0.05, 0.49, 0.02)
 			pose["scale"] = 0.44
 	if showcase:
 		pose["scale"] = float(pose["scale"]) * 1.08
@@ -514,10 +586,15 @@ func _weapon_mount_pose(weapon_id: String, showcase: bool) -> Dictionary:
 
 
 func _add_accessory(item: CosmeticItem) -> void:
-	if skeleton == null or skeleton.find_bone(item.attachment_bone) < 0:
+	if skeleton == null:
+		return
+	var bone := item.attachment_bone
+	if bone == "Head":
+		bone = _head_bone()
+	if skeleton.find_bone(bone) < 0:
 		return
 	var attachment := BoneAttachment3D.new()
-	attachment.bone_name = item.attachment_bone
+	attachment.bone_name = bone
 	skeleton.add_child(attachment)
 	_attachments.append(attachment)
 	var accessory := MeshInstance3D.new()

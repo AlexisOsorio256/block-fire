@@ -58,13 +58,13 @@ func _build_world() -> void:
 	var sky := Sky.new()
 	var sky_material := ProceduralSkyMaterial.new()
 	sky_material.sky_top_color = Color("#2f6fc4")
-	sky_material.sky_horizon_color = Color("#cfe4f7")
+	sky_material.sky_horizon_color = Color("#8fc0e4")
 	sky_material.ground_bottom_color = Color("#3a4a5e")
 	sky_material.ground_horizon_color = Color("#8fa5b8")
 	sky.sky_material = sky_material
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.85
+	environment.ambient_light_energy = 0.7
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment_node.environment = environment
 	add_child(environment_node)
@@ -192,14 +192,8 @@ func _add_lamp(position: Vector3) -> void:
 	root.add_child(head)
 
 func _create_weapon_display() -> void:
-	var base := MeshInstance3D.new()
-	base.name = "ArmoryPreviewBase"
-	var base_mesh := BoxMesh.new()
-	base_mesh.size = Vector3(0.92, 0.18, 0.58)
-	base.mesh = base_mesh
-	base.position = Vector3(3.05, 0.11, 0.38)
-	base.material_override = _material(Color("#17263d"))
-	add_child(base)
+	# Sin peana: el arma flota y rota como pieza única de exposición. Con una
+	# caja debajo se leía como piezas desarmadas sobre una mesa.
 	weapon_display_root = _recreate_weapon_display()
 	armory_label = Label3D.new()
 	armory_label.name = "ArmoryPreviewLabel"
@@ -219,11 +213,11 @@ func _recreate_weapon_display() -> Node3D:
 	var display := WeaponVisualScript.new()
 	display.name = "ArmoryPreview"
 	display.configure("rifle")
-	display.position = Vector3(3.05, 0.66, 0.38)
-	# El preview está libre del esqueleto: aquí se usa la vista lateral limpia
-	# del eje del rifle, distinta de la compensación local de la muñeca.
-	display.rotation_degrees = Vector3(3.0, 102.0, 60.0)
-	display.scale = Vector3.ONE * 0.52
+	display.position = Vector3(3.05, 0.72, 0.38)
+	# Vista de producto: costado del arma hacia la cámara del lobby, nivelada
+	# para que receiver, cargador y cañón se lean como una sola pieza.
+	display.rotation_degrees = Vector3(0.0, 68.0, 0.0)
+	display.scale = Vector3.ONE * 0.60
 	WeaponSkin.apply(display, selected_skin)
 	add_child(display)
 	return display
@@ -286,7 +280,7 @@ func _build_ui() -> void:
 	modes.add_theme_constant_override("separation", 8)
 	left.add_child(modes)
 	var squad := _make_select_button("ESCUADRAS 4v4\nRONDAS · TIENDA", 14)
-	var ffa := _make_select_button("TODOS CONTRA TODOS\n8 · 20 KILLS", 14)
+	var ffa := _make_select_button("TODOS CONTRA TODOS\n8 · 20 BAJAS", 14)
 	modes.add_child(squad)
 	modes.add_child(ffa)
 	mode_buttons["squad"] = squad

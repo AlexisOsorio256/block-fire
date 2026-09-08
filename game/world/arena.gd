@@ -39,30 +39,30 @@ func _create_environment() -> void:
 	var sky := Sky.new()
 	var sky_material := ProceduralSkyMaterial.new()
 	sky_material.sky_top_color = Color("#2f6fc4")
-	sky_material.sky_horizon_color = Color("#a8d4f2")
+	sky_material.sky_horizon_color = Color("#7fb6e2")
 	sky_material.ground_bottom_color = Color("#5d6b7d")
-	sky_material.ground_horizon_color = Color("#93a7ba")
+	sky_material.ground_horizon_color = Color("#6f8398")
 	sky_material.sun_angle_max = 22.0
 	sky.sky_material = sky_material
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.ambient_light_sky_contribution = 1.0
-	environment.ambient_light_energy = 1.0
+	environment.ambient_light_energy = 0.7
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	world.environment = environment
 	add_child(world)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-54, -28, 0)
 	sun.light_color = Color("#fff0d2")
-	sun.light_energy = 1.12
+	sun.light_energy = 1.05
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 55.0
 	add_child(sun)
 
 func _create_ground() -> void:
-	# En Android el albedo claro y la luz ambiental lavan las juntas del piso;
-	# este tono conserva la lectura sci-fi sin competir con el HUD.
-	_create_box("Ground", Vector3(0, -0.22, 0), Vector3(120, 0.4, 120), Color("#8e9fb2"), true)
+	# Asfalto medio que conserva contraste con personajes y HUD: el albedo
+	# claro anterior se lavaba a casi blanco con el ambiente a 1.0.
+	_create_box("Ground", Vector3(0, -0.22, 0), Vector3(120, 0.4, 120), Color("#77879b"), true)
 	_create_box("NorthWall", Vector3(0, 2.4, -58), Vector3(116, 5.0, 1.0), Color("#3d5a7a"), true)
 	_create_box("SouthWall", Vector3(0, 2.4, 58), Vector3(116, 5.0, 1.0), Color("#3d5a7a"), true)
 	_create_box("WestWall", Vector3(-58, 2.4, 0), Vector3(1.0, 5.0, 116), Color("#3d5a7a"), true)

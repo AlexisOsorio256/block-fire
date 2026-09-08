@@ -29,9 +29,15 @@ var _wardrobe := false
 var _armory := false
 var _lobby_settings := false
 var _change_wardrobe := false
+var _full_gear := false
 var _lobby_panel_opened := false
 var _cluster_bots := false
 var _clustered_bots := false
+var _face_bots := false
+var _side_bots := false
+var _closeup := false
+var _freeze_bots := false
+var _bots_frozen := false
 var _reload_at := -1
 var _switch_at := -1
 var _reload_pressed := false
@@ -96,8 +102,18 @@ func _init() -> void:
 			_lobby_settings = true
 		elif a == "--change-wardrobe":
 			_change_wardrobe = true
+		elif a == "--full-gear":
+			_full_gear = true
 		elif a == "--cluster-bots":
 			_cluster_bots = true
+		elif a == "--face-bots":
+			_face_bots = true
+		elif a == "--closeup":
+			_closeup = true
+		elif a == "--freeze-bots":
+			_freeze_bots = true
+		elif a == "--side-bots":
+			_side_bots = true
 	print("QA_SHOT out=%s frames=%d mode=%s op=%s skin=%s weapon=%s" % [_out, _frames, _mode, _operator, _skin, _weapon_id])
 
 func _process(_delta: float) -> bool:
@@ -145,7 +161,11 @@ func _tick() -> void:
 				lobby.call("_open_settings")
 			if _change_wardrobe and lobby.has_method("_equip_cosmetic"):
 				lobby.call("_equip_cosmetic", "top_casual")
-			_lobby_panel_opened = _wardrobe or _armory or _lobby_settings or _change_wardrobe
+			if _full_gear and lobby.has_method("_equip_cosmetic"):
+				for pair: Array in [["top", "top_casual"], ["headwear", "headwear_cap"], ["eyewear", "eyewear_shades"], ["mask", "mask_bandana"]]:
+					lobby.set("wardrobe_category", pair[0])
+					lobby.call("_equip_cosmetic", pair[1])
+			_lobby_panel_opened = _wardrobe or _armory or _lobby_settings or _change_wardrobe or _full_gear
 		return
 	# start_requested es una SIGNAL del lobby, no un método: has_method() es
 	# siempre false para señales en Godot 4 y el arranque QA nunca se dispara.
@@ -175,6 +195,13 @@ func _tick() -> void:
 		_player.global_position = _pos
 	if _cluster_bots and not _clustered_bots:
 		_cluster_bots_for_capture()
+	if _freeze_bots and not _bots_frozen and _clustered_bots:
+		_bots_frozen = true
+		var match_screen: Node = _app.current_screen
+		if match_screen != null and match_screen.has_method("get_combatants"):
+			for combatant: Node in match_screen.get_combatants():
+				if combatant != _player and is_instance_valid(combatant):
+					combatant.set_physics_process(false)
 	if _keepalive and bool(_player.get("is_alive")):
 		_player.set("health", _player.get("max_health"))
 	elif _keepalive and not bool(_player.get("is_alive")):
@@ -228,6 +255,8 @@ func _cluster_bots_for_capture() -> void:
 		return
 	var combatants: Array = match_screen.get_combatants()
 	var offsets := [Vector3(0.0, 0.2, -7.0), Vector3(-3.6, 0.2, -10.5), Vector3(3.8, 0.2, -12.0), Vector3(-6.0, 0.2, -15.0)]
+	if _closeup:
+		offsets = [Vector3(0.0, 0.2, -3.0), Vector3(-2.2, 0.2, -4.2), Vector3(2.2, 0.2, -4.2), Vector3(0.0, 0.2, -6.5)]
 	var placed := 0
 	for combatant: Node in combatants:
 		if combatant == _player or not bool(combatant.get("is_bot")):
@@ -237,6 +266,11 @@ func _cluster_bots_for_capture() -> void:
 		combatant.global_position = _player.global_position + offsets[placed]
 		combatant.set("spawn_immunity", 0.0)
 		combatant.set("target", _player)
+		if _face_bots or _side_bots:
+			var to_player: Vector3 = (_player.global_position - combatant.global_position)
+			to_player.y = 0.0
+			if to_player.length_squared() > 0.001:
+				combatant.rotation.y = atan2(-to_player.x, -to_player.z) + (PI * 0.5 if _side_bots else 0.0)
 		placed += 1
 	_clustered_bots = placed > 0
 
