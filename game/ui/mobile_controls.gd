@@ -54,10 +54,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_handle_drag(event.index, event.position, event.relative)
 		get_viewport().set_input_as_handled()
-	elif mobile_qa and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+	elif mobile_qa and not DisplayServer.is_touchscreen_available() \
+			and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		# Mapeo mouse→touch SOLO para QA de escritorio. Con pantalla táctil el
+		# SO ya entrega InputEventScreenTouch y la emulación mouse-from-touch
+		# duplicaría cada tap (MIRA alternaría dos veces y el latch no engancha).
 		_handle_touch(0, event.position, event.pressed)
 		get_viewport().set_input_as_handled()
-	elif mobile_qa and event is InputEventMouseMotion and touch_positions.has(0):
+	elif mobile_qa and not DisplayServer.is_touchscreen_available() \
+			and event is InputEventMouseMotion and touch_positions.has(0):
 		_handle_drag(0, event.position, event.relative)
 		get_viewport().set_input_as_handled()
 

@@ -21,76 +21,78 @@ const OUTFIT_BEACH := "beach"
 const OUTFIT_ADVENTURER := "adventurer"
 const OUTFIT_CASUAL2 := "casual2"
 
+## Paleta por familia y prenda (tinte por superficie sobre el rig Toon
+## Shooter: Character_Main/Enemy_Red=camisa y casco, Pants=pantalón,
+## Black=botas). La familia swat conserva los colores stock del pack
+## (oliva/khaki); el resto son familias urbanas táctico-casuales.
+const FAMILY_COLORS := {
+	"swat": {"top": Color("#667a3d"), "bottom": Color("#a88f39"), "shoes": Color("#23262b"), "head": Color("#667a3d")},
+	"casual": {"top": Color("#756184"), "bottom": Color("#8b7f9b"), "shoes": Color("#2e2a35"), "head": Color("#756184")},
+	"worker": {"top": Color("#ba7e42"), "bottom": Color("#8a6a3c"), "shoes": Color("#3a2f24"), "head": Color("#ba7e42")},
+	"suit": {"top": Color("#50658a"), "bottom": Color("#3a4a68"), "shoes": Color("#232c3d"), "head": Color("#50658a")},
+	"punk": {"top": Color("#8f4b5f"), "bottom": Color("#5c3a44"), "shoes": Color("#26201f"), "head": Color("#8f4b5f")},
+	"farmer": {"top": Color("#7d6b3a"), "bottom": Color("#5d5a33"), "shoes": Color("#33291c"), "head": Color("#7d6b3a")},
+	"scifi": {"top": Color("#4a7da5"), "bottom": Color("#3a6285"), "shoes": Color("#1f2b38"), "head": Color("#4a7da5")}
+}
+
+## Item de prenda con color de familia explícito y su malla del rig modular
+## UMC (el fallback sigue vistiendo geometría real si el Toon no carga).
+static func _garment(id: String, slot: String, label: String, family: String, mesh_node: String) -> CosmeticItem:
+	var item := CosmeticItem.make(id, slot, label)
+	var family_colors: Dictionary = FAMILY_COLORS.get(family, {})
+	item.color = family_colors.get(slot, Color.WHITE) if slot != "head" else family_colors.get("head", Color.WHITE)
+	item.mesh_node = mesh_node
+	return item
+
 ## Slot -> id -> CosmeticItem.
 static func items() -> Dictionary:
 	var result: Dictionary = {}
 
-	# --- Outfits coherentes: top+bottom+shoes comparten familia visual. ---
-	var swat_top := CosmeticItem.make("top_swat", "top", "Chaleco táctico")
-	swat_top.mesh_node = "Swat_Body"
-	var swat_bottom := CosmeticItem.make("bottom_swat", "bottom", "Pantalón táctico")
-	swat_bottom.mesh_node = "Swat_Legs"
-	var swat_shoes := CosmeticItem.make("shoes_swat", "shoes", "Botas tácticas")
-	swat_shoes.mesh_node = "Swat_Feet"
-
-	var casual_top := CosmeticItem.make("top_casual", "top", "Sudadera violeta")
-	casual_top.mesh_node = "Casual_Body"
-	var casual_bottom := CosmeticItem.make("bottom_casual", "bottom", "Vaqueros")
-	casual_bottom.mesh_node = "Casual_Legs"
-	var casual_shoes := CosmeticItem.make("shoes_casual", "shoes", "Zapatillas casual")
-	casual_shoes.mesh_node = "Casual_Feet"
-
-	var worker_top := CosmeticItem.make("top_worker", "top", "Chaleco de obra")
-	worker_top.mesh_node = "Worker_Body"
-	var worker_bottom := CosmeticItem.make("bottom_worker", "bottom", "Pantalón marrón")
-	worker_bottom.mesh_node = "Worker_Legs"
-	var worker_shoes := CosmeticItem.make("shoes_worker", "shoes", "Botas de obra")
-	worker_shoes.mesh_node = "Worker_Feet"
-
-	var suit_top := CosmeticItem.make("top_suit", "top", "Traje formal")
-	suit_top.mesh_node = "Suit_Body"
-	var suit_bottom := CosmeticItem.make("bottom_suit", "bottom", "Pantalón de traje")
-	suit_bottom.mesh_node = "Suit_Legs"
-	var suit_shoes := CosmeticItem.make("shoes_suit", "shoes", "Zapatos de vestir")
-	suit_shoes.mesh_node = "Suit_Feet"
-
-	var punk_top := CosmeticItem.make("top_punk", "top", "Chaqueta punk")
-	punk_top.mesh_node = "Punk_Body"
-	var punk_bottom := CosmeticItem.make("bottom_punk", "bottom", "Pantalón callejero")
-	punk_bottom.mesh_node = "Punk_Legs"
-	var punk_shoes := CosmeticItem.make("shoes_punk", "shoes", "Botas negras")
-	punk_shoes.mesh_node = "Punk_Feet"
-
-	var farmer_top := CosmeticItem.make("top_farmer", "top", "Camisa del campo")
-	farmer_top.mesh_node = "Farmer_Body"
-	var farmer_bottom := CosmeticItem.make("bottom_farmer", "bottom", "Pantalón de faena")
-	farmer_bottom.mesh_node = "Farmer_Pants"
-	var farmer_shoes := CosmeticItem.make("shoes_farmer", "shoes", "Botas de campo")
-	farmer_shoes.mesh_node = "Farmer_Feet"
-
-	var scifi_top := CosmeticItem.make("top_scifi", "top", "Traje de vacío")
-	scifi_top.mesh_node = "SpaceSuit_Body"
-	var scifi_bottom := CosmeticItem.make("bottom_scifi", "bottom", "Pernera de vacío")
-	scifi_bottom.mesh_node = "SpaceSuit_Legs"
-	var scifi_shoes := CosmeticItem.make("shoes_scifi", "shoes", "Botas de vacío")
-	scifi_shoes.mesh_node = "SpaceSuit_Feet"
-
-	var all_items: Array[CosmeticItem] = [swat_top, casual_top, worker_top, suit_top, punk_top, farmer_top,
-			scifi_top, swat_bottom, casual_bottom, worker_bottom, suit_bottom, punk_bottom, farmer_bottom,
-			swat_shoes, casual_shoes, worker_shoes, suit_shoes, punk_shoes, farmer_shoes, scifi_shoes]
+	# --- Prendas: familias de color táctico-casual. En el rig Toon el cambio
+	# es real por superficie (camisa/pantalón/botas) y el nombre promete
+	# exactamente eso: color de esa prenda, no una silueta que no existe. ---
+	var all_items: Array[CosmeticItem] = [
+		_garment("top_swat", "top", "Camisa táctica oliva", "swat", "Swat_Body"),
+		_garment("top_casual", "top", "Camisa violeta", "casual", "Casual_Body"),
+		_garment("top_worker", "top", "Camisa ámbar", "worker", "Worker_Body"),
+		_garment("top_suit", "top", "Camisa azul marino", "suit", "Suit_Body"),
+		_garment("top_punk", "top", "Camisa granate", "punk", "Punk_Body"),
+		_garment("top_farmer", "top", "Camisa oliva", "farmer", "Farmer_Body"),
+		_garment("top_scifi", "top", "Camisa azul hielo", "scifi", "SpaceSuit_Body"),
+		_garment("bottom_swat", "bottom", "Pantalón khaki", "swat", "Swat_Legs"),
+		_garment("bottom_casual", "bottom", "Pantalón lila", "casual", "Casual_Legs"),
+		_garment("bottom_worker", "bottom", "Pantalón ámbar", "worker", "Worker_Legs"),
+		_garment("bottom_suit", "bottom", "Pantalón azul marino", "suit", "Suit_Legs"),
+		_garment("bottom_punk", "bottom", "Pantalón granate", "punk", "Punk_Legs"),
+		_garment("bottom_farmer", "bottom", "Pantalón oliva", "farmer", "Farmer_Pants"),
+		_garment("bottom_scifi", "bottom", "Pantalón azul hielo", "scifi", "SpaceSuit_Legs"),
+		_garment("shoes_swat", "shoes", "Botas carbón", "swat", "Swat_Feet"),
+		_garment("shoes_casual", "shoes", "Zapatillas lila", "casual", "Casual_Feet"),
+		_garment("shoes_worker", "shoes", "Botas ámbar", "worker", "Worker_Feet"),
+		_garment("shoes_suit", "shoes", "Zapatos azul marino", "suit", "Suit_Feet"),
+		_garment("shoes_punk", "shoes", "Botas granate", "punk", "Punk_Feet"),
+		_garment("shoes_farmer", "shoes", "Botas oliva", "farmer", "Farmer_Feet"),
+		_garment("shoes_scifi", "shoes", "Botas azul hielo", "scifi", "SpaceSuit_Feet")
+	]
 	for item: CosmeticItem in all_items:
 		result[item.slot + ":" + item.id] = item
 
-	# Cabezas: cada outfit incluye su cabeza (cara+pelo). La base es Swat_Head
-	# (corto, militar) y se puede cambiar de look.
-	for head_pair: Array in [["head_swat", "Swat_Head", "Cabeza rapada táctica"],
-			["head_casual", "Casual_Head", "Pelo corto castaño"],
-			["head_casual2", "Casual2_Head", "Melena clara"],
-			["head_worker", "Worker_Head", "Bigote de obra"],
-			["head_punk", "Punk_Head", "Cresta punk"],
-			["head_farmer", "Farmer_Head", "Gorra de campo"]]:
-		var head := CosmeticItem.make(head_pair[0], "head", head_pair[2])
-		head.mesh_node = head_pair[1]
+	# Cabezas: en el rig Toon la cabeza es un casco de una pieza; el slot
+	# cambia el color del casco (geometría única). Nombres de casco, no de peinados.
+	var head_meshes: Dictionary = {
+		"head_swat": "Swat_Head", "head_casual": "Casual_Head", "head_casual2": "Casual2_Head",
+		"head_worker": "Worker_Head", "head_punk": "Punk_Head", "head_farmer": "Farmer_Head"
+	}
+	for head_pair: Array in [["head_swat", "Casco táctico oliva", "swat"],
+			["head_casual", "Casco violeta", "casual"],
+			["head_casual2", "Casco violeta claro", "casual"],
+			["head_worker", "Casco ámbar", "worker"],
+			["head_punk", "Casco granate", "punk"],
+			["head_farmer", "Casco caqui", "farmer"]]:
+		var head := CosmeticItem.make(head_pair[0], "head", head_pair[1])
+		var family_colors: Dictionary = FAMILY_COLORS.get(head_pair[2], {})
+		head.color = family_colors.get("head", Color("#667a3d"))
+		head.mesh_node = head_meshes.get(head_pair[0], "")
 		result["head:" + head.id] = head
 
 	# --- Accesorios rígidos (malla dedicada con BoneAttachment3D). ---
@@ -122,16 +124,18 @@ static func items() -> Dictionary:
 
 	var cap := CosmeticItem.make("headwear_cap", "headwear", "Gorra urbana")
 	cap.attachment_bone = "Head"
-	cap.attachment_offset = Vector3(0.0, 0.56, 0.02)
+	# Recalibrado para HEAD_SCALE 0.45: con la escala antigua la gorra flotaba
+	# sobre el casco como una vela.
+	cap.attachment_offset = Vector3(0.0, 0.46, 0.01)
 	cap.attachment_rotation_deg = Vector3(-12.0, 0.0, 0.0)
-	cap.attachment_scale = 2.4
+	cap.attachment_scale = 1.65
 	cap.color = Color("#46536b")
 
 	var beret := CosmeticItem.make("headwear_beret", "headwear", "Boina")
 	beret.attachment_bone = "Head"
-	beret.attachment_offset = Vector3(0.015, 0.57, 0.0)
+	beret.attachment_offset = Vector3(0.015, 0.47, 0.0)
 	beret.attachment_rotation_deg = Vector3(0.0, 0.0, -9.0)
-	beret.attachment_scale = 2.4
+	beret.attachment_scale = 1.65
 	beret.color = Color("#5d6b46")
 
 	for accessory: CosmeticItem in [shades, glasses, mask, mask_dark, cap, beret]:

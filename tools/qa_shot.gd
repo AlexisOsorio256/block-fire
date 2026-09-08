@@ -281,3 +281,35 @@ func _save_shot() -> void:
 		return
 	img.save_png(_out)
 	print("QA_SHOT saved %s %s" % [_out, img.get_size()])
+	if OS.get_environment("BF_DEBUG_ANIM") != "" and _app != null:
+		var screen: Node = _app.get("current_screen")
+		var hero: Node = screen.get("hero") if screen != null else null
+		if hero != null:
+			var ap: AnimationPlayer = hero.get("animation_player")
+			var skel: Skeleton3D = hero.get("skeleton")
+			var lower := skel.find_bone("LowerArm.R") if skel != null else -1
+			print("QA_SHOT hero anim=", ap.current_animation if ap != null else "NULL",
+				" playing=", ap.is_playing() if ap != null else false,
+				" armR=", skel.get_bone_global_pose(lower).origin if lower >= 0 else Vector3.ZERO,
+				" model_root=", (hero.get("model_root") as Node).name if hero.get("model_root") != null else "NULL")
+		if _player != null:
+			var weapon: Node = _player.get("weapon")
+			if weapon != null:
+				var vm: Node3D = weapon.get("viewmodel")
+				var arms: Node3D = weapon.get("arms_root")
+				print("QA_SHOT fp aim_held=", weapon.get("aim_held"), " ads_weight=", weapon.get("ads_weight"),
+					" vm_pos=", vm.position if vm != null else Vector3.INF,
+					" arms_pos=", arms.position if arms != null else Vector3.INF)
+				if vm != null and arms != null:
+					var arms_skel: Skeleton3D = null
+					for candidate: Node in arms.find_children("*", "Skeleton3D", true, false):
+						arms_skel = candidate as Skeleton3D
+						break
+					if arms_skel != null:
+						var hand_r := arms_skel.find_bone("hand.R")
+						var hand_l := arms_skel.find_bone("hand.L")
+						print("QA_SHOT hands worldR=", arms_skel.global_transform * arms_skel.get_bone_global_pose(hand_r).origin if hand_r >= 0 else Vector3.INF,
+							" worldL=", arms_skel.global_transform * arms_skel.get_bone_global_pose(hand_l).origin if hand_l >= 0 else Vector3.INF)
+					print("QA_SHOT grip_world=", vm.global_transform * Vector3(0, -0.18, 0),
+						" foregrip_world=", vm.global_transform * Vector3(0, -0.13, 0.41),
+						" arms_global=", arms.global_transform)

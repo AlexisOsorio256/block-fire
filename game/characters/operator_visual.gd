@@ -25,6 +25,14 @@ const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
 ## altura de la cápsula (1.8), puertas y coberturas, sin enemigos de juguete.
 const MODEL_SCALE := 0.8
 const MODEL_Y_OFFSET := 0.0
+## Factor de escala de la malla de cabeza sobre su centro (1.0 = stock del pack).
+## A 0.55 el casco seguía siendo tan ancho como el torso: 0.45 lo deja en
+## lectura heroica-estilizada (~20% de la altura visual de 1.87).
+const HEAD_SCALE := 0.45
+## Altura del asiento de la cabeza sobre su attachment (Soldier): a 0.45 de
+## escala, el asiento 0.35 de Muse levantaba la cara dentro de la sombra del
+## ala del casco y el personaje leía sin cara de frente.
+const HEAD_SEAT := 0.22
 
 const BAND_COLOR_ALLY := Color("#4fd6e9")
 const BAND_COLOR_ENEMY := Color("#da4f68")
@@ -146,6 +154,7 @@ func _build() -> void:
 		model_root.position.y = MODEL_Y_OFFSET
 		skeleton = _find_skeleton(model_root)
 		_find_animation_player()
+		_configure_animation_loops()
 		_apply_loadout(effective)
 		_play_animation(&"Idle")
 		if showcase_mode:
@@ -182,8 +191,23 @@ func _find_animation_player() -> void:
 			return
 
 
+## El pack Toon Shooter trae Idle_Shoot/Run_Shoot/Walk_Shoot como one-shot: al
+## terminar, el rig se congela en la pose final de reposo (brazos abajo) y el
+## arma calibrada para pose alzada queda flotando a la altura de las piernas.
+## Los ciclos de locomoción y de sostener arma deben repetir en bucle; la
+## muerte y los gestos puntuales siguen siendo one-shot.
+func _configure_animation_loops() -> void:
+	if animation_player == null or not is_instance_valid(animation_player):
+		return
+	for animation_name: StringName in [&"Idle", &"Idle_Shoot", &"Run", &"Run_Gun", &"Walk", &"Walk_Shoot", &"Jump_Idle", &"Duck"]:
+		if animation_player.has_animation(animation_name):
+			animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
+
+
 func _play_animation(animation_name: StringName) -> void:
 	if animation_player == null or not is_instance_valid(animation_player):
+		if OS.get_environment("BF_DEBUG_ANIM") != "":
+			print("[ANIM-DEBUG] play %s rejected: animation_player null (name=%s)" % [animation_name, name])
 		return
 	if not animation_player.has_animation(animation_name):
 		return
@@ -192,6 +216,8 @@ func _play_animation(animation_name: StringName) -> void:
 	animation_state = animation_name
 	animation_player.play(animation_name, 0.12)
 	animation_player.speed_scale = 1.0
+	if OS.get_environment("BF_DEBUG_ANIM") != "":
+		print("[ANIM-DEBUG] play %s on %s (is_playing=%s)" % [animation_name, name, animation_player.is_playing()])
 
 
 ## Activa una prenda deformable del rig modular y desactiva las demás de su slot.
@@ -263,30 +289,84 @@ func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
 		if weapon_node is MeshInstance3D:
 			(weapon_node as MeshInstance3D).visible = false
 
-	# La ropa sigue siendo una decisión visible: el rig integrado se tiñe por
-	# familia de outfit y por pantalón, sin mezclar prendas incompatibles.
-	var top_color := _toon_outfit_color(String(effective.get("top", "top_swat")))
-	var bottom_color := _toon_outfit_color(String(effective.get("bottom", "bottom_swat")))
-	var outfit_color := top_color.lerp(bottom_color, 0.28)
-	for mesh_name: String in ["Body", "ShoulderPad_L", "ShoulderPad_R", "Character_Enemy"]:
-		var mesh_node := model_root.find_child(mesh_name, true, false) as MeshInstance3D
-		if mesh_node != null:
-			_tint_toon_mesh(mesh_node, outfit_color, 0.42)
+	# La ropa es una decisión visible por SUPERFICIE del rig integrado: el
+	# nombre del cosmético promete el color de esa prenda y cada slot tiñe
+	# exactamente su superficie (Character_Main=camisa/casco, Pants=pantalón,
+	# Black=botas, DarkGrey=chaleco, Grey=cara). Sin tintes globales que
+	# mezclen prendas.
+	var top_item := CosmeticCatalog.item_for("top", String(effective.get("top", "top_swat")))
+	var bottom_item := CosmeticCatalog.item_for("bottom", String(effective.get("bottom", "bottom_swat")))
+	var shoes_item := CosmeticCatalog.item_for("shoes", String(effective.get("shoes", "shoes_swat")))
+	var head_item := CosmeticCatalog.item_for("head", String(effective.get("head", "head_swat")))
+	var skin_item := CosmeticCatalog.item_for("skin", String(effective.get("skin", "skin_light")))
+	var top_color := top_item.color if top_item != null else Color("#667a3d")
+	var bottom_color := bottom_item.color if bottom_item != null else top_color
+	var shoes_color := shoes_item.color if shoes_item != null else Color("#20262d")
+	var head_color := head_item.color if head_item != null else Color("#4b7588")
+	var skin_color := skin_item.color if skin_item != null else Color("#e0ad82")
+	# Los dos rigs nombran sus superficies distinto: Soldier tiñe camisa en
+	# Character_Main y cara en Grey; Enemy usa Enemy_Red y Skin.
+	var enemy_body := model_root.find_child("Character_Enemy", true, false) as MeshInstance3D
+	var body := enemy_body if enemy_body != null else model_root.find_child("Body", true, false) as MeshInstance3D
+	var shirt_surface := "Enemy_Red" if enemy_body != null else "Character_Main"
+	var pants_surface := "DarkGrey" if enemy_body != null else "Pants"
+	var face_surface := "Skin" if enemy_body != null else "Grey"
+	if body != null:
+		_tint_toon_surface(body, shirt_surface, top_color)
+		if not enemy_body:
+			_tint_toon_surface(body, "DarkGrey", top_color.darkened(0.25))
+		_tint_toon_surface(body, pants_surface, bottom_color)
+		_tint_toon_surface(body, "Black", shoes_color)
+		_tint_toon_surface(body, "Skin", skin_color)
+	for pad_name: String in ["ShoulderPad_L", "ShoulderPad_R"]:
+		var pad := model_root.find_child(pad_name, true, false) as MeshInstance3D
+		if pad != null:
+			_tint_toon_all_surfaces(pad, top_color, 0.5)
 	for head_name: String in ["Head", "Character_Enemy_Head"]:
 		var head := model_root.find_child(head_name, true, false) as MeshInstance3D
 		if head == null:
 			continue
-		# La cabeza del pack tiene una silueta heroica muy grande. Reducirla en la
-		# capa visual recupera proporción humana sin tocar cápsula ni hitboxes.
-		# Se escala sobre su propio centro para no hundirla en el torso.
-		_scale_head_in_place(head, 0.70)
-		_tint_toon_mesh(head, _toon_head_color(String(effective.get("head", "head_swat"))), 0.28)
-		_tint_toon_skin(head, _toon_skin_color(String(effective.get("skin", "skin_light"))))
+		# La cabeza del pack tiene una silueta heroica muy grande (AABB ~1.0 de
+		# alto sobre un cuerpo de ~2.2): a 0.70 el personaje seguía leyendo
+		# cabezón/chibi. Reducirla en la capa visual recupera proporción humana
+		# sin tocar cápsula ni hitboxes. Se escala sobre su propio centro para
+		# no hundirla en el torso.
+		_scale_head_in_place(head, HEAD_SCALE)
+		_tint_toon_surface(head, shirt_surface, head_color)
+		_tint_toon_surface(head, face_surface, skin_color)
 	# Accesorios rígidos: sin este bucle GORRA/LENTES/MÁSCARA no aparecerían.
 	for slot: String in ["headwear", "eyewear", "mask"]:
 		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
 		if accessory != null:
 			_add_accessory(accessory)
+
+
+## Tiñe una superficie por nombre de material sin tocar las demás.
+func _tint_toon_surface(mesh_instance: MeshInstance3D, surface_name: String, target: Color) -> void:
+	if mesh_instance.mesh == null:
+		return
+	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+		var source := mesh_instance.get_active_material(surface_index)
+		if not source is StandardMaterial3D:
+			continue
+		if String((source as StandardMaterial3D).resource_name) != surface_name:
+			continue
+		var material := source.duplicate() as StandardMaterial3D
+		material.albedo_color = target
+		mesh_instance.set_surface_override_material(surface_index, material)
+
+
+## Tiñe todas las superficies hacia un color (hombreras/pad del kit).
+func _tint_toon_all_surfaces(mesh_instance: MeshInstance3D, target: Color, strength: float) -> void:
+	if mesh_instance.mesh == null:
+		return
+	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+		var source := mesh_instance.get_active_material(surface_index)
+		if not source is StandardMaterial3D:
+			continue
+		var material := source.duplicate() as StandardMaterial3D
+		material.albedo_color = material.albedo_color.lerp(target, strength)
+		mesh_instance.set_surface_override_material(surface_index, material)
 
 
 ## Hueso real de la cabeza según rig: Soldier lo importa como Head_2.
@@ -308,72 +388,14 @@ func _scale_head_in_place(head: MeshInstance3D, factor: float) -> void:
 		return
 	var center := head.mesh.get_aabb().get_center()
 	if head.get_parent() is BoneAttachment3D:
-		head.position = Vector3(head.position.x, 0.35 - center.y * factor, head.position.z)
+		head.position = Vector3(head.position.x, HEAD_SEAT - center.y * factor, head.position.z)
 	else:
 		head.position += center * (1.0 - factor)
 	head.scale = Vector3.ONE * factor
 
 
-func _toon_outfit_color(item_id: String) -> Color:
-	if item_id.contains("casual"):
-		return Color("#756184")
-	if item_id.contains("worker"):
-		return Color("#ba7e42")
-	if item_id.contains("suit"):
-		return Color("#3d4d67")
-	if item_id.contains("punk"):
-		return Color("#8f4b5f")
-	if item_id.contains("farmer"):
-		return Color("#667b4e")
-	if item_id.contains("scifi"):
-		return Color("#4a7da5")
-	return Color("#466b7d")
 
 
-func _toon_head_color(item_id: String) -> Color:
-	if item_id.contains("punk"):
-		return Color("#7e4354")
-	if item_id.contains("worker"):
-		return Color("#d39a43")
-	if item_id.contains("farmer"):
-		return Color("#73854a")
-	if item_id.contains("casual"):
-		return Color("#607d9d")
-	return Color("#4b7588")
-
-
-func _toon_skin_color(item_id: String) -> Color:
-	if item_id.contains("medium"):
-		return Color("#c99168")
-	if item_id.contains("tan"):
-		return Color("#aa704e")
-	if item_id.contains("dark"):
-		return Color("#7f523a")
-	return Color("#e0ad82")
-
-
-func _tint_toon_mesh(mesh_instance: MeshInstance3D, target: Color, strength: float) -> void:
-	if mesh_instance.mesh == null:
-		return
-	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-		var source := mesh_instance.get_active_material(surface_index)
-		if not source is StandardMaterial3D:
-			continue
-		var material := source.duplicate() as StandardMaterial3D
-		material.albedo_color = material.albedo_color.lerp(target, strength)
-		mesh_instance.set_surface_override_material(surface_index, material)
-
-
-func _tint_toon_skin(mesh_instance: MeshInstance3D, tone: Color) -> void:
-	if mesh_instance.mesh == null:
-		return
-	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-		var source := mesh_instance.get_active_material(surface_index)
-		if not source is StandardMaterial3D or String(source.resource_name) != "Skin":
-			continue
-		var material := source.duplicate() as StandardMaterial3D
-		material.albedo_color = tone
-		mesh_instance.set_surface_override_material(surface_index, material)
 
 
 func _fallback_for(slot: String) -> String:
@@ -564,22 +586,25 @@ func _weapon_mount_pose(weapon_id: String, showcase: bool) -> Dictionary:
 	# Calibrado por sonda en pose Idle_Shoot (ambos rigs idénticos): el +Z del
 	# esqueleto (hacia dónde mira) es casi el +Y del antebrazo, y el nudillo
 	# queda 0.44 sobre el mount. Este euler lleva el cañón (+Z) al frente y el
-	# lomo (+Y) arriba; la empuñadura cae sobre los dedos.
+	# lomo (+Y) arriba; la empuñadura cae sobre los dedos. La posición Y crece
+	# con la escala para que la empuñadura (offset local -0.18) siga en la mano:
+	# 0.44 + 0.18 * escala. A escala 0.45 el rifle medía 0.52 unidades en mundo
+	# (28% del personaje) y leía como pistola de juguete a distancia.
 	var pose := {
-		"position": Vector3(-0.05, 0.50, 0.02),
+		"position": Vector3(-0.05, 0.58, 0.02),
 		"rotation": Vector3(-88.0, 137.0, -27.0),
-		"scale": 0.45
+		"scale": 0.80
 	}
 	match weapon_id:
 		"pistol":
-			pose["position"] = Vector3(-0.04, 0.44, 0.02)
-			pose["scale"] = 0.42
+			pose["position"] = Vector3(-0.04, 0.54, 0.02)
+			pose["scale"] = 0.70
 		"shotgun":
-			pose["position"] = Vector3(-0.05, 0.50, 0.02)
-			pose["scale"] = 0.45
+			pose["position"] = Vector3(-0.05, 0.58, 0.02)
+			pose["scale"] = 0.80
 		"smg":
-			pose["position"] = Vector3(-0.05, 0.49, 0.02)
-			pose["scale"] = 0.44
+			pose["position"] = Vector3(-0.05, 0.57, 0.02)
+			pose["scale"] = 0.78
 	if showcase:
 		pose["scale"] = float(pose["scale"]) * 1.08
 	return pose

@@ -46,10 +46,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	if is_instance_valid(weapon_display_root):
-		# Rotación de exposición lenta: conserva la lectura lateral del arma y no
-		# la deja en una orientación caótica durante una captura o un toque.
-		weapon_display_root.rotation_degrees.y += delta * 5.0
+	# Sin giro del product shot: a ángulos oblicuos el arma procedural se lee
+	# desarmada en piezas (aberración vista en el teléfono). El escaparate queda
+	# fijo en su ángulo de costado, siempre legible.
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -74,6 +73,8 @@ func _build_world() -> void:
 	sun.light_color = Color("#ffe3ae")
 	sun.light_energy = 1.25
 	sun.shadow_enabled = true
+	sun.shadow_bias = 0.18
+	sun.shadow_normal_bias = 3.5
 	add_child(sun)
 	var rim := DirectionalLight3D.new()
 	rim.rotation_degrees = Vector3(-12, 148, 0)
@@ -131,7 +132,10 @@ func _build_world() -> void:
 
 	hero = OperatorVisual.new()
 	hero.position = Vector3(1.55, 0.0, 0)
-	hero.rotation_degrees.y = -28.0
+	# Yaw hacia la cámara (la cámara está en +X/+Z del héroe): con -28 el rifle
+	# del showcase quedaba detrás del panel de UI y el personaje daba la espalda
+	# al eje de lectura del lobby.
+	hero.rotation_degrees.y = 14.0
 	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
 	# Pose de escaparate frontal: reduce la lectura de pesos de manos del rig
@@ -198,7 +202,7 @@ func _create_weapon_display() -> void:
 	armory_label = Label3D.new()
 	armory_label.name = "ArmoryPreviewLabel"
 	armory_label.text = "RIFLE · " + selected_skin.to_upper()
-	armory_label.position = Vector3(3.05, 1.72, 0.38)
+	armory_label.position = Vector3(2.52, 1.58, 1.35)
 	armory_label.font_size = 27
 	armory_label.pixel_size = 0.003
 	armory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -213,7 +217,10 @@ func _recreate_weapon_display() -> Node3D:
 	var display := WeaponVisualScript.new()
 	display.name = "ArmoryPreview"
 	display.configure("rifle")
-	display.position = Vector3(3.05, 0.72, 0.38)
+	# Flota a la altura del pecho del héroe, dentro del encuadre de la cámara
+	# del lobby (a 3.05/0.72 quedaba cortado por el borde y leía como chatarra
+	# tirada en el suelo en lugar de product shot).
+	display.position = Vector3(2.52, 1.02, 1.35)
 	# Vista de producto: costado del arma hacia la cámara del lobby, nivelada
 	# para que receiver, cargador y cañón se lean como una sola pieza.
 	display.rotation_degrees = Vector3(0.0, 68.0, 0.0)

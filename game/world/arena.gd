@@ -56,6 +56,8 @@ func _create_environment() -> void:
 	sun.light_color = Color("#fff0d2")
 	sun.light_energy = 1.05
 	sun.shadow_enabled = true
+	sun.shadow_bias = 0.18
+	sun.shadow_normal_bias = 3.5
 	sun.directional_shadow_max_distance = 55.0
 	add_child(sun)
 
@@ -439,5 +441,7 @@ func _material(color: Color, texture_path: String = "") -> StandardMaterial3D:
 	material.roughness = 0.82
 	if texture_path != "":
 		material.albedo_texture = load(texture_path) as Texture2D
-		material.uv1_scale = Vector3(10.0, 10.0, 10.0)
+		material.uv1_scale = Vector3(5.0, 5.0, 5.0)
+		# Anisotrópico: sin esto las paredes shimmer a ángulos rasantes en móvil.
+		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return material

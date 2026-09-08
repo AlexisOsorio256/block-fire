@@ -166,6 +166,12 @@ func _die(killer: Node) -> void:
 		weapon.clear_combat_input()
 	if mobile_controls != null and mobile_controls.has_method("release_all"):
 		mobile_controls.release_all()
+	# Cámara de muerte: cae al piso y mira hacia abajo. A la altura de ojos la
+	# cámara quedaba dentro de los bots que se aglomeran sobre el cadáver y el
+	# jugador veía un blob gigante durante todo el tiempo de respawn.
+	if camera_pivot != null:
+		camera_pivot.position.y = 0.5
+	look_pitch = -34.0
 	player_died.emit(self, killer)
 
 func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
@@ -182,6 +188,8 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	collision_mask = 1 | 2
 	health_changed.emit(health, max_health)
 	look_pitch = 0.0
+	if camera_pivot != null:
+		camera_pivot.position.y = 1.58
 	assist_target = null
 	assist_break_timer = 0.0
 	camera_recoil = 0.0

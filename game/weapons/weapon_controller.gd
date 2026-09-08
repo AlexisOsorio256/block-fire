@@ -470,12 +470,13 @@ func _pose_arms_for_weapon() -> void:
 	# Rig -Z faces the same screen direction as the gun muzzle (controller +Z).
 	var pitch := deg_to_rad(-78.0)  # arms swing forward-up toward the weapon
 	# Rig-local grip targets (rig space, meters; rig -Z = screen into the gun).
-	# X grows toward screen-left. Hip pose: hands below screen center, near the
-	# gun body; ADS centers the gun (see _animate_viewmodel arms offset below).
-	var grip_rig := Vector3(0.10, 1.26, -0.18)
-	var foregrip_rig := Vector3(0.14, 1.24, 0.26)
-	var elbow_r_rig := Vector3(0.26, 1.42, -0.04)
-	var elbow_l_rig := Vector3(0.34, 1.40, 0.24)
+	# X grows toward screen-left. Calibrado por medición de mundos (qa_shot
+	# vuelca hand.R/L vs grip/foregrip): el plano de agarre del rifle queda en
+	# rig z +0.37/+0.85 sobre el origen del rig; x=0 es la línea central del arma.
+	var grip_rig := Vector3(0.0, 1.53, 0.37)
+	var foregrip_rig := Vector3(0.0, 1.59, 0.85)
+	var elbow_r_rig := Vector3(0.26, 1.52, 0.50)
+	var elbow_l_rig := Vector3(0.34, 1.50, 0.80)
 	_pose_arm("R", grip_rig, elbow_r_rig, pitch, deg_to_rad(10.0))
 	_pose_arm("L", foregrip_rig, elbow_l_rig, pitch, deg_to_rad(-8.0))
 	if _arms_animation != null and is_instance_valid(_arms_animation):
@@ -565,10 +566,11 @@ func _animate_viewmodel(delta: float) -> void:
 	viewmodel.rotation_degrees = viewmodel.rotation_degrees.lerp(target_rotation, clampf(delta * 18.0, 0.0, 1.0))
 	if is_instance_valid(arms_root):
 		# Hands stay glued to the grip: arms follow the gun transform every frame.
-		# In ADS the gun rises to the sight line while the arms keep a lower
-		# anchor: rising with the weapon swings the posed elbows into the frame
-		# as giant limbs, so the hands stay near the grip from below.
-		var arms_pos := viewmodel_base_position.lerp(ads_base_position, ads_weight * 0.35) + Vector3(0.0, 0.0, 0.08)
+		# El ancla al 35% dejaba las manos despegadas del arma en ADS (el grip
+		# está calibrado en espacio del rig: si el root no acompaña al arma, la
+		# mano flota). Con seguimiento completo los codos planteaban un riesgo de
+		# entrar en cuadro: se vigila en la captura de ADS.
+		var arms_pos := viewmodel_base_position.lerp(ads_base_position, ads_weight) + Vector3(0.0, 0.0, 0.08)
 		arms_pos += viewmodel.position - (viewmodel_base_position.lerp(ads_base_position, ads_weight))
 		arms_root.position = arms_pos
 		arms_root.rotation_degrees = viewmodel.rotation_degrees
@@ -631,7 +633,9 @@ func _show_muzzle_flash() -> void:
 		muzzle_anchor.add_child(muzzle_flash)
 		muzzle_flash.position = Vector3(0.0, 0.0, 0.03)
 	var flash_scale := maxf(0.6, muzzle_flash_scale)
-	muzzle_flash.scale = Vector3.ONE * flash_scale
+	# El flash de boca se dimensiona para leerse en móvil: a escala 1.0 el abanico
+	# de pétalos media ~0.03 unidades en mundo y se perdía contra el cañón.
+	muzzle_flash.scale = Vector3.ONE * flash_scale * 2.2
 	# Random roll around the barrel axis so each shot reads unique.
 	muzzle_flash.rotation = Vector3(0.0, 0.0, rng.randf_range(0.0, TAU))
 	muzzle_flash.visible = true
@@ -705,12 +709,17 @@ func _play_shot(weapon_id: String) -> void:
 	# Sin sample propio de SMG en el repo: comparte el de rifle una octava de
 	# cadencia más rápido y medio tono más grave (no acelerado-agudo), con un
 	# poco menos de nivel porque su cadencia apila más energía.
+	# Rifle y shotgun tienen picos a +1.4 dBFS en el archivo (ffprobe/astats):
+	# -2.0 dB en reproducción devuelve margen sin tocar los assets CC-BY.
 	if weapon_id == "smg":
 		shot_audio.pitch_scale = 0.94
-		shot_audio.volume_db = -2.0
+		shot_audio.volume_db = -3.4
 	elif weapon_id == "shotgun":
 		shot_audio.pitch_scale = 0.88
-		shot_audio.volume_db = 0.0
+		shot_audio.volume_db = -2.0
+	elif weapon_id == "rifle":
+		shot_audio.pitch_scale = 1.0
+		shot_audio.volume_db = -2.0
 	else:
 		shot_audio.pitch_scale = 1.0
 		shot_audio.volume_db = 0.0
