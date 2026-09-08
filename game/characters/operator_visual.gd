@@ -34,6 +34,11 @@ var animation_state: StringName = &""
 var loadout: Dictionary = {}
 ## Color de equipo para la banda/aro pequeño.
 var team_band_color: Color = BAND_COLOR_ALLY
+## El escaparate del lobby es un estado del visual, no un parche externo: al
+## reconstruir el rig conserva el rifle y omite los marcadores de combate.
+var showcase_mode: bool = false
+var showcase_weapon_scene: String = ""
+var showcase_weapon_skin: String = "Estándar"
 
 ## Índice de skin del skeleton (una sola copia compartida por instancias del
 ## mismo PackedScene: Godot instancia Skeleton3D por escena, sin coste extra).
@@ -48,6 +53,31 @@ func configure(id: String, team_id: String, color: Color, cosmetic_loadout: Dict
 	loadout = cosmetic_loadout
 	is_human = human
 	_build()
+
+
+func set_showcase_mode(enabled: bool, weapon_scene: String = "", weapon_skin: String = "") -> void:
+	showcase_mode = enabled
+	if not weapon_scene.is_empty():
+		showcase_weapon_scene = weapon_scene
+	if not weapon_skin.is_empty():
+		showcase_weapon_skin = weapon_skin
+	if skeleton == null or not is_instance_valid(skeleton):
+		return
+	if showcase_mode:
+		_remove_team_markers()
+		_remove_showcase_weapon()
+		_add_showcase_weapon()
+	else:
+		_remove_showcase_weapon()
+		_add_team_marker()
+
+
+func set_showcase_weapon_skin(weapon_skin: String) -> void:
+	showcase_weapon_skin = weapon_skin
+	if not showcase_mode or skeleton == null or not is_instance_valid(skeleton):
+		return
+	_remove_showcase_weapon()
+	_add_showcase_weapon()
 
 
 ## Compatibilidad: firma antigua configure(id, team, color) sigue válida.
@@ -100,7 +130,10 @@ func _build() -> void:
 		_find_animation_player()
 		_apply_loadout(effective)
 		_play_animation(&"Idle")
-		_add_team_marker()
+		if showcase_mode:
+			_add_showcase_weapon()
+		else:
+			_add_team_marker()
 		return
 	_build_fallback()
 
@@ -251,6 +284,47 @@ func _add_team_marker() -> void:
 	ring.position = Vector3(0.0, 0.045, 0.0)
 	ring.material_override = _material(team_band_color, 0.4)
 	add_child(ring)
+
+
+func _remove_team_markers() -> void:
+	var ring := get_node_or_null("TeamRing")
+	if ring != null:
+		ring.free()
+	if skeleton == null or not is_instance_valid(skeleton):
+		return
+	var band_attachment := skeleton.get_node_or_null("TeamBandAttachment")
+	if band_attachment != null:
+		band_attachment.free()
+
+
+func _remove_showcase_weapon() -> void:
+	var attachment := get_node_or_null("ShowcaseWeaponAttachment")
+	if attachment != null:
+		attachment.free()
+
+
+func _add_showcase_weapon() -> void:
+	if showcase_weapon_scene.is_empty():
+		return
+	var packed := load(showcase_weapon_scene) as PackedScene
+	if packed == null:
+		return
+	# El rig modular trae poses y prendas con escalas distintas. Un prop local
+	# estable conserva la calibración del expositor y evita que un BoneAttachment
+	# herede una transformación que descomponga el arma en el escaparate.
+	var attachment := Node3D.new()
+	attachment.name = "ShowcaseWeaponAttachment"
+	add_child(attachment)
+	var gun := packed.instantiate() as Node3D
+	if gun == null:
+		attachment.free()
+		return
+	attachment.position = Vector3(0.42, 1.08, 0.24)
+	attachment.rotation_degrees = Vector3(-8.0, 24.0, -10.0)
+	attachment.scale = Vector3.ONE * 0.70
+	gun.scale = Vector3.ONE * 0.85
+	attachment.add_child(gun)
+	WeaponSkin.apply(gun, showcase_weapon_skin)
 
 
 func _add_accessory(item: CosmeticItem) -> void:

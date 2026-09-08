@@ -124,8 +124,11 @@ func _build() -> void:
 	bottom_bar.anchor_bottom = 1.0
 	bottom_bar.offset_left = -170
 	bottom_bar.offset_right = 170
-	bottom_bar.offset_top = -70
-	bottom_bar.offset_bottom = -16
+	# La barra contiene una etiqueta de 24 px, nombre de arma y márgenes del
+	# panel; 54 px la recortaba en pantallas Android altas. Deja una franja real
+	# y mantén el borde inferior dentro de la safe area visible.
+	bottom_bar.offset_top = -126
+	bottom_bar.offset_bottom = -18
 	bottom_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	bottom_bar.add_theme_constant_override("separation", 12)
 	root.add_child(bottom_bar)
@@ -290,8 +293,11 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		buy_panel.anchor_bottom = 1.0
 		buy_panel.offset_left = -430
 		buy_panel.offset_right = 430
-		buy_panel.offset_top = -214
-		buy_panel.offset_bottom = -20
+		# Header + créditos + aviso + cuatro tarjetas + ayuda superan 194 px
+		# cuando el tema aplica sus márgenes. La altura anterior cortaba la
+		# compra en el borde inferior del teléfono.
+		buy_panel.offset_top = -294
+		buy_panel.offset_bottom = -18
 		buy_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127f0"), Color("#536f95"), 16, 2))
 		root.add_child(buy_panel)
 		var stack := VBoxContainer.new()

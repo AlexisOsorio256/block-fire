@@ -60,7 +60,9 @@ func _create_environment() -> void:
 	add_child(sun)
 
 func _create_ground() -> void:
-	_create_box("Ground", Vector3(0, -0.22, 0), Vector3(120, 0.4, 120), Color("#aebccd"), true)
+	# En Android el albedo claro y la luz ambiental lavan las juntas del piso;
+	# este tono conserva la lectura sci-fi sin competir con el HUD.
+	_create_box("Ground", Vector3(0, -0.22, 0), Vector3(120, 0.4, 120), Color("#8e9fb2"), true)
 	_create_box("NorthWall", Vector3(0, 2.4, -58), Vector3(116, 5.0, 1.0), Color("#3d5a7a"), true)
 	_create_box("SouthWall", Vector3(0, 2.4, 58), Vector3(116, 5.0, 1.0), Color("#3d5a7a"), true)
 	_create_box("WestWall", Vector3(-58, 2.4, 0), Vector3(1.0, 5.0, 116), Color("#3d5a7a"), true)

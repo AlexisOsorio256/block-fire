@@ -15,7 +15,7 @@ func _run() -> void:
 	_test_weapon_definitions()
 	_test_squad_rules()
 	_test_ffa_rules()
-	_test_player_and_operator_contracts()
+	await _test_player_and_operator_contracts()
 	_test_touch_contracts()
 	_test_settings_layout_contract()
 	_test_control_editor_contract()
@@ -144,6 +144,14 @@ func _test_visual_in_tree() -> void:
 	_check(String(ally_loadout.get("top", "")) != "top_suit", "ally bot does not inherit player top")
 	settings.set_cosmetic_slot("top", "top_swat")
 	settings.set_cosmetic_slot("bottom", "bottom_swat")
+	# El escaparate debe sobrevivir al rebuild que provoca cambiar una prenda:
+	# el rifle es parte del lifecycle del visual y no del lobby por frame.
+	visual.set_showcase_mode(true, "res://assets/models/weapons/rifle.glb", "Estándar")
+	_check(visual.get_node_or_null("TeamRing") == null, "showcase hides combat ring")
+	_check(visual.get_node_or_null("ShowcaseWeaponAttachment") != null, "showcase attaches display weapon")
+	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
+	_check(visual.get_node_or_null("TeamRing") == null and visual.get_node_or_null("ShowcaseWeaponAttachment") != null,
+		"showcase weapon survives avatar rebuild")
 	ally_bot_visual.queue_free()
 	visual.queue_free()
 	var bot := BlockfireBot.new()
@@ -158,6 +166,13 @@ func _test_visual_in_tree() -> void:
 			if (node as MeshInstance3D).visible:
 				bot_meshes += 1
 	_check(bot_meshes >= 4 and bot_meshes <= 7, "bot avatar resolves a deterministic loadout")
+	_check((bot.collision_mask & 2) != 0, "bot body blocks combatant overlap")
+	var collision_player := BlockfirePlayer.new()
+	get_root().add_child(collision_player)
+	await process_frame
+	_check((collision_player.collision_mask & 2) != 0, "player body blocks combatant overlap")
+	get_root().remove_child(collision_player)
+	collision_player.free()
 	bot.get_parent().remove_child(bot)
 	bot.free()
 
@@ -257,6 +272,27 @@ func _test_consolidation_contracts() -> void:
 	_check(MatchScript.ffa_result_title(false) == "DERROTA", "bot FFA winner is player defeat")
 	_check(MatchScript.ffa_result_title(true) == "VICTORIA", "player FFA winner is victory")
 	var player := BlockfirePlayer.new()
+	game_match.player = player
+	game_match.bots.append(bot)
+	_check(game_match._ffa_display_name(player) == "TÚ", "FFA result uses player-facing winner name")
+	_check(game_match._ffa_display_name(bot) == "RIVAL 1", "FFA result hides internal bot name")
+	var separation_player := BlockfirePlayer.new()
+	var separation_bot := BlockfireBot.new()
+	separation_bot.match_context = game_match
+	get_root().add_child(separation_player)
+	get_root().add_child(separation_bot)
+	game_match.player = separation_player
+	separation_player.global_position = Vector3.ZERO
+	separation_bot.target = separation_player
+	separation_bot.global_position = Vector3(1.0, 0.2, 0.0)
+	var separation_velocity: Vector3 = separation_bot._player_separation_velocity()
+	_check(separation_velocity.length() > 0.1 and separation_velocity.x > 0.0, "FFA bot separates from player camera")
+	get_root().remove_child(separation_bot)
+	separation_bot.free()
+	get_root().remove_child(separation_player)
+	separation_player.free()
+	game_match.bots.clear()
+	game_match.player = null
 	player.configure(game_match, "ally", "BRAVO")
 	player.input_enabled = true
 	game_match.state = "BUY"

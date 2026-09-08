@@ -129,20 +129,10 @@ func _build_world() -> void:
 	hero.rotation_degrees.y = -28.0
 	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
-	# Escaparate limpio: sin banda/aro de equipo (el patio ya da contexto).
-	for marker: String in ["TeamRing"]:
-		var node := hero.get_node_or_null(marker)
-		if node != null:
-			node.queue_free()
-	var skeleton := hero.get("skeleton") as Skeleton3D
-	if skeleton != null:
-		for attachment: Node in skeleton.get_children():
-			if attachment is BoneAttachment3D and String(attachment.name) == "TeamBandAttachment":
-				attachment.queue_free()
-	# Pose de escaparate: brazos al frente (foreshortening oculta los pesos de
-	# manos corruptos de la fusión) y rifle en mano para lectura FPS inmediata.
+	# Pose de escaparate frontal: reduce la lectura de pesos de manos del rig
+	# modular y mantiene la silueta preparada para mostrar un arma.
 	hero.set_combat_state(false, true)
-	_attach_showcase_rifle()
+	hero.set_showcase_mode(true, "res://assets/models/weapons/rifle.glb", selected_skin)
 	_create_weapon_display()
 
 func _add_prop(file_name: String, position: Vector3, yaw: float, tint: Color) -> void:
@@ -220,25 +210,6 @@ func _create_weapon_display() -> void:
 	armory_label.no_depth_test = true
 	add_child(armory_label)
 
-func _attach_showcase_rifle() -> void:
-	if hero == null or hero.get("skeleton") == null:
-		return
-	var skeleton := hero.get("skeleton") as Skeleton3D
-	if skeleton.find_bone("Wrist.R") < 0:
-		return
-	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
-	if packed == null:
-		return
-	var attachment := BoneAttachment3D.new()
-	attachment.bone_name = "Wrist.R"
-	skeleton.add_child(attachment)
-	var gun := packed.instantiate() as Node3D
-	gun.scale = Vector3.ONE * 0.85
-	gun.position = Vector3(0.02, -0.12, -0.30)
-	gun.rotation_degrees = Vector3(0.0, 0.0, 0.0)
-	attachment.add_child(gun)
-	WeaponSkin.apply(gun, selected_skin)
-
 func _recreate_weapon_display() -> Node3D:
 	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
 	if packed == null:
@@ -313,7 +284,7 @@ func _build_ui() -> void:
 	var chars := HBoxContainer.new()
 	chars.add_theme_constant_override("separation", 8)
 	left.add_child(chars)
-	var wardrobe := _make_select_button("ROPA\nVISTE A TU AGENTE", 13)
+	var wardrobe := _make_select_button("ROPA\nPERSONALIZA TU PERSONAJE", 13)
 	var armory := _make_select_button("ARMAS\nSKINS", 13)
 	chars.add_child(wardrobe)
 	chars.add_child(armory)
@@ -361,6 +332,8 @@ func _select_skin(skin: String) -> void:
 		skin_buttons[key].modulate = Color.WHITE if key == skin else Color("#8292a8")
 	if armory_label != null:
 		armory_label.text = "RIFLE · " + skin.to_upper()
+	if is_instance_valid(hero):
+		hero.set_showcase_weapon_skin(skin)
 	if is_instance_valid(weapon_display_root):
 		weapon_display_root.queue_free()
 		weapon_display_root = null
@@ -384,7 +357,7 @@ func _toggle_wardrobe() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	wardrobe_panel.add_child(stack)
-	var heading := BlockfireTheme.label("ROPA · EQUIPA A TU AGENTE", 15, BlockfireTheme.GOLD)
+	var heading := BlockfireTheme.label("ROPA · PERSONALIZA TU PERSONAJE", 15, BlockfireTheme.GOLD)
 	stack.add_child(heading)
 	var cats := HBoxContainer.new()
 	cats.add_theme_constant_override("separation", 5)

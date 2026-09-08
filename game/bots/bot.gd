@@ -3,6 +3,8 @@ extends CharacterBody3D
 
 signal bot_died(bot: Node, killer: Node)
 
+const MIN_PLAYER_SEPARATION: float = 4.5
+
 var match_context: Node
 var team: String = "enemy"
 var operator_id: String = "VULTURE"
@@ -48,7 +50,9 @@ func configure(context: Node, team_id: String, selected_operator: String, role_i
 func _ready() -> void:
 	add_to_group("combatants")
 	collision_layer = 2
-	collision_mask = 1
+	# Mantiene separados los cuerpos de combatientes para que no atraviesen
+	# la cámara del jugador cuando se acercan en FFA.
+	collision_mask = 1 | 2
 	_create_collision()
 	visual = OperatorVisual.new()
 	# El operator_id ya no elige un héroe: solo alimenta la variación
@@ -130,6 +134,12 @@ func _physics_process(delta: float) -> void:
 		movement_target.y = 0.2
 		navigation_agent.target_position = movement_target
 	var desired_velocity := _navigation_velocity(4.4 + (role.aggression + difficulty_bonus * 0.45) * 1.5)
+	var separation_velocity := _player_separation_velocity()
+	if separation_velocity.length_squared() > 0.01:
+		# El path sigue siendo la autoridad normal; esta salida de emergencia solo
+		# evita que la silueta de un bot ocupe la cámara del jugador.
+		_stop_navigation()
+		desired_velocity = separation_velocity
 	_move_with_velocity(desired_velocity, delta)
 	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held)
 	if desired_velocity.length_squared() > 0.1 or (target_alive and can_see):
@@ -186,6 +196,21 @@ func _navigation_velocity(speed: float) -> Vector3:
 	if direction.length_squared() < 0.001:
 		return Vector3.ZERO
 	return direction.normalized() * speed
+
+func _player_separation_velocity() -> Vector3:
+	if match_context == null or not is_instance_valid(target):
+		return Vector3.ZERO
+	if target != match_context.get("player") or not bool(target.get("is_alive")):
+		return Vector3.ZERO
+	var target_position: Vector3 = target.global_position
+	var offset: Vector3 = global_position - target_position
+	offset.y = 0.0
+	var distance: float = offset.length()
+	if distance >= MIN_PLAYER_SEPARATION:
+		return Vector3.ZERO
+	if distance < 0.01:
+		offset = Vector3.RIGHT if get_instance_id() % 2 == 0 else Vector3.FORWARD
+	return offset.normalized() * 6.0
 
 func _move_with_velocity(wanted_velocity: Vector3, delta: float) -> void:
 	var movement_velocity := wanted_velocity
@@ -263,7 +288,7 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	death_hide_timer = 0.0
 	spawn_immunity = immunity
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | 2
 	target = null
 	target_memory_position = Vector3.ZERO
 	target_memory_timer = 0.0

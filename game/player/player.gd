@@ -43,7 +43,9 @@ func configure(context: Node, team_id: String, selected_operator: String, contro
 func _ready() -> void:
 	add_to_group("combatants")
 	collision_layer = 2
-	collision_mask = 1
+	# Los cuerpos de jugadores y bots comparten la capa 2: bloquear el solape
+	# evita que un rival atraviese la cámara en el combate FFA.
+	collision_mask = 1 | 2
 	_create_collision()
 	_create_visual()
 	_create_camera()
@@ -177,7 +179,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	visible = true
 	spawn_immunity = immunity
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | 2
 	health_changed.emit(health, max_health)
 	look_pitch = 0.0
 	assist_target = null

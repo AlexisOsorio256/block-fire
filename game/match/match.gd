@@ -412,8 +412,14 @@ func _finish_ffa() -> void:
 	_stop_combat_inputs()
 	state = "FINISHED"
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-	var winner_name := str(ffa_winner.name) if is_instance_valid(ffa_winner) else "GANADOR"
+	var winner_name := _ffa_display_name(ffa_winner)
 	hud.show_match_end(ffa_result_title(ffa_winner == player), "%s alcanza 20 eliminaciones" % winner_name)
+
+func _ffa_display_name(actor: Node) -> String:
+	if actor == player:
+		return "TÚ"
+	var rival_index := bots.find(actor) + 1
+	return "RIVAL %d" % rival_index if rival_index > 0 else "GANADOR"
 
 static func ffa_result_title(player_won: bool) -> String:
 	return "VICTORIA" if player_won else "DERROTA"
