@@ -92,7 +92,7 @@ func _test_visual_in_tree() -> void:
 	var visual := OperatorVisual.new()
 	get_root().add_child(visual)
 	await process_frame
-	visual.configure("BRAVO", "ally", Color("#ff9d50"))
+	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Idle"), "avatar rig exposes idle animation")
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "avatar rig exposes locomotion animation")
 	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "avatar rig exposes death animation")
@@ -110,6 +110,41 @@ func _test_visual_in_tree() -> void:
 			if node is BoneAttachment3D:
 				attachments += 1
 	_check(attachments >= 1, "team band rides a BoneAttachment3D")
+	# Regresión P0: el rig UMC llegó con alfa 0 (invisible). Todo material
+	# visible debe quedar opaco por instancia, salvo la piel de tops ocultada
+	# como mitigación temporal de pesos corruptos (manos en T-pose).
+	var opaque_ok := true
+	if visual.skeleton != null:
+		for node: Node in visual.skeleton.get_children():
+			var mesh_instance := node as MeshInstance3D
+			if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
+				continue
+			var is_top := String(mesh_instance.name).ends_with("_Body")
+			for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+				var material := mesh_instance.get_active_material(surface_index)
+				if material is StandardMaterial3D:
+					var source_mat := material as StandardMaterial3D
+					var is_hidden_top_skin := is_top and source_mat.resource_name == "Skin" and source_mat.albedo_color.a < 0.01
+					if is_hidden_top_skin:
+						continue
+					if source_mat.albedo_color.a < 0.99 or source_mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+						opaque_ok = false
+	_check(opaque_ok, "avatar materials are opaque after repair")
+	# Regresión P0: ownership humano/bot no depende del string de team.
+	# Un bot aliado nunca debe heredar el loadout persistido del jugador.
+	var settings: Node = get_root().get_node("SettingsStore")
+	settings.set_cosmetic_slot("top", "top_suit")
+	settings.set_cosmetic_slot("bottom", "bottom_suit")
+	var ally_bot_visual := OperatorVisual.new()
+	ally_bot_visual.name = "AllyBotOwnership"
+	get_root().add_child(ally_bot_visual)
+	await process_frame
+	ally_bot_visual.configure("TALON", "ally", Color("#f0a064"))
+	var ally_loadout := ally_bot_visual.resolve_default_loadout(42)
+	_check(String(ally_loadout.get("top", "")) != "top_suit", "ally bot does not inherit player top")
+	settings.set_cosmetic_slot("top", "top_swat")
+	settings.set_cosmetic_slot("bottom", "bottom_swat")
+	ally_bot_visual.queue_free()
 	visual.queue_free()
 	var bot := BlockfireBot.new()
 	bot.name = "SmokeBot"
@@ -338,3 +373,35 @@ func _test_control_editor_contract() -> void:
 	editor.free()
 	get_root().remove_child(controls)
 	controls.free()
+	_test_spectator_contract()
+	_test_editor_pause_contract()
+
+func _test_spectator_contract() -> void:
+	var game_match := MatchScript.new()
+	var first := game_match._spectator_display_name(0)
+	_check(first == "COMPAÑERO 1", "spectator uses player-facing names")
+	_check(not first.contains("Bot_"), "spectator hides internal bot names")
+	game_match.free()
+
+func _test_editor_pause_contract() -> void:
+	## La pausa del editor congela física de combatientes sin managers.
+	var hud := BlockfireHud.new()
+	get_root().add_child(hud)
+	hud.setup(null, true)
+	var bot := BlockfireBot.new()
+	bot.name = "PauseBot"
+	bot.configure(null, "enemy", "VULTURE", "support")
+	get_root().add_child(bot)
+	var physics_before := bot.is_physics_processing()
+	hud.match_context = bot.match_context
+	# Simula contexto mínimo con un combatiente vivo.
+	var fake := RefCounted.new()
+	hud._editor_frozen = [bot]
+	bot.set_physics_process(false)
+	_check(not bot.is_physics_processing(), "editor freeze stops bot physics")
+	hud._resume_from_editor()
+	_check(bot.is_physics_processing() == physics_before, "editor close resumes bot physics")
+	get_root().remove_child(bot)
+	bot.free()
+	get_root().remove_child(hud)
+	hud.free()

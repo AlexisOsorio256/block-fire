@@ -17,7 +17,9 @@ var root: Control
 var score_label: Label
 var round_label: Label
 var health_label: Label
+var health_bar: ProgressBar
 var ammo_label: Label
+var reserve_label: Label
 var weapon_label: Label
 var status_label: Label
 var banner_label: Label
@@ -29,11 +31,14 @@ var buy_panel: PanelContainer
 var buy_title: Label
 var buy_timer: Label
 var buy_coins: Label
+var buy_warning: Label
 var buy_buttons: Array[Button] = []
 var spectator_panel: PanelContainer
 var end_panel: PanelContainer
 var ui_audio: AudioStreamPlayer
 var mobile_qa: bool = false
+## Actores congelados mientras el editor está abierto (pausa causal sin managers).
+var _editor_frozen: Array[Node] = []
 
 func setup(context: Node, use_mobile_qa: bool) -> void:
 	match_context = context
@@ -53,46 +58,48 @@ func _build() -> void:
 	var top_panel := PanelContainer.new()
 	top_panel.anchor_left = 0.5
 	top_panel.anchor_right = 0.5
-	top_panel.offset_left = -155
-	top_panel.offset_right = 155
-	top_panel.offset_top = 18
-	top_panel.offset_bottom = 65
+	top_panel.offset_left = -120
+	top_panel.offset_right = 120
+	top_panel.offset_top = 14
+	top_panel.offset_bottom = 56
 	top_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127dc"), Color("#35557a"), 12, 1))
 	root.add_child(top_panel)
 	var top_row := HBoxContainer.new()
 	top_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	top_row.add_theme_constant_override("separation", 18)
+	top_row.add_theme_constant_override("separation", 14)
 	top_panel.add_child(top_row)
-	score_label = BlockfireTheme.label("0  —  0", 21, Color.WHITE)
+	score_label = BlockfireTheme.label("0  —  0", 18, Color.WHITE)
 	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_row.add_child(score_label)
-	round_label = BlockfireTheme.label("R1", 12, BlockfireTheme.GOLD)
+	round_label = BlockfireTheme.label("R1", 11, BlockfireTheme.GOLD)
 	top_row.add_child(round_label)
 
 	var settings := Button.new()
-	settings.text = "CFG"
-	settings.tooltip_text = "Editar controles"
+	settings.text = "AJUSTES"
+	settings.tooltip_text = "Ajustes y controles"
 	settings.anchor_left = 1.0
 	settings.anchor_right = 1.0
-	settings.offset_left = -154
-	settings.offset_right = -90
-	settings.offset_top = 18
-	settings.offset_bottom = 64
+	settings.offset_left = -166
+	settings.offset_right = -88
+	settings.offset_top = 14
+	settings.offset_bottom = 56
 	settings.z_index = 5
+	settings.add_theme_font_size_override("font_size", 11)
 	BlockfireTheme.apply_button(settings, Color("#80cfff"))
 	settings.pressed.connect(func() -> void: settings_requested.emit())
 	root.add_child(settings)
 
 	var arsenal := Button.new()
-	arsenal.text = "ARM"
-	arsenal.tooltip_text = "Abrir arsenal (B)"
+	arsenal.text = "ARMA"
+	arsenal.tooltip_text = "Cambiar arma"
 	arsenal.anchor_left = 1.0
 	arsenal.anchor_right = 1.0
-	arsenal.offset_left = -84
-	arsenal.offset_right = -20
-	arsenal.offset_top = 18
-	arsenal.offset_bottom = 64
+	arsenal.offset_left = -76
+	arsenal.offset_right = -16
+	arsenal.offset_top = 14
+	arsenal.offset_bottom = 56
 	arsenal.z_index = 5
+	arsenal.add_theme_font_size_override("font_size", 11)
 	BlockfireTheme.apply_button(arsenal, BlockfireTheme.GOLD)
 	arsenal.pressed.connect(func() -> void: arsenal_requested.emit())
 	root.add_child(arsenal)
@@ -115,34 +122,52 @@ func _build() -> void:
 	bottom_bar.anchor_top = 1.0
 	bottom_bar.anchor_right = 0.5
 	bottom_bar.anchor_bottom = 1.0
-	bottom_bar.offset_left = -225
-	bottom_bar.offset_right = 225
-	bottom_bar.offset_top = -84
-	bottom_bar.offset_bottom = -22
+	bottom_bar.offset_left = -170
+	bottom_bar.offset_right = 170
+	bottom_bar.offset_top = -70
+	bottom_bar.offset_bottom = -16
 	bottom_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_bar.add_theme_constant_override("separation", 20)
+	bottom_bar.add_theme_constant_override("separation", 12)
 	root.add_child(bottom_bar)
 	var health_panel := PanelContainer.new()
-	health_panel.custom_minimum_size = Vector2(150, 58)
+	health_panel.custom_minimum_size = Vector2(132, 48)
 	health_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127d9"), Color("#347ea1"), 10, 1))
 	bottom_bar.add_child(health_panel)
-	health_label = BlockfireTheme.label("200  HP", 22, Color("#7de1ff"))
+	var health_stack := VBoxContainer.new()
+	health_stack.add_theme_constant_override("separation", 2)
+	health_panel.add_child(health_stack)
+	health_label = BlockfireTheme.label("200", 18, Color("#7de1ff"))
 	health_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	health_panel.add_child(health_label)
+	health_stack.add_child(health_label)
+	health_bar = ProgressBar.new()
+	health_bar.min_value = 0.0
+	health_bar.max_value = 200.0
+	health_bar.value = 200.0
+	health_bar.show_percentage = false
+	health_bar.custom_minimum_size = Vector2(100, 8)
+	health_stack.add_child(health_bar)
 	var ammo_panel := PanelContainer.new()
-	ammo_panel.custom_minimum_size = Vector2(210, 58)
+	ammo_panel.custom_minimum_size = Vector2(170, 48)
 	ammo_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127d9"), Color("#49607e"), 10, 1))
 	bottom_bar.add_child(ammo_panel)
 	var ammo_stack := VBoxContainer.new()
+	ammo_stack.add_theme_constant_override("separation", 0)
 	ammo_panel.add_child(ammo_stack)
-	ammo_label = BlockfireTheme.label("12 / 72", 21, Color.WHITE)
-	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ammo_stack.add_child(ammo_label)
-	weapon_label = BlockfireTheme.label("PISTOL", 10, Color("#9db7db"))
+	var ammo_row := HBoxContainer.new()
+	ammo_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	ammo_row.add_theme_constant_override("separation", 4)
+	ammo_stack.add_child(ammo_row)
+	ammo_label = BlockfireTheme.label("12", 24, Color.WHITE)
+	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ammo_row.add_child(ammo_label)
+	reserve_label = BlockfireTheme.label("/ 72", 13, Color("#9db7db"))
+	reserve_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	ammo_row.add_child(reserve_label)
+	weapon_label = BlockfireTheme.label("PISTOL", 9, Color("#9db7db"))
 	weapon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ammo_stack.add_child(weapon_label)
 
-	status_label = BlockfireTheme.label("", 14, Color("#ffd471"))
+	status_label = BlockfireTheme.label("", 13, Color("#ffd471"))
 	status_label.anchor_left = 0.5
 	status_label.anchor_top = 0.18
 	status_label.anchor_right = 0.5
@@ -151,26 +176,35 @@ func _build() -> void:
 	status_label.offset_right = 220
 	status_label.offset_bottom = 30
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.add_theme_color_override("font_shadow_color", Color("#000000aa"))
+	status_label.add_theme_constant_override("shadow_offset_x", 2)
+	status_label.add_theme_constant_override("shadow_offset_y", 2)
 	root.add_child(status_label)
-	banner_label = BlockfireTheme.label("", 32, Color.WHITE)
+	banner_label = BlockfireTheme.label("", 28, Color.WHITE)
 	banner_label.anchor_left = 0.5
 	banner_label.anchor_top = 0.34
 	banner_label.anchor_right = 0.5
 	banner_label.anchor_bottom = 0.34
 	banner_label.offset_left = -300
 	banner_label.offset_right = 300
-	banner_label.offset_bottom = 56
+	banner_label.offset_bottom = 52
 	banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner_label.add_theme_color_override("font_shadow_color", Color("#000000aa"))
+	banner_label.add_theme_constant_override("shadow_offset_x", 3)
+	banner_label.add_theme_constant_override("shadow_offset_y", 3)
 	root.add_child(banner_label)
-	damage_label = BlockfireTheme.label("", 14, Color("#ff8b72"))
+	damage_label = BlockfireTheme.label("", 13, Color("#ff8b72"))
 	damage_label.anchor_left = 0.5
 	damage_label.anchor_top = 0.55
 	damage_label.anchor_right = 0.5
 	damage_label.anchor_bottom = 0.55
 	damage_label.offset_left = -200
 	damage_label.offset_right = 200
-	damage_label.offset_bottom = 36
+	damage_label.offset_bottom = 34
 	damage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	damage_label.add_theme_color_override("font_shadow_color", Color("#000000aa"))
+	damage_label.add_theme_constant_override("shadow_offset_x", 2)
+	damage_label.add_theme_constant_override("shadow_offset_y", 2)
 	root.add_child(damage_label)
 
 	if mobile_qa or DisplayServer.is_touchscreen_available():
@@ -191,12 +225,18 @@ func update_ffa_score(kills: int, target: int) -> void:
 
 func update_health(value: float, maximum: float) -> void:
 	if health_label != null:
-		health_label.text = "%d  HP" % roundi(value)
-		health_label.modulate = Color("#ff887d") if value <= maximum * 0.3 else Color("#7de1ff")
+		health_label.text = "%d" % roundi(value)
+		health_label.add_theme_color_override("font_color", Color("#ff887d") if value <= maximum * 0.3 else Color("#7de1ff"))
+	if health_bar != null:
+		health_bar.max_value = maximum
+		health_bar.value = clampf(value, 0.0, maximum)
 
 func update_ammo(current: int, reserve: int, definition: WeaponDefinition) -> void:
 	if ammo_label != null:
-		ammo_label.text = "%d / %d" % [current, reserve]
+		ammo_label.text = "%d" % current
+	if reserve_label != null:
+		reserve_label.text = "/ %d" % reserve
+	if weapon_label != null:
 		weapon_label.text = definition.short_name
 
 func set_status(text: String, color: Color = Color("#ffd471")) -> void:
@@ -268,6 +308,9 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		buy_coins = BlockfireTheme.label("CRÉDITOS  %d" % coins, 14, Color("#ffe285"))
 		buy_coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		stack.add_child(buy_coins)
+		buy_warning = BlockfireTheme.label("", 13, Color("#ff9d86"))
+		buy_warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		stack.add_child(buy_warning)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		stack.add_child(row)
@@ -277,10 +320,11 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 			var button := Button.new()
 			var owned: bool = match_context != null and match_context.has_method("is_weapon_owned") and bool(match_context.is_weapon_owned(index))
 			var state_text := "EQUIPADA" if index == equipped else ("COMPRADA" if owned else "COSTE %d" % definition.cost)
-			button.text = "%s\n%s" % [definition.display_name, state_text]
-			button.custom_minimum_size = Vector2(0, 72)
+			var mode_text := "AUTO" if definition.automatic else "SEMI"
+			button.text = "%s\n%s\nDMG %d · %s · %d BALAS" % [definition.display_name, state_text, roundi(definition.damage), mode_text, definition.magazine_size]
+			button.custom_minimum_size = Vector2(0, 92)
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			button.add_theme_font_size_override("font_size", 14)
+			button.add_theme_font_size_override("font_size", 13)
 			BlockfireTheme.apply_button(button, BlockfireTheme.GOLD)
 			button.pressed.connect(func() -> void: buy_requested.emit(index))
 			row.add_child(button)
@@ -309,28 +353,71 @@ func toggle_control_editor() -> void:
 	if is_instance_valid(control_editor):
 		control_editor.queue_free()
 		control_editor = null
+		_resume_from_editor()
 		return
+	_freeze_for_editor()
 	control_editor = ControlEditorScript.new()
 	control_editor.name = "ControlEditor"
 	control_editor.setup(mobile_controls)
 	control_editor.closed.connect(_close_control_editor)
 	root.add_child(control_editor)
 
+func _freeze_for_editor() -> void:
+	_editor_frozen.clear()
+	if match_context != null and match_context.has_method("_stop_combat_inputs"):
+		match_context._stop_combat_inputs()
+	if match_context != null and match_context.has_method("get_combatants"):
+		for actor: Node in match_context.get_combatants():
+			if is_instance_valid(actor) and actor.has_method("get") and bool(actor.get("is_alive")):
+				_editor_frozen.append(actor)
+				actor.set_physics_process(false)
+	if mobile_controls != null:
+		mobile_controls.release_all()
+
+func _resume_from_editor() -> void:
+	for actor: Node in _editor_frozen:
+		if is_instance_valid(actor):
+			actor.set_physics_process(true)
+	_editor_frozen.clear()
+	if mobile_controls != null:
+		mobile_controls.release_all()
+
 func _close_control_editor() -> void:
 	if is_instance_valid(control_editor):
 		control_editor.queue_free()
 	control_editor = null
+	_resume_from_editor()
 
 func update_buy_time(seconds: float) -> void:
 	if buy_timer != null:
 		buy_timer.text = "%d s" % ceili(maxf(0.0, seconds))
 
+func show_buy_warning(text: String) -> void:
+	if buy_warning != null:
+		buy_warning.text = text
+		buy_warning.modulate = Color.WHITE
+		var tween := create_tween()
+		tween.tween_interval(1.4)
+		tween.tween_property(buy_warning, "modulate", Color(1, 1, 1, 0), 0.4)
+	set_status(text, Color("#ff9d86"))
+
 func show_death(text: String = "ELIMINADO") -> void:
 	set_status(text, Color("#ff8e82"))
+	show_banner(text, 1.2)
 	if mobile_controls != null:
 		mobile_controls.visible = false
+	if bottom_bar != null:
+		bottom_bar.visible = false
+	if crosshair != null:
+		crosshair.visible = false
 
 func show_spectator(target_name: String) -> void:
+	if mobile_controls != null:
+		mobile_controls.visible = false
+	if bottom_bar != null:
+		bottom_bar.visible = false
+	if crosshair != null:
+		crosshair.visible = false
 	if is_instance_valid(spectator_panel):
 		spectator_panel.queue_free()
 	spectator_panel = PanelContainer.new()
@@ -366,6 +453,12 @@ func hide_spectator() -> void:
 	if is_instance_valid(spectator_panel):
 		spectator_panel.queue_free()
 		spectator_panel = null
+	if bottom_bar != null:
+		bottom_bar.visible = true
+	if crosshair != null:
+		crosshair.visible = true
+	if mobile_controls != null:
+		mobile_controls.visible = true
 
 func show_match_end(title: String, subtitle: String) -> void:
 	if mobile_controls != null:
@@ -373,6 +466,8 @@ func show_match_end(title: String, subtitle: String) -> void:
 		mobile_controls.visible = false
 	if bottom_bar != null:
 		bottom_bar.visible = false
+	if crosshair != null:
+		crosshair.visible = false
 	if is_instance_valid(end_panel):
 		end_panel.queue_free()
 	end_panel = PanelContainer.new()

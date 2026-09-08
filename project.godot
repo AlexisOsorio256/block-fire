@@ -8,8 +8,10 @@ config/name="BLOCKFIRE"
 config/icon="res://game/ui/blockfire_mark.svg"
 run/main_scene="res://game/app.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
-boot_splash/bg_color=Color(0.0235294, 0.0470588, 0.0901961, 1)
-boot_splash/minimum_display_time=0
+boot_splash/bg_color=Color(0.027451, 0.0431373, 0.0745098, 1)
+boot_splash/image="res://game/ui/boot_splash.png"
+boot_splash/minimum_display_time=1
+boot_splash/show_image=true
 
 [autoload]
 

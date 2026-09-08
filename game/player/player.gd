@@ -397,7 +397,8 @@ func _create_visual() -> void:
 	visual = OperatorVisual.new()
 	# El avatar del jugador no depende del operator_id deprecado: la ropa
 	# viene del loadout persistido en SettingsStore (claves cosmetic_*).
-	visual.configure(operator_id, team, _team_color())
+	# is_human=true: único que puede leer el loadout persistido.
+	visual.configure(operator_id, team, _team_color(), {}, true)
 	visual.visible = false
 	add_child(visual)
 
@@ -424,7 +425,7 @@ func _update_crouch_visual() -> void:
 		camera_pivot.position.y = 1.18 if crouched else 1.58
 
 func _team_color() -> Color:
-	return Color("#f0a064") if team == "ally" else Color("#da4f68")
+	return Color("#4fd6e9") if team == "ally" else Color("#da4f68")
 
 func _settings() -> Node:
 	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null

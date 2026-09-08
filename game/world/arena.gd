@@ -340,6 +340,11 @@ func _create_landmarks() -> void:
 	_create_lane_marker("CentralLane", Vector3(0, 0.012, 0), Vector3(12.0, 0.025, 0.18), Color("#37cfe0"))
 	_create_lane_marker("NorthLane", Vector3(0, 0.012, -29.5), Vector3(12.0, 0.025, 0.18), Color("#ffb73e"))
 	_create_lane_marker("SouthLane", Vector3(0, 0.012, 29.5), Vector3(12.0, 0.025, 0.18), Color("#f26e80"))
+	# Punto central y esquinas: pintura de suelo para lectura de distancias
+	# sin tocar colisiones, spawns ni navegación.
+	_create_paint_disc("CenterPad", Vector3(0, 0.015, 0), 3.2, Color("#ffd471"))
+	for corner: Vector2 in [Vector2(-38, -38), Vector2(38, -38), Vector2(-38, 38), Vector2(38, 38)]:
+		_create_paint_disc("CornerPad", Vector3(corner.x, 0.015, corner.y), 1.6, Color("#8fa5b8"))
 	# Physical signage: each landmark is a pole + banner mounted next to the
 	# structure it names, so orientation reads from geometry instead of a
 	# floating billboard label.
@@ -347,6 +352,18 @@ func _create_landmarks() -> void:
 	_create_landmark_banner("ORANGE GATE", Vector3(8.6, 0.0, -30.6), Color("#ffb73e"))
 	_create_landmark_banner("CONTAINERS", Vector3(-35.4, 0.0, -14.6), Color("#63e9f5"))
 	_create_landmark_banner("SOUTH YARD", Vector3(35.4, 0.0, 14.6), Color("#f7839a"))
+
+func _create_paint_disc(node_name: String, position: Vector3, radius: float, color: Color) -> void:
+	var disc := MeshInstance3D.new()
+	disc.name = node_name
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = 0.02
+	disc.mesh = mesh
+	disc.position = position
+	disc.material_override = _material(color.darkened(0.25))
+	add_child(disc)
 
 func _create_lane_marker(node_name: String, position: Vector3, size: Vector3, color: Color) -> void:
 	# Painted approach pad: three dashes instead of one thin line so the lane
@@ -420,5 +437,5 @@ func _material(color: Color, texture_path: String = "") -> StandardMaterial3D:
 	material.roughness = 0.82
 	if texture_path != "":
 		material.albedo_texture = load(texture_path) as Texture2D
-		material.uv1_scale = Vector3(4.0, 4.0, 4.0)
+		material.uv1_scale = Vector3(10.0, 10.0, 10.0)
 	return material

@@ -194,7 +194,7 @@ func _on_buy_requested(index: int) -> void:
 		return
 	var definition := WeaponController.DEFINITIONS[index]
 	if not buy_weapon(index):
-		hud.set_status("MONEDAS INSUFICIENTES", Color("#ff9d86"))
+		hud.show_buy_warning("CRÉDITOS INSUFICIENTES · %d" % coins)
 		return
 	player.weapon.set_available_weapons(_owned_weapon_indices(), index)
 	player.weapon.switch_to(index)
@@ -338,7 +338,10 @@ func _start_spectating() -> void:
 		add_child(spectator_camera)
 	player.camera.current = false
 	spectator_camera.current = true
-	hud.show_spectator(str(spectator_targets[0].name))
+	hud.show_spectator(_spectator_display_name(0))
+
+func _spectator_display_name(index: int) -> String:
+	return "COMPAÑERO %d" % (index + 1)
 
 func _cycle_spectator(direction: int) -> void:
 	if spectator_targets.is_empty():
@@ -351,7 +354,7 @@ func _cycle_spectator(direction: int) -> void:
 	if spectator_targets.is_empty():
 		return
 	spectator_index = posmod(spectator_index + direction, spectator_targets.size())
-	hud.show_spectator(str(spectator_targets[spectator_index].name))
+	hud.show_spectator(_spectator_display_name(spectator_index))
 
 func _update_spectator_camera() -> void:
 	if not is_instance_valid(spectator_camera) or not spectator_camera.current or spectator_targets.is_empty():
@@ -361,13 +364,17 @@ func _update_spectator_camera() -> void:
 		_cycle_spectator(1)
 		return
 	var focus: Vector3 = target.get_target_point()
-	var desired_position: Vector3 = focus + Vector3(0, 3.2, 6.5)
+	# Cámara baja y cercana: evita el techo central (y=3.4) y mantiene el
+	# objetivo enmarcado sin entrar en muros. El normal empuja fuera de la
+	# superficie en vez de quedarse dentro del bloque.
+	var desired_position: Vector3 = focus + Vector3(0, 2.2, 4.8)
 	var query := PhysicsRayQueryParameters3D.create(focus, desired_position)
 	query.collision_mask = 1
 	query.exclude = [target.get_rid()]
 	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
 	if not hit.is_empty():
-		desired_position = hit.position - desired_position.direction_to(focus) * 0.4
+		var normal: Vector3 = hit.get("normal", desired_position.direction_to(focus))
+		desired_position = hit.position + normal * 0.6
 	spectator_camera.global_position = desired_position
 	spectator_camera.look_at(focus, Vector3.UP)
 

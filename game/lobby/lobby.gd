@@ -5,156 +5,249 @@ signal start_requested(mode: String, operator_id: String, weapon_skin: String)
 
 var mobile_qa: bool = false
 var selected_mode: String = "squad"
-var selected_operator: String = "BRAVO"
+## El operador deprecado ya no es player-facing: se mantiene solo por contrato
+## de señal con app/match (la apariencia vive en cosméticos + skin de arma).
+var selected_operator: String = "PLAYER"
 var selected_skin: String = "Estándar"
 var hero: OperatorVisual
 var mode_buttons: Dictionary = {}
-var operator_buttons: Dictionary = {}
 var skin_buttons: Dictionary = {}
 var settings_popup: PanelContainer
+var wardrobe_panel: PanelContainer
+var armory_panel: PanelContainer
 var ui_root: Control
-var profile_label: Label
+var wardrobe_category: String = "top"
+var wardrobe_grid: GridContainer
 var armory_label: Label3D
 var weapon_display_root: Node3D
+var _time: float = 0.0
 
-const OPERATORS: Array[String] = ["BRAVO", "VULTURE", "TALON", "DUNE", "HAVOC"]
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
+## Categoría UI -> slot de CosmeticCatalog.
+const WARDROBE_CATEGORIES: Array = [
+	["CABEZA", "head"],
+	["GORRA", "headwear"],
+	["LENTES", "eyewear"],
+	["MÁSCARA", "mask"],
+	["CAMISA", "top"],
+	["PANTALÓN", "bottom"],
+	["CALZADO", "shoes"],
+	["PIEL", "skin"],
+]
 
 func _ready() -> void:
 	var settings := _settings()
-	selected_operator = str(settings.get_value("operator", "BRAVO") if settings != null else "BRAVO")
 	selected_skin = str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
 	_build_world()
 	_build_ui()
 
+func _process(delta: float) -> void:
+	_time += delta
+	if is_instance_valid(weapon_display_root):
+		weapon_display_root.rotation_degrees.y += delta * 18.0
+
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
 	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color("#0a1730")
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("#7998c4")
-	environment.ambient_light_energy = 0.9
+	environment.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color("#2f6fc4")
+	sky_material.sky_horizon_color = Color("#cfe4f7")
+	sky_material.ground_bottom_color = Color("#3a4a5e")
+	sky_material.ground_horizon_color = Color("#8fa5b8")
+	sky.sky_material = sky_material
+	environment.sky = sky
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	environment.ambient_light_energy = 0.85
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment_node.environment = environment
 	add_child(environment_node)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-36, -28, 0)
-	sun.light_color = Color("#ffe0ab")
+	sun.rotation_degrees = Vector3(-38, -30, 0)
+	sun.light_color = Color("#ffe3ae")
 	sun.light_energy = 1.25
 	sun.shadow_enabled = true
 	add_child(sun)
-	# Cool rim light separates the hero from the backdrop like a store card.
 	var rim := DirectionalLight3D.new()
 	rim.rotation_degrees = Vector3(-12, 148, 0)
 	rim.light_color = Color("#6fd0ff")
-	rim.light_energy = 0.7
+	rim.light_energy = 0.65
 	add_child(rim)
 
 	var camera := Camera3D.new()
-	camera.position = Vector3(0.2, 1.75, 5.6)
-	camera.fov = 42.0
+	camera.position = Vector3(2.3, 1.5, 3.2)
+	camera.fov = 36.0
 	camera.current = true
 	add_child(camera)
-	camera.look_at(Vector3(1.1, 1.15, 0), Vector3.UP)
+	camera.look_at(Vector3(1.35, 1.0, 0), Vector3.UP)
 
-	# Backdrop: dark wall panel + warm floor band, framing the hero card.
-	var backdrop := MeshInstance3D.new()
-	var backdrop_mesh := BoxMesh.new()
-	backdrop_mesh.size = Vector3(30, 12, 0.8)
-	backdrop.mesh = backdrop_mesh
-	backdrop.position = Vector3(2.5, 4.4, -4.6)
-	backdrop.material_override = _material(Color("#152a4e"))
-	add_child(backdrop)
-	var glow_panel := MeshInstance3D.new()
-	var glow_panel_mesh := BoxMesh.new()
-	glow_panel_mesh.size = Vector3(7.4, 9.0, 0.3)
-	glow_panel.mesh = glow_panel_mesh
-	glow_panel.position = Vector3(1.4, 4.4, -4.1)
-	glow_panel.material_override = _material(Color("#1e3c66"))
-	add_child(glow_panel)
-	var floor_band := MeshInstance3D.new()
-	var floor_band_mesh := BoxMesh.new()
-	floor_band_mesh.size = Vector3(30, 0.2, 6.0)
-	floor_band.mesh = floor_band_mesh
-	floor_band.position = Vector3(2.5, -0.1, 1.4)
-	floor_band.material_override = _material(Color("#223c5e"))
-	add_child(floor_band)
+	# Patio: suelo asfaltado oscuro + círculo pintado donde apoya el héroe.
+	var ground := MeshInstance3D.new()
+	var ground_mesh := BoxMesh.new()
+	ground_mesh.size = Vector3(44, 0.2, 22)
+	ground.mesh = ground_mesh
+	ground.position = Vector3(1.5, -0.1, 1.0)
+	ground.material_override = _material(Color("#2b3c55"))
+	add_child(ground)
+	var ground_body := StaticBody3D.new()
+	ground_body.position = ground.position
+	var ground_shape := CollisionShape3D.new()
+	var ground_box := BoxShape3D.new()
+	ground_box.size = Vector3(44, 0.2, 22)
+	ground_shape.shape = ground_box
+	ground_body.add_child(ground_shape)
+	add_child(ground_body)
+	var pad := MeshInstance3D.new()
+	var pad_mesh := TorusMesh.new()
+	pad_mesh.inner_radius = 0.55
+	pad_mesh.outer_radius = 0.62
+	pad.mesh = pad_mesh
+	pad.position = Vector3(1.4, 0.02, 0)
+	pad.material_override = _emissive(Color("#ffb73e"), 0.25)
+	add_child(pad)
+	for i: int in range(3):
+		var dash := MeshInstance3D.new()
+		var dash_mesh := BoxMesh.new()
+		dash_mesh.size = Vector3(1.1, 0.02, 0.22)
+		dash.mesh = dash_mesh
+		dash.position = Vector3(-2.2 + float(i) * 1.6, 0.012, 3.4)
+		dash.material_override = _material(Color("#37cfe0").darkened(0.3))
+		add_child(dash)
 
-	var pedestal := MeshInstance3D.new()
-	var pedestal_mesh := CylinderMesh.new()
-	pedestal_mesh.top_radius = 1.7
-	pedestal_mesh.bottom_radius = 2.0
-	pedestal_mesh.height = 0.3
-	pedestal.mesh = pedestal_mesh
-	pedestal.position = Vector3(1.4, 0.15, 0)
-	pedestal.material_override = _material(Color("#2d4666"))
-	add_child(pedestal)
-	var ring := MeshInstance3D.new()
-	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 1.86
-	ring_mesh.outer_radius = 1.98
-	ring.mesh = ring_mesh
-	ring.position = Vector3(1.4, 0.1, 0)
-	ring.material_override = _material(Color("#ffb73e"))
-	add_child(ring)
+	# Utilería del patio con el mismo lenguaje del mapa (contenedores/barreras).
+	_add_prop("Container_Long.gltf", Vector3(-4.6, 0.0, -3.4), -12.0, Color("#b0574a"))
+	_add_prop("Container_Long.gltf", Vector3(6.8, 0.0, -3.8), 9.0, Color("#4a7fa0"))
+	_add_prop("Barrier_Large.gltf", Vector3(-2.4, 0.0, -2.2), 78.0, Color("#7f93a8"))
+	_add_prop("Barrier_Large.gltf", Vector3(5.2, 0.0, -2.0), 102.0, Color("#8a7462"))
+	_add_lamp(Vector3(-3.2, 0.0, 2.2))
+	_add_lamp(Vector3(5.8, 0.0, 2.4))
 
 	hero = OperatorVisual.new()
-	hero.position = Vector3(1.4, 0.3, 0)
-	# Kenney characters face -Z; keep the portrait looking toward the camera.
-	hero.rotation_degrees.y = 0.0
-	hero.configure(selected_operator, "ally", _operator_color(selected_operator))
+	hero.position = Vector3(1.4, 0.0, 0)
+	hero.rotation_degrees.y = -28.0
+	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
+	# Escaparate limpio: sin banda/aro de equipo (el patio ya da contexto).
+	for marker: String in ["TeamRing"]:
+		var node := hero.get_node_or_null(marker)
+		if node != null:
+			node.queue_free()
+	var skeleton := hero.get("skeleton") as Skeleton3D
+	if skeleton != null:
+		for attachment: Node in skeleton.get_children():
+			if attachment is BoneAttachment3D and String(attachment.name) == "TeamBandAttachment":
+				attachment.queue_free()
+	# Pose de escaparate: brazos al frente (foreshortening oculta los pesos de
+	# manos corruptos de la fusión) y rifle en mano para lectura FPS inmediata.
+	hero.set_combat_state(false, true)
+	_attach_showcase_rifle()
 	_create_weapon_display()
 
-func _create_weapon_display() -> void:
-	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
+func _add_prop(file_name: String, position: Vector3, yaw: float, tint: Color) -> void:
+	var packed := load("res://assets/models/quaternius_toon_shooter/" + file_name) as PackedScene
 	if packed == null:
 		return
-	var display_base := MeshInstance3D.new()
-	display_base.name = "ArmoryPreviewBase"
-	var base_mesh := CylinderMesh.new()
-	base_mesh.top_radius = 0.85
-	base_mesh.bottom_radius = 0.95
-	base_mesh.height = 0.18
-	display_base.mesh = base_mesh
-	display_base.position = Vector3(4.15, 0.3, 0.7)
-	display_base.material_override = _material(Color("#2d4666"))
-	add_child(display_base)
-	var display_ring := MeshInstance3D.new()
-	display_ring.name = "ArmoryPreviewRing"
-	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 0.85
-	ring_mesh.outer_radius = 0.93
-	display_ring.mesh = ring_mesh
-	display_ring.position = Vector3(4.15, 0.42, 0.7)
-	display_ring.material_override = _material(BlockfireTheme.GOLD)
-	add_child(display_ring)
+	var prop := packed.instantiate() as Node3D
+	prop.position = position
+	prop.rotation_degrees.y = yaw
+	add_child(prop)
+	_tint_prop(prop, tint, 0.45)
+
+func _tint_prop(root: Node3D, color: Color, strength: float) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		for child: Node in node.get_children():
+			stack.append(child)
+		if node is not MeshInstance3D:
+			continue
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.mesh == null:
+			continue
+		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+			var source := mesh_instance.get_active_material(surface_index)
+			if source is not StandardMaterial3D:
+				continue
+			var material := source.duplicate() as StandardMaterial3D
+			material.albedo_color = material.albedo_color.lerp(color, strength)
+			mesh_instance.set_surface_override_material(surface_index, material)
+
+func _add_lamp(position: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = position
+	add_child(root)
+	var post := MeshInstance3D.new()
+	var post_mesh := CylinderMesh.new()
+	post_mesh.top_radius = 0.06
+	post_mesh.bottom_radius = 0.09
+	post_mesh.height = 2.6
+	post.mesh = post_mesh
+	post.position = Vector3(0, 1.3, 0)
+	post.material_override = _material(Color("#2c3f55"))
+	root.add_child(post)
+	var head := MeshInstance3D.new()
+	var head_mesh := SphereMesh.new()
+	head_mesh.height = 0.3
+	head_mesh.radius = 0.15
+	head.mesh = head_mesh
+	head.position = Vector3(0, 2.75, 0)
+	head.material_override = _emissive(Color("#ffe9b0"), 0.8)
+	root.add_child(head)
+
+func _create_weapon_display() -> void:
+	var base := MeshInstance3D.new()
+	base.name = "ArmoryPreviewBase"
+	var base_mesh := BoxMesh.new()
+	base_mesh.size = Vector3(1.1, 0.45, 0.7)
+	base.mesh = base_mesh
+	base.position = Vector3(2.75, 0.22, 0.5)
+	base.material_override = _material(Color("#232f45"))
+	add_child(base)
 	weapon_display_root = _recreate_weapon_display()
 	armory_label = Label3D.new()
 	armory_label.name = "ArmoryPreviewLabel"
-	armory_label.text = "RIFLE  //  " + selected_skin.to_upper()
-	armory_label.position = Vector3(4.15, 3.0, 0.7)
-	armory_label.font_size = 30
-	armory_label.pixel_size = 0.006
+	armory_label.text = "RIFLE · " + selected_skin.to_upper()
+	armory_label.position = Vector3(2.15, 1.8, 0.6)
+	armory_label.font_size = 32
+	armory_label.pixel_size = 0.003
+	armory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	armory_label.modulate = BlockfireTheme.GOLD
-	armory_label.outline_size = 7
+	armory_label.outline_size = 8
 	armory_label.outline_modulate = Color("#071127cc")
 	armory_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	armory_label.no_depth_test = true
 	add_child(armory_label)
 
+func _attach_showcase_rifle() -> void:
+	if hero == null or hero.get("skeleton") == null:
+		return
+	var skeleton := hero.get("skeleton") as Skeleton3D
+	if skeleton.find_bone("Wrist.R") < 0:
+		return
+	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
+	if packed == null:
+		return
+	var attachment := BoneAttachment3D.new()
+	attachment.bone_name = "Wrist.R"
+	skeleton.add_child(attachment)
+	var gun := packed.instantiate() as Node3D
+	gun.scale = Vector3.ONE * 0.85
+	gun.position = Vector3(0.02, -0.12, -0.30)
+	gun.rotation_degrees = Vector3(0.0, 0.0, 0.0)
+	attachment.add_child(gun)
+	WeaponSkin.apply(gun, selected_skin)
+
 func _recreate_weapon_display() -> Node3D:
-	# La preview comparte la misma fuente de skin que el gameplay (WeaponSkin).
 	var packed := load("res://assets/models/weapons/rifle.glb") as PackedScene
 	if packed == null:
 		return null
 	var display := Node3D.new()
 	display.name = "ArmoryPreview"
-	display.position = Vector3(4.15, 1.1, 0.7)
-	display.rotation_degrees = Vector3(-6.0, 196.0, -18.0)
-	display.scale = Vector3.ONE * 2.1
+	display.position = Vector3(2.75, 0.85, 0.5)
+	display.rotation_degrees = Vector3(-8.0, 24.0, -10.0)
+	display.scale = Vector3.ONE * 0.85
 	display.add_child(packed.instantiate())
 	WeaponSkin.apply(display, selected_skin)
 	add_child(display)
@@ -173,28 +266,27 @@ func _build_ui() -> void:
 	var left := VBoxContainer.new()
 	left.anchor_left = 0.0
 	left.anchor_top = 0.0
-	left.anchor_right = 0.48
+	left.anchor_right = 0.42
 	left.anchor_bottom = 1.0
-	left.offset_left = 48.0
-	left.offset_top = 46.0
-	left.offset_right = -20.0
-	left.offset_bottom = -42.0
+	left.offset_left = 40.0
+	left.offset_top = 32.0
+	left.offset_right = -12.0
+	left.offset_bottom = -28.0
 	left.add_theme_constant_override("separation", 10)
 	root.add_child(left)
 
-	var title := BlockfireTheme.label("BLOCKFIRE", 48 if not mobile_qa else 34, Color.WHITE)
-	title.text = "BLOCK" + "FIRE"
-	title.add_theme_color_override("font_shadow_color", Color("#00000099"))
+	var title := BlockfireTheme.label("BLOCKFIRE", 46 if not mobile_qa else 34, Color.WHITE)
+	title.add_theme_color_override("font_shadow_color", Color("#000000aa"))
 	title.add_theme_constant_override("shadow_offset_x", 3)
-	title.add_theme_constant_override("shadow_offset_y", 4)
+	title.add_theme_constant_override("shadow_offset_y", 3)
 	left.add_child(title)
-	var subtitle := BlockfireTheme.label("FPS ARCADE  ·  DUELO DE ESCUADRAS 4v4  ·  TODOS CONTRA TODOS", 12, Color("#9db7db"))
+	var subtitle := BlockfireTheme.label("FPS ARCADE · ESCUADRAS 4v4 · TODOS CONTRA TODOS", 12, Color("#9db7db"))
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(subtitle)
 
 	var play := Button.new()
 	play.text = "JUGAR"
-	play.custom_minimum_size = Vector2(0, 62 if not mobile_qa else 48)
+	play.custom_minimum_size = Vector2(0, 62 if not mobile_qa else 50)
 	play.add_theme_font_size_override("font_size", 25 if not mobile_qa else 20)
 	BlockfireTheme.apply_button(play, BlockfireTheme.GOLD)
 	play.add_theme_stylebox_override("normal", BlockfireTheme.button_style(Color("#ffb73e"), Color("#ffd477"), 12))
@@ -207,8 +299,8 @@ func _build_ui() -> void:
 	var modes := HBoxContainer.new()
 	modes.add_theme_constant_override("separation", 8)
 	left.add_child(modes)
-	var squad := _make_select_button("DUELO DE ESCUADRAS\n4v4 · RONDAS · TIENDA", 15)
-	var ffa := _make_select_button("TODOS CONTRA TODOS\n8 JUGADORES · 20 KILLS", 15)
+	var squad := _make_select_button("ESCUADRAS 4v4\nRONDAS · TIENDA", 14)
+	var ffa := _make_select_button("TODOS CONTRA TODOS\n8 · 20 KILLS", 14)
 	modes.add_child(squad)
 	modes.add_child(ffa)
 	mode_buttons["squad"] = squad
@@ -216,65 +308,42 @@ func _build_ui() -> void:
 	squad.pressed.connect(func() -> void: _select_mode("squad"))
 	ffa.pressed.connect(func() -> void: _select_mode("ffa"))
 
-	var op_title := BlockfireTheme.label("OPERADORES", 11, Color("#8da9ce"))
-	left.add_child(op_title)
-	var ops := HBoxContainer.new()
-	ops.add_theme_constant_override("separation", 6)
-	left.add_child(ops)
-	for id: String in OPERATORS:
-		var operator_button := _make_small_button(id + "\n" + _operator_role(id), 11)
-		ops.add_child(operator_button)
-		operator_buttons[id] = operator_button
-		operator_button.pressed.connect(func() -> void: _select_operator(id))
-
-	var skin_title := BlockfireTheme.label("SKINS DE ARMAS", 11, Color("#8da9ce"))
-	left.add_child(skin_title)
-	var skins := HBoxContainer.new()
-	skins.add_theme_constant_override("separation", 6)
-	left.add_child(skins)
-	for skin: String in SKINS:
-		var skin_button := _make_small_button(skin, 11)
-		skins.add_child(skin_button)
-		skin_buttons[skin] = skin_button
-		skin_button.pressed.connect(func() -> void: _select_skin(skin))
+	var char_title := BlockfireTheme.label("PERSONAJE", 11, Color("#8da9ce"))
+	left.add_child(char_title)
+	var chars := HBoxContainer.new()
+	chars.add_theme_constant_override("separation", 8)
+	left.add_child(chars)
+	var wardrobe := _make_select_button("ROPA\nVISTE A TU AGENTE", 13)
+	var armory := _make_select_button("ARMAS\nSKINS", 13)
+	chars.add_child(wardrobe)
+	chars.add_child(armory)
+	wardrobe.pressed.connect(_toggle_wardrobe)
+	armory.pressed.connect(_toggle_armory)
 
 	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 12)
+	footer.add_theme_constant_override("separation", 10)
 	left.add_child(footer)
-	profile_label = BlockfireTheme.label("OPERADOR ACTIVO  ·  " + selected_operator, 12, Color("#b9cde7"))
-	profile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer.add_child(profile_label)
 	var settings := Button.new()
-	settings.text = "CONFIGURACIÓN"
-	settings.custom_minimum_size = Vector2(150, 34)
+	settings.text = "AJUSTES"
+	settings.custom_minimum_size = Vector2(140, 36)
 	BlockfireTheme.apply_button(settings, Color("#80cfff"))
 	settings.pressed.connect(_open_settings)
 	footer.add_child(settings)
-
-	var controls_hint := BlockfireTheme.label("PC: WASD + RATÓN  ·  MÓVIL: JOYSTICK + FUEGO\nLEGAL Y CRÉDITOS DISPONIBLES EN CONFIGURACIÓN", 10, Color("#6d86a6"))
-	controls_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	left.add_child(controls_hint)
+	var hint := BlockfireTheme.label("Móvil: joystick + fuego · Legal en Ajustes", 10, Color("#6d86a6"))
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	footer.add_child(hint)
 	_select_mode(selected_mode)
-	_select_operator(selected_operator)
 	_select_skin(selected_skin)
 
 func _make_select_button(text: String, size: int) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(0, 58)
+	button.custom_minimum_size = Vector2(0, 56)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.add_theme_font_size_override("font_size", size)
 	button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	BlockfireTheme.apply_button(button, BlockfireTheme.GOLD)
-	return button
-
-func _make_small_button(text: String, size: int) -> Button:
-	var button := Button.new()
-	button.text = text
-	button.custom_minimum_size = Vector2(0, 42)
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.add_theme_font_size_override("font_size", size)
-	BlockfireTheme.apply_button(button, Color("#80cfff"))
 	return button
 
 func _select_mode(mode: String) -> void:
@@ -282,18 +351,6 @@ func _select_mode(mode: String) -> void:
 	for id: String in mode_buttons:
 		var button: Button = mode_buttons[id]
 		button.modulate = Color.WHITE if id == mode else Color("#8292a8")
-
-func _select_operator(id: String) -> void:
-	selected_operator = id
-	var settings := _settings()
-	if settings != null:
-		settings.set_value("operator", id)
-	for key: String in operator_buttons:
-		operator_buttons[key].modulate = Color.WHITE if key == id else Color("#8292a8")
-	if profile_label != null:
-		profile_label.text = "OPERADOR ACTIVO  ·  " + id
-	if is_instance_valid(hero):
-		hero.configure(id, "ally", _operator_color(id))
 
 func _select_skin(skin: String) -> void:
 	selected_skin = skin
@@ -303,42 +360,183 @@ func _select_skin(skin: String) -> void:
 	for key: String in skin_buttons:
 		skin_buttons[key].modulate = Color.WHITE if key == skin else Color("#8292a8")
 	if armory_label != null:
-		armory_label.text = "RIFLE  //  " + skin.to_upper()
+		armory_label.text = "RIFLE · " + skin.to_upper()
 	if is_instance_valid(weapon_display_root):
 		weapon_display_root.queue_free()
 		weapon_display_root = null
 	weapon_display_root = _recreate_weapon_display()
+	if wardrobe_panel != null:
+		_refresh_wardrobe()
+
+func _toggle_wardrobe() -> void:
+	_close_panels()
+	wardrobe_panel = PanelContainer.new()
+	wardrobe_panel.anchor_left = 0.0
+	wardrobe_panel.anchor_top = 0.0
+	wardrobe_panel.anchor_right = 0.42
+	wardrobe_panel.anchor_bottom = 1.0
+	wardrobe_panel.offset_left = 40.0
+	wardrobe_panel.offset_top = 300.0
+	wardrobe_panel.offset_right = -12.0
+	wardrobe_panel.offset_bottom = -28.0
+	wardrobe_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), Color("#7fbfff"), 14, 2))
+	ui_root.add_child(wardrobe_panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	wardrobe_panel.add_child(stack)
+	var heading := BlockfireTheme.label("ROPA · EQUIPA A TU AGENTE", 15, BlockfireTheme.GOLD)
+	stack.add_child(heading)
+	var cats := HBoxContainer.new()
+	cats.add_theme_constant_override("separation", 5)
+	stack.add_child(cats)
+	for pair: Array in WARDROBE_CATEGORIES:
+		var cat_button := Button.new()
+		cat_button.text = str(pair[0])
+		cat_button.custom_minimum_size = Vector2(0, 30)
+		cat_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cat_button.add_theme_font_size_override("font_size", 10)
+		BlockfireTheme.apply_button(cat_button, Color("#80cfff"))
+		var slot := str(pair[1])
+		cat_button.pressed.connect(func() -> void:
+			wardrobe_category = slot
+			_refresh_wardrobe()
+		)
+		cats.add_child(cat_button)
+	wardrobe_grid = GridContainer.new()
+	wardrobe_grid.columns = 2
+	wardrobe_grid.add_theme_constant_override("h_separation", 6)
+	wardrobe_grid.add_theme_constant_override("v_separation", 6)
+	stack.add_child(wardrobe_grid)
+	var close := Button.new()
+	close.text = "CERRAR"
+	BlockfireTheme.apply_button(close, Color("#80cfff"))
+	close.pressed.connect(_close_panels)
+	stack.add_child(close)
+	_refresh_wardrobe()
+	_animate_panel_in(wardrobe_panel)
+
+func _refresh_wardrobe() -> void:
+	if wardrobe_grid == null or not is_instance_valid(wardrobe_grid):
+		return
+	for child: Node in wardrobe_grid.get_children():
+		child.queue_free()
+	var settings := _settings()
+	var equipped := str(settings.get_value("cosmetic_" + wardrobe_category, "") if settings != null else "")
+	# "Ninguno" para accesorios; las prendas siempre llevan algo equipado.
+	if wardrobe_category in ["headwear", "eyewear", "mask"]:
+		var none := _make_wardrobe_card("Ninguno", equipped.is_empty())
+		none.pressed.connect(func() -> void: _equip_cosmetic(""))
+		wardrobe_grid.add_child(none)
+	for key: String in CosmeticCatalog.items():
+		var item: CosmeticItem = CosmeticCatalog.items()[key]
+		if item.slot != wardrobe_category:
+			continue
+		var card := _make_wardrobe_card(item.display_name, item.id == equipped)
+		var item_id := item.id
+		card.pressed.connect(func() -> void: _equip_cosmetic(item_id))
+		wardrobe_grid.add_child(card)
+
+func _make_wardrobe_card(text: String, is_equipped: bool) -> Button:
+	var card := Button.new()
+	card.text = ("✓ " if is_equipped else "") + text + ("\nEQUIPADO" if is_equipped else "")
+	card.custom_minimum_size = Vector2(0, 44)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_font_size_override("font_size", 12)
+	BlockfireTheme.apply_button(card, BlockfireTheme.GOLD if is_equipped else Color("#80cfff"))
+	card.modulate = Color.WHITE if is_equipped else Color("#a9c0da")
+	return card
+
+func _equip_cosmetic(item_id: String) -> void:
+	var settings := _settings()
+	if settings != null:
+		settings.set_cosmetic_slot(wardrobe_category, item_id)
+	if is_instance_valid(hero):
+		hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
+	_refresh_wardrobe()
+
+func _toggle_armory() -> void:
+	_close_panels()
+	armory_panel = PanelContainer.new()
+	armory_panel.anchor_left = 0.0
+	armory_panel.anchor_top = 0.0
+	armory_panel.anchor_right = 0.42
+	armory_panel.anchor_bottom = 1.0
+	armory_panel.offset_left = 40.0
+	armory_panel.offset_top = 300.0
+	armory_panel.offset_right = -12.0
+	armory_panel.offset_bottom = -28.0
+	armory_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), BlockfireTheme.GOLD, 14, 2))
+	ui_root.add_child(armory_panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	armory_panel.add_child(stack)
+	stack.add_child(BlockfireTheme.label("ARMAS · SKIN PARA TODAS", 15, BlockfireTheme.GOLD))
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	stack.add_child(grid)
+	for skin: String in SKINS:
+		var skin_button := _make_wardrobe_card(skin, skin == selected_skin)
+		grid.add_child(skin_button)
+		skin_buttons[skin] = skin_button
+		skin_button.pressed.connect(func() -> void: _select_skin(skin))
+	var close := Button.new()
+	close.text = "CERRAR"
+	BlockfireTheme.apply_button(close, Color("#80cfff"))
+	close.pressed.connect(_close_panels)
+	stack.add_child(close)
+	_animate_panel_in(armory_panel)
+
+func _close_panels() -> void:
+	if is_instance_valid(wardrobe_panel):
+		wardrobe_panel.queue_free()
+	wardrobe_panel = null
+	wardrobe_grid = null
+	if is_instance_valid(armory_panel):
+		armory_panel.queue_free()
+	armory_panel = null
+
+func _animate_panel_in(panel: Control) -> void:
+	panel.modulate = Color(1, 1, 1, 0)
+	panel.scale = Vector2(0.97, 0.97)
+	panel.pivot_offset = panel.size * 0.5
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(panel, "modulate", Color.WHITE, 0.16)
+	tween.tween_property(panel, "scale", Vector2.ONE, 0.16)
 
 func _on_play() -> void:
 	start_requested.emit(selected_mode, selected_operator, selected_skin)
 
 func _open_settings() -> void:
+	_close_panels()
 	if is_instance_valid(settings_popup):
 		settings_popup.queue_free()
 		settings_popup = null
 		return
 	settings_popup = PanelContainer.new()
-	settings_popup.position = Vector2(52, 18)
-	settings_popup.size = Vector2(350, 370)
-	settings_popup.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#09172deF"), Color("#7fbfff"), 12, 2))
-	if ui_root != null:
-		ui_root.add_child(settings_popup)
-	else:
-		add_child(settings_popup)
+	settings_popup.anchor_left = 0.0
+	settings_popup.anchor_top = 0.0
+	settings_popup.anchor_right = 0.42
+	settings_popup.anchor_bottom = 1.0
+	settings_popup.offset_left = 40.0
+	settings_popup.offset_top = 120.0
+	settings_popup.offset_right = -12.0
+	settings_popup.offset_bottom = -28.0
+	settings_popup.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), Color("#7fbfff"), 14, 2))
+	ui_root.add_child(settings_popup)
 	settings_popup.z_index = 20
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	settings_popup.add_child(stack)
-	var heading := BlockfireTheme.label("CONFIGURACIÓN", 18, Color.WHITE)
-	stack.add_child(heading)
+	stack.add_child(BlockfireTheme.label("AJUSTES", 18, Color.WHITE))
 	_add_setting_slider(stack, "VOLUMEN MASTER", "master_volume", 0.0, 1.0, 0.85)
 	_add_setting_slider(stack, "VOLUMEN SFX", "sfx_volume", 0.0, 1.0, 0.9)
 	_add_setting_slider(stack, "SENSIBILIDAD", "sensitivity", 0.04, 0.25, 0.12)
 	_add_setting_slider(stack, "MULTIPLICADOR ADS", "ads_multiplier", 0.45, 1.0, 0.72)
 	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.68)
-	var legal_title := BlockfireTheme.label("LEGAL / CRÉDITOS", 10, Color("#9db7db"))
-	stack.add_child(legal_title)
-	var legal := BlockfireTheme.label("Audio: Jesús Lastra · CC-BY 3.0\nCódigo y atribuciones: CREDITS.md", 10, Color("#6d86a6"))
+	stack.add_child(BlockfireTheme.label("LEGAL / CRÉDITOS", 10, Color("#9db7db")))
+	var legal := BlockfireTheme.label("Audio: Jesús Lastra · CC-BY 3.0 · Ver CREDITS.md\nAvatar: Quaternius UMC · CC0 · Armas: Kenney · CC0", 10, Color("#6d86a6"))
 	legal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(legal)
 	var close := Button.new()
@@ -349,6 +547,7 @@ func _open_settings() -> void:
 		settings_popup = null
 	)
 	stack.add_child(close)
+	_animate_panel_in(settings_popup)
 
 func _add_setting_slider(stack: VBoxContainer, label_text: String, key: String, minimum: float, maximum: float, fallback: float) -> void:
 	var label := BlockfireTheme.label(label_text, 10, Color("#9db7db"))
@@ -365,27 +564,18 @@ func _add_setting_slider(stack: VBoxContainer, label_text: String, key: String, 
 	)
 	stack.add_child(slider)
 
-func _operator_role(id: String) -> String:
-	match id:
-		"VULTURE": return "URBANO"
-		"TALON": return "TÁCTICO"
-		"DUNE": return "EXPLORADOR"
-		"HAVOC": return "PESADO"
-	return "ASALTO"
-
 func _settings() -> Node:
 	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
-
-func _operator_color(id: String) -> Color:
-	match id:
-		"VULTURE": return Color("#9b806e")
-		"TALON": return Color("#86c75b")
-		"DUNE": return Color("#d7b46a")
-		"HAVOC": return Color("#d44d79")
-	return Color("#ff9d50")
 
 func _material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
-	material.roughness = 0.76
+	material.roughness = 0.85
+	return material
+
+func _emissive(color: Color, energy: float) -> StandardMaterial3D:
+	var material := _material(color)
+	material.emission_enabled = true
+	material.emission = color
+	material.emission_energy_multiplier = energy
 	return material

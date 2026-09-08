@@ -16,11 +16,14 @@ const AVATAR_SCENE := "res://assets/models/quaternius_modular/avatar_rig.gltf"
 const MODEL_SCALE := 0.885
 const MODEL_Y_OFFSET := 0.0
 
-const BAND_COLOR_ALLY := Color("#f0a064")
+const BAND_COLOR_ALLY := Color("#4fd6e9")
 const BAND_COLOR_ENEMY := Color("#da4f68")
 
 var operator_id: String = "BRAVO"
 var team: String = "ally"
+## True solo para el humano local. Los bots nunca heredan el loadout persistido
+## aunque compartan team "ally": usan variación determinista propia.
+var is_human: bool = false
 var accent: Color = BAND_COLOR_ALLY
 var model_root: Node3D
 var skeleton: Skeleton3D
@@ -37,24 +40,26 @@ var team_band_color: Color = BAND_COLOR_ALLY
 var _attachments: Array[BoneAttachment3D] = []
 
 
-func configure(id: String, team_id: String, color: Color, cosmetic_loadout: Dictionary = {}) -> void:
+func configure(id: String, team_id: String, color: Color, cosmetic_loadout: Dictionary = {}, human: bool = false) -> void:
 	operator_id = id
 	team = team_id
 	accent = color
 	team_band_color = color
 	loadout = cosmetic_loadout
+	is_human = human
 	_build()
 
 
 ## Compatibilidad: firma antigua configure(id, team, color) sigue válida.
-## Con loadout vacío el jugador usa SettingsStore y los bots usan variación
-## determinista por operator_id/role.
+## El humano usa su loadout persistido; los bots usan variación determinista
+## propia por operator_id/role. No se usa el string de team para decidir.
 func resolve_default_loadout(role_seed: int = 0) -> Dictionary:
 	if not loadout.is_empty():
 		return loadout
-	var settings := _settings()
-	if settings != null and team in ["ally", "player"]:
-		return settings.cosmetic_loadout()
+	if is_human:
+		var settings := _settings()
+		if settings != null:
+			return settings.cosmetic_loadout()
 	return CosmeticCatalog.bot_loadout_for(operator_id, "entry", role_seed)
 
 
@@ -152,6 +157,10 @@ func _apply_loadout(effective: Dictionary) -> void:
 	var skin_item := CosmeticCatalog.item_for("skin", String(effective.get("skin", "")))
 	if skin_item != null:
 		_tint_skin(skin_item.color)
+	# 3b) Reparación causal: el rig UMC llegó con baseColorFactor alfa 0 en los
+	# 37 materiales (invisibles con alpha scissor). Se fuerza opaco por instancia
+	# sin tocar el material importado compartido.
+	_repair_avatar_materials()
 	# 4) Accesorios rígidos.
 	for slot: String in ["headwear", "eyewear", "mask"]:
 		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
@@ -182,8 +191,33 @@ func _tint_skin(tone: Color) -> void:
 			if String(source.resource_name) != "Skin":
 				continue
 			var material := source.duplicate() as StandardMaterial3D
+			tone.a = 1.0
 			material.albedo_color = tone
+			material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 			mesh_instance.set_surface_override_material(surface_index, material)
+
+
+## Fuerza opaco en todas las prendas visibles del rig modular.
+func _repair_avatar_materials() -> void:
+	if skeleton == null:
+		return
+	for child: Node in skeleton.get_children():
+		var mesh_instance := child as MeshInstance3D
+		if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
+			continue
+		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
+			var source := mesh_instance.get_active_material(surface_index)
+			if not (source is StandardMaterial3D):
+				continue
+			var source_mat := source as StandardMaterial3D
+			if source_mat.albedo_color.a >= 0.99 and source_mat.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+				continue
+			var fixed := source_mat.duplicate() as StandardMaterial3D
+			var fixed_color := fixed.albedo_color
+			fixed_color.a = 1.0
+			fixed.albedo_color = fixed_color
+			fixed.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			mesh_instance.set_surface_override_material(surface_index, fixed)
 
 
 ## Banda fina en el brazo + aro corto en el suelo: lectura de equipo mínima.

@@ -368,4 +368,4 @@ func _create_collision() -> void:
 	add_child(head)
 
 func _team_color() -> Color:
-	return Color("#f0a064") if team == "ally" else Color("#da4f68")
+	return Color("#4fd6e9") if team == "ally" else Color("#da4f68")

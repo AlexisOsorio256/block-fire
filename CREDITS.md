@@ -43,9 +43,33 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 - **Licencia**: Creative Commons Zero (CC0) 1.0, indicada explícitamente en
   la página oficial del pack; evidencia y hashes en
   `assets/models/quaternius_toon_shooter/LICENSE-QUATERNIUS.md`
-- Se integran como un rig animado compartido (con la variante de color
-  enemiga del mismo kit), y como decoración visual ligera del mapa; no se
-  redistribuye el pack como tal.
+- Se usan como decoración visual del mapa y del patio del lobby (barreras,
+  contenedores, estructura central); no se redistribuye el pack como tal.
+
+## Avatar modular — Quaternius Ultimate Modular Men (CC0)
+
+`assets/models/quaternius_modular/avatar_rig.gltf` + `avatar_rig.bin`
+(rig fusionado de 11 personajes: Swat, Casual, Worker, Suit, Punk, Farmer,
+SpaceSuit, King, Beach, Adventurer, Casual2; 8 animaciones)
+
+- **Fuente**: Quaternius, [Ultimate Modular Men Pack](https://quaternius.com/packs/ultimatemodularcharacters.html)
+- **Licencia**: Creative Commons Zero (CC0) 1.0; copia local en
+  `assets/models/quaternius_modular/LICENSE-QUATERNIUS-UMC.txt`
+- Es el rig humanoide canónico de jugador y bots (una sola Skeleton3D;
+  prendas por visibilidad + accesorios por BoneAttachment3D). Defecto
+  conocido documentado: la fusión corrompió alfas (corregido a 1.0) y pesos
+  de manos; ver `game/characters/operator_visual.gd`.
+
+## Brazos en primera persona — Drillimpact PSX First Person Arms (CC0)
+
+`assets/models/arms/arms_rig.glb` + `arms_rig_arms_01.png`
+(rig de brazos con 18 animaciones, textura 512px embebida)
+
+- **Autor**: Drillimpact (drillimpact.itch.io)
+- **Fuente**: [PSX First Person Arms](https://drillimpact.itch.io/psx-first-person-arms-free)
+- **Licencia**: CC0 (dominio público); verbatim local en
+  `assets/models/arms/LICENSE-PSX-ARMS.txt`
+- Se usa como viewmodel de manos en primera persona con pose por arma.
 
 ## Modelos de armas — Kenney (CC0)
 
