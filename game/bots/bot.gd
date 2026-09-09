@@ -141,7 +141,10 @@ func _physics_process(delta: float) -> void:
 		_stop_navigation()
 		desired_velocity = separation_velocity
 	_move_with_velocity(desired_velocity, delta)
-	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held, weapon.fire_held and can_see, desired_velocity.length())
+	var bot_speed := desired_velocity.length()
+	# Los bots no tienen tecla de sprint: su clase de velocidad se deriva de la
+	# velocidad de navegación real (el clip SprintFwd declara 7.0 m/s).
+	visual.set_combat_state(bot_speed > 0.1, weapon.fire_held, weapon.fire_held and can_see, bot_speed, bot_speed >= 6.0)
 	if desired_velocity.length_squared() > 0.1 or (target_alive and can_see):
 		var facing := desired_velocity.normalized()
 		if target_alive and can_see:

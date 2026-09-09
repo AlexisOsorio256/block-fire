@@ -1,4 +1,6 @@
 extends SceneTree
+## Contrato de capas de animación (Astra) + contrato de clase de velocidad.
+## Un solo dueño de la pose, un solo reloj, sin pop al cruzar el eje lateral.
 var failures := 0
 func check(value: bool, message: String) -> void:
 	if not value:
@@ -8,6 +10,32 @@ func check(value: bool, message: String) -> void:
 func _init() -> void:
 	call_deferred("run")
 
+## Mide el patinaje del pie de apoyo en el mundo mientras el actor avanza a la
+## velocidad declarada. Devuelve el peor valor en m/s y cuántas muestras hubo.
+func _measure_slide(v: OperatorVisual, m: OperatorMotion, feet: Array, velocity: Vector3, sprint: bool) -> Dictionary:
+	m.local_velocity = velocity
+	m.sprint_intent = sprint
+	for i in 120: v._process(1.0/60.0)
+	var worst := 0.0
+	var samples := 0
+	for i in 180:
+		var before: Array[Vector3] = []
+		for f in feet:
+			before.append(v.skeleton.global_transform * v.skeleton.get_bone_global_pose(f).origin)
+		var support := 0 if before[0].y <= before[1].y else 1
+		# El hueso Foot nace a 0.0228 m: sólo cuenta la planta realmente apoyada.
+		var planted := before[support].y < 0.033
+		v._process(1.0/60.0)
+		v.position += v.global_basis * m.local_velocity / 60.0
+		if planted:
+			var now := v.skeleton.global_transform * v.skeleton.get_bone_global_pose(feet[support]).origin
+			# Sólo cuenta el deslizamiento HORIZONTAL: el pie rodando en el
+			# sitio (talón→punta) sube y baja sin patinar.
+			var planar := Vector2(now.x - before[support].x, now.z - before[support].z)
+			worst = maxf(worst, planar.length() * 60.0)
+			samples += 1
+	return {"worst": worst, "samples": samples}
+
 func run() -> void:
 	var v := OperatorVisual.new()
 	root.add_child(v)
@@ -16,8 +44,14 @@ func run() -> void:
 	v.debug_manual_state = true
 	var m := v.motion
 	check(not v.animation_player.active, "No parallel animation clock")
-	for clip in ["Reload","StrafeLeft","StrafeRight","CrouchWalk","JumpStart","AirLoop","Land"]:
+	for clip in ["Reload","StrafeLeft","StrafeRight","CrouchWalk","JumpStart","AirLoop","Land","WalkFwd","SprintFwd"]:
 		check(v.animation_player.has_animation("ual/"+clip), "Required clip "+clip)
+	# --- Contrato de velocidad declarada (una sola verdad) -------------------
+	check(not OperatorMotion.DECLARED_SPEEDS.is_empty(), "locomotion_speeds.json is loaded")
+	check(absf(m.declared_speed("ual/WalkFwd") - 4.8) < 0.01, "WalkFwd declares gameplay walk 4.8")
+	check(absf(m.declared_speed("ual/SprintFwd") - 7.0) < 0.01, "SprintFwd declares gameplay sprint 7.0")
+	check(absf(m.declared_speed("ual/StrafeRight") - 4.8) < 0.01, "StrafeRight declares gameplay 4.8")
+	check(absf(m.declared_speed("ual/CrouchWalk") - 2.6) < 0.01, "CrouchWalk declares gameplay 2.6")
 	m.local_velocity = Vector3(3.4,0,-3.4)
 	m.aiming = true
 	for i in 30: v._process(1.0/60.0)
@@ -59,6 +93,53 @@ func run() -> void:
 	v.revive()
 	v._process(1.0/60.0)
 	check(not m.dead and m.action == OperatorMotion.Action.READY, "Revive clears terminal state and actions")
+	# --- Clase de velocidad: walk usa WalkFwd, sprint usa SprintFwd ---------
+	m.crouched = false
+	m.aiming = false
+	m.grounded = true
+	m.sprint_intent = false
+	m.local_velocity = Vector3(0,0,-4.8)
+	for i in 120: v._process(1.0/60.0)
+	check(m._sprint_weight < 0.05, "Walk speed never selects the sprint clip")
+	check(absf(m.phase - fposmod(2.0 * 4.8 / (4.8 * v.animation_player.get_animation("ual/WalkFwd").length), 1.0)) < 0.05, "Walk plays at rate 1.0 (no frantic scaling)")
+	m.sprint_intent = true
+	m.local_velocity = Vector3(0,0,-7.0)
+	for i in 120: v._process(1.0/60.0)
+	check(m._sprint_weight > 0.95, "Sprint intent at 7.0 selects the sprint clip")
+	m.sprint_intent = false
+	m.local_velocity = Vector3(0,0,-4.8)
+	for i in 120: v._process(1.0/60.0)
+	check(m._sprint_weight < 0.05, "Releasing sprint returns to the walk clip")
+	# --- Continuidad de fase al cruzar el eje lateral (bug de crossfade) ----
+	var worst := 0.0
+	var previous := v.skeleton.get_bone_global_pose(foot).origin
+	m.aiming = false
+	m.local_velocity = Vector3(-4.8,0,0)
+	for i in 45:
+		v._process(1.0/60.0)
+		previous = v.skeleton.get_bone_global_pose(foot).origin
+		m.local_velocity = Vector3(-4.8 + 9.6 * (i + 1) / 45.0, 0, -4.8 * (i + 1) / 45.0)
+	for i in 45:
+		v._process(1.0/60.0)
+		var now := v.skeleton.get_bone_global_pose(foot).origin
+		worst = maxf(worst, now.distance_to(previous))
+		previous = now
+	check(worst < 0.11, "No foot pop crossing the lateral axis (worst %.3f m/frame)" % worst)
+	# --- Cero patinaje: el actor avanza a la velocidad declarada por el clip ---
+	# El pie de apoyo plano debe quedar quieto en el mundo. "De apoyo" = el pie
+	# más bajo de la zancada con la planta apoyada (el pie en vuelo no cuenta).
+	m.aiming = false
+	m.crouched = false
+	m.sprint_intent = false
+	var feet := [v.skeleton.find_bone("Foot.L"), v.skeleton.find_bone("Foot.R")]
+	var slide_walk := _measure_slide(v, m, feet, Vector3(0,0,-4.8), false)
+	check(slide_walk.samples > 20, "Planted foot sampled at walk (%d frames)" % slide_walk.samples)
+	check(slide_walk.worst < 0.40, "No horizontal foot slide at walk 4.8 (worst %.2f m/s)" % slide_walk.worst)
+	var slide_sprint := _measure_slide(v, m, feet, Vector3(0,0,-7.0), true)
+	check(slide_sprint.worst < 1.20, "No horizontal foot slide at sprint 7.0 (worst %.2f m/s)" % slide_sprint.worst)
+	var slide_side := _measure_slide(v, m, feet, Vector3(-4.8,0,0), false)
+	print("FOOT_SLIDE walk=%.2f sprint=%.2f strafe=%.2f m/s (peor fotograma de aterrizaje)" % [slide_walk.worst, slide_sprint.worst, slide_side.worst])
+	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
 	# Numerical reach and singularity guard across all real weapon configurations.
 	for weapon in OperatorVisual.WEAPON_IDS:
 		v.set_equipped_weapon(weapon)

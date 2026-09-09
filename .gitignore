@@ -10,6 +10,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.blend1
+*.blend2
 
 # Dependencias o herramientas locales fuera del runtime Godot
 node_modules/

@@ -1,0 +1,92 @@
+{
+ "BackWalk": {
+  "cycle": 0.5177,
+  "direction": [
+   0,
+   1,
+   0
+  ],
+  "duty": 0.33,
+  "speed": 4.8
+ },
+ "CrouchBack": {
+  "cycle": 0.6275,
+  "direction": [
+   0,
+   1,
+   0
+  ],
+  "duty": 0.38,
+  "speed": 2.6
+ },
+ "CrouchLeft": {
+  "cycle": 0.6275,
+  "direction": [
+   1,
+   0,
+   0
+  ],
+  "duty": 0.38,
+  "speed": 2.6
+ },
+ "CrouchRight": {
+  "cycle": 0.6275,
+  "direction": [
+   -1,
+   0,
+   0
+  ],
+  "duty": 0.38,
+  "speed": 2.6
+ },
+ "CrouchWalk": {
+  "cycle": 0.6275,
+  "direction": [
+   0,
+   -1,
+   0
+  ],
+  "duty": 0.38,
+  "speed": 2.6
+ },
+ "SprintFwd": {
+  "cycle": 0.4236,
+  "direction": [
+   0,
+   -1,
+   0
+  ],
+  "duty": 0.29,
+  "speed": 7.0
+ },
+ "StrafeLeft": {
+  "cycle": 0.4902,
+  "direction": [
+   1,
+   0,
+   0
+  ],
+  "duty": 0.34,
+  "speed": 4.8
+ },
+ "StrafeRight": {
+  "cycle": 0.4902,
+  "direction": [
+   -1,
+   0,
+   0
+  ],
+  "duty": 0.34,
+  "speed": 4.8
+ },
+ "WalkFwd": {
+  "cycle": 0.5177,
+  "direction": [
+   0,
+   -1,
+   0
+  ],
+  "duty": 0.33,
+  "speed": 4.8
+ }
+}

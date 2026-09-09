@@ -131,7 +131,9 @@ func _physics_process(delta: float) -> void:
 	if visual != null:
 		var horizontal_speed := Vector2(velocity.x, velocity.z).length()
 		# El visual recibe la velocidad REAL (m/s) para calibrar el clip.
-		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed)
+		# Gameplay declara clase de velocidad (sprint) + velocidad real; la
+		# animación sólo consume ambos para elegir clip y escala de reproducción.
+		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed, sprinting)
 	if camera != null:
 		var target_fov := 52.0 if (weapon != null and weapon.aim_held) else 68.0
 		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)

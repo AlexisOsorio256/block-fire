@@ -1,12 +1,20 @@
 extends SceneTree
 ## Integrated motion exam. Fixed 30 Hz, actual OperatorVisual + weapon + IK.
 ## --mode=sequence|locomotion|reload|air|combat --view=front|q34|side|back
-## --out=captures/astra-animation/final --weapon=rifle --duration=24
+## --out=captures/post-astra/final --weapon=rifle --duration=24
+##
+## Speeds are GAMEPLAY speeds (player.gd: walk 4.8, sprint 7.0, crouch 2.6) and
+## every label means the gameplay action, never the clip's own implied speed.
+## The clip's implied speed is declared in locomotion_speeds.json by the Blender
+## pipeline; the runtime scales playback from the two.
+const WALK := 4.8
+const SPRINT := 7.0
+const CROUCH := 2.6
 var visual: OperatorVisual
 var camera: Camera3D
 var label: Label
 var frame := 0
-var out := "captures/astra-animation/final"
+var out := "captures/post-astra/final"
 var mode := "sequence"
 var view := "q34"
 var weapon := "rifle"
@@ -79,26 +87,30 @@ func _process(_delta: float) -> bool:
 	m.aiming = false
 	m.crouched = false
 	m.grounded = true
+	m.sprint_intent = false
 	m.reload_remaining = 0
 	m.switch_remaining = 0
 	var stage := "Idle"
 	var fire := false
 	if mode == "reload":
-		m.local_velocity = Vector3(0,0,-1.8) if t > 3 else Vector3.ZERO
+		m.local_velocity = Vector3(0,0,-WALK) if t > 3 else Vector3.ZERO
 		m.reload_duration = 2.0
 		m.reload_remaining = 2.0 - fposmod(t, 3.0) if fposmod(t,3.0) < 2.0 else 0.0
 		stage = "Reload / moving reload"
 	elif mode == "locomotion":
 		var index := int(t / 2.0) % 8
-		var vectors := [Vector3(0,0,-1.32),Vector3(0,0,-4.8),Vector3(0,0,-7),Vector3(-4.8,0,0),Vector3(4.8,0,0),Vector3(3.4,0,-3.4),Vector3(0,0,2.6),Vector3(-1.8,0,-1.8)]
+		var vectors := [Vector3(0,0,-WALK),Vector3(0,0,-SPRINT),Vector3(-WALK,0,0),Vector3(WALK,0,0),
+			Vector3(3.4,0,-3.4),Vector3(0,0,WALK),Vector3(0,0,-CROUCH),Vector3(-CROUCH,0,0)]
 		m.local_velocity = vectors[index]
-		m.crouched = index == 7
+		m.sprint_intent = index == 1
+		m.crouched = index > 5
 		m.aiming = index > 2
-		stage = ["Walk", "Run", "Sprint", "Strafe L", "Strafe R", "Diagonal", "Backward", "Crouch diagonal"][index]
+		stage = ["Walk 4.8", "Sprint 7.0", "Strafe L 4.8", "Strafe R 4.8",
+			"Diagonal 4.8", "Back 4.8", "Crouch 2.6", "Crouch strafe 2.6"][index]
 	elif mode == "air":
 		var cycle := fposmod(t,2.0)
 		m.grounded = cycle >= 0.8
-		m.local_velocity = Vector3(0,0,-2) if t > 2 else Vector3.ZERO
+		m.local_velocity = Vector3(0,0,-WALK) if t > 2 else Vector3.ZERO
 		m.local_velocity.y = 8.4-22*cycle if not m.grounded else 0.0
 		visual.position.y = maxf(0.0, 8.4*cycle-11*cycle*cycle) if not m.grounded else 0.0
 		fire = t > 4
@@ -106,31 +118,31 @@ func _process(_delta: float) -> bool:
 	elif mode == "combat":
 		m.aiming = fposmod(t,2) > 1
 		fire = t > 1
-		m.local_velocity = Vector3(-1.8,0,0) if t > 3 else Vector3.ZERO
+		m.local_velocity = Vector3(-WALK,0,0) if t > 3 else Vector3.ZERO
 		if frame % 60 == 0: visual.flinch()
 		stage = "HIP / ADS / fire / flinch"
 	else:
 		if t < 2: stage = "Idle"
 		elif t < 4:
-			stage = "Walk"; m.local_velocity = Vector3(0,0,-1.32)
+			stage = "Walk 4.8"; m.local_velocity = Vector3(0,0,-WALK)
 		elif t < 6:
-			stage = "Sprint"; m.local_velocity = Vector3(0,0,-7)
+			stage = "Sprint 7.0"; m.local_velocity = Vector3(0,0,-SPRINT); m.sprint_intent = true
 		elif t < 8:
-			stage = "Strafe L / ADS"; m.local_velocity = Vector3(-4.8,0,0); m.aiming = t > 7
+			stage = "Strafe L 4.8 / ADS"; m.local_velocity = Vector3(-WALK,0,0); m.aiming = t > 7
 		elif t < 10:
-			stage = "Fire / strafe R"; m.local_velocity = Vector3(3.4,0,-3.4); m.aiming = true; fire = true
+			stage = "Fire / diagonal 4.8"; m.local_velocity = Vector3(3.4,0,-3.4); m.aiming = true; fire = true
 		elif t < 12:
-			stage = "Reload while moving + hit"; m.local_velocity = Vector3(0,0,-2.6); m.reload_duration = 2; m.reload_remaining = 12-t
+			stage = "Reload while moving 4.8 + hit"; m.local_velocity = Vector3(0,0,-WALK); m.reload_duration = 2; m.reload_remaining = 12-t
 			if frame == 330: visual.flinch()
 		elif t < 14:
-			stage = "ADS / crouch"; m.crouched = true; m.aiming = true; m.local_velocity = Vector3(-1.8,0,-1.8)
+			stage = "ADS / crouch 2.6"; m.crouched = true; m.aiming = true; m.local_velocity = Vector3(-CROUCH,0,-CROUCH)
 		elif t < 15: stage = "Stand"
 		elif t < 15.8:
 			stage = "Jump / air"; m.grounded = false; var jump := t-15; m.local_velocity.y = 8.4-22*jump; visual.position.y = maxf(0,8.4*jump-11*jump*jump)
 		elif t < 18:
-			stage = "Land / fire / run"; visual.position.y = 0; m.local_velocity = Vector3(0,0,-4.8); fire = true
+			stage = "Land / fire / run 4.8"; visual.position.y = 0; m.local_velocity = Vector3(0,0,-WALK); fire = true
 		elif t < 20:
-			stage = "Switch / sprint"; m.local_velocity = Vector3(0,0,-7); m.switch_remaining = maxf(0,18.34-t)
+			stage = "Switch / sprint 7.0"; m.local_velocity = Vector3(0,0,-SPRINT); m.sprint_intent = true; m.switch_remaining = maxf(0,18.34-t)
 		elif t < 21:
 			stage = "Reload → Death"; m.reload_duration = 2; m.reload_remaining = 22-t
 		else:
@@ -139,13 +151,15 @@ func _process(_delta: float) -> bool:
 	if fire and frame - _shot_frame >= (24 if weapon == "shotgun" else (9 if weapon == "pistol" else 3)):
 		visual.confirmed_shot(); _shot_frame = frame
 	# Actor moves in world; camera follows. Checkerboard exposes foot sliding.
-	visual.position += Vector3(-m.local_velocity.x,0,-m.local_velocity.z) / 30.0
+	# local_velocity es espacio del actor (-Z delante): se convierte con su basis.
+	# El signo invertido hacía patinar los pies al revés y ocultaba el error.
+	visual.position += visual.global_basis * m.local_velocity / 30.0
 	visual._process(1.0/30.0)
 	var yaw := {"front":0.0,"q34":35.0,"side":90.0,"back":180.0}.get(view,35.0) as float
 	var focus := Vector3(visual.position.x,1.0+visual.position.y*0.7,visual.position.z)
 	camera.position = focus + Vector3(sin(deg_to_rad(yaw))*4.1,.45,cos(deg_to_rad(yaw))*4.1)
 	camera.look_at(focus)
-	label.text = "%s  ·  %s  ·  %s\n%.2fs  |  %.1f m/s  |  reload %.2f" % [stage,weapon,view,t,Vector2(m.local_velocity.x,m.local_velocity.z).length(),m.reload_phase]
+	label.text = "%s  ·  %s  ·  %s\n%.2fs  |  %.1f m/s  |  sprint %.2f  |  reload %.2f" % [stage,weapon,view,t,Vector2(m.local_velocity.x,m.local_velocity.z).length(),m._sprint_weight,m.reload_phase]
 	if _capture:
 		_capture_frame.call_deferred(frame)
 	frame += 1

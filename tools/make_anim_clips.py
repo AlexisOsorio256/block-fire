@@ -1,7 +1,20 @@
-"""Author and bake Quaternius motion in Blender 4.0 (CC0 rig, 22 bones).
+"""Author, verify and export Quaternius motion in Blender 4.0 (CC0 rig, 22 bones).
 
-blender --background --python tools/make_anim_clips.py -- [Clip ...]
-Also callable through Blender MCP: main(['StrafeLeft', ...]).
+AUTHORITY — read before editing an animation
+-------------------------------------------
+1. `assets/animation_sources/<Clip>.blend` is the ART SOURCE. Open it in Blender,
+   move keys, save it, export. Hand edits survive because the exporter never
+   regenerates a clip that already has a source.
+2. This script is the GENERATOR (only with --rebuild) and the EXPORTER (default).
+3. Declared ground speed lives in GAIT below and is written to
+   `locomotion_speeds.json`. The runtime reads that file, so the clip's real
+   speed and the playback calibration are one truth, never two.
+
+    blender --background --python tools/make_anim_clips.py                # export all
+    blender --background --python tools/make_anim_clips.py -- Reload Land  # export two
+    blender --background --python tools/make_anim_clips.py -- --rebuild WalkFwd
+    blender --background --python tools/make_anim_clips.py -- --verify WalkFwd
+
 Foot contact trajectories drive two-bone IK, then glTF bakes evaluated poses.
 Feet in this rig are children of Root, NOT LowerLeg: their translations are
 required. Body carries weight shifts; actor Root never travels horizontally.
@@ -14,34 +27,91 @@ import math
 import os
 import struct
 import sys
-from mathutils import Vector, Euler, Quaternion
+from mathutils import Vector, Quaternion
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'assets/models/skins/operator_adult_lod.glb')
 OUT_DIR = os.path.join(ROOT, 'assets/models/animation_library')
-FPS = 30
-NAMES = ['StrafeLeft', 'StrafeRight', 'BackWalk', 'CrouchIdle', 'CrouchWalk',
-         'CrouchLeft', 'CrouchRight', 'CrouchBack', 'Reload', 'JumpStart', 'AirLoop', 'Land', 'Flinch']
+SOURCE_DIR = os.path.join(ROOT, 'assets/animation_sources')
+FPS = 60
+NAMES = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
+         'CrouchIdle', 'CrouchWalk', 'CrouchLeft', 'CrouchRight', 'CrouchBack',
+         'Reload', 'JumpStart', 'AirLoop', 'Land', 'Flinch']
+LEG_REACH = 0.433 + 0.433  # UpperLeg + LowerLeg, measured from the rest skeleton
+ANKLE_OFFSET = Vector((0.0, -0.0039, 0.078))  # ankle above the contact point
+GROUND_Z = 0.0228  # Foot bone head z when the foot is flat on the floor
+
+# ---------------------------------------------------------------------------
+# GAIT: the declared ground speed of every locomotion clip, in m/s. These are
+# the GAMEPLAY speeds (player.gd: walk 4.8, sprint 7.0, crouch 2.6, bots
+# 4.4-7.5). A clip is authored so that its planted foot moves backwards at
+# exactly this speed; the runtime then plays it at rate 1.0 and the feet do not
+# slide. `front`/`back` are the planted excursion in metres ahead of and behind
+# the hip; their sum is the stride this rig can actually reach (leg = 0.866 m).
+# ---------------------------------------------------------------------------
+GAIT = {
+    'WalkFwd': dict(speed=4.8, duty=0.33, front=0.36, back=0.46, lift=0.145,
+                    bob=0.022, lean=10.0, yaw=8.0, sway=0.020, pitch=( -11, 0, 8, 26, -6, -11),
+                    dir=(0, -1, 0), crouch=0.0, arms=1.0),
+    'SprintFwd': dict(speed=7.0, duty=0.29, front=0.42, back=0.44, lift=0.190,
+                      bob=0.030, lean=20.0, yaw=12.0, sway=0.014, pitch=(-8, 2, 12, 32, -10, -8),
+                      dir=(0, -1, 0), crouch=0.0, arms=1.5),
+    'BackWalk': dict(speed=4.8, duty=0.33, front=0.46, back=0.36, lift=0.130,
+                     bob=0.018, lean=5.0, yaw=6.0, sway=0.022, pitch=(-6, 4, 10, 18, -8, -6),
+                     dir=(0, 1, 0), crouch=0.0, arms=0.8),
+    'StrafeLeft': dict(speed=4.8, duty=0.34, front=0.40, back=0.40, lift=0.130,
+                       bob=0.018, lean=4.0, yaw=5.0, sway=0.010, pitch=(-6, 2, 8, 20, -8, -6),
+                       dir=(1, 0, 0), crouch=0.0, arms=0.6),
+    'StrafeRight': dict(speed=4.8, duty=0.34, front=0.40, back=0.40, lift=0.130,
+                        bob=0.018, lean=4.0, yaw=5.0, sway=0.010, pitch=(-6, 2, 8, 20, -8, -6),
+                        dir=(-1, 0, 0), crouch=0.0, arms=0.6),
+    'CrouchWalk': dict(speed=2.6, duty=0.38, front=0.26, back=0.36, lift=0.095,
+                       bob=0.012, lean=15.0, yaw=5.0, sway=0.016, pitch=(-5, 2, 6, 14, -6, -5),
+                       dir=(0, -1, 0), crouch=0.30, arms=0.5),
+    'CrouchBack': dict(speed=2.6, duty=0.38, front=0.36, back=0.26, lift=0.095,
+                       bob=0.012, lean=13.0, yaw=5.0, sway=0.016, pitch=(-4, 2, 6, 12, -6, -4),
+                       dir=(0, 1, 0), crouch=0.30, arms=0.5),
+    'CrouchLeft': dict(speed=2.6, duty=0.38, front=0.31, back=0.31, lift=0.095,
+                       bob=0.012, lean=14.0, yaw=3.0, sway=0.008, pitch=(-4, 2, 6, 12, -6, -4),
+                       dir=(1, 0, 0), crouch=0.30, arms=0.5),
+    'CrouchRight': dict(speed=2.6, duty=0.38, front=0.31, back=0.31, lift=0.095,
+                        bob=0.012, lean=14.0, yaw=3.0, sway=0.008, pitch=(-4, 2, 6, 12, -6, -4),
+                        dir=(-1, 0, 0), crouch=0.30, arms=0.5),
+}
+
+# Clips whose first and last frame must be identical (phase loop).
+LOOPING = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
+           'CrouchIdle', 'CrouchWalk', 'CrouchLeft', 'CrouchRight', 'CrouchBack', 'AirLoop']
+
 PALM_KEYS = [
-    [0., [0.,0.,0.]], [.10, [0.,-.005,-.01]], [.23, [.035,-.16,-.17]],
-    [.40, [.14,-.32,-.20]], [.56, [.07,-.18,-.19]], [.65, [.02,-.10,-.18]],
-    [.72, [.025,-.12,-.17]], [.88, [-.005,.012,-.01]], [1., [0.,0.,0.]]]
+    [0., [0., 0., 0.]], [.10, [0., -.005, -.01]], [.23, [.035, -.16, -.17]],
+    [.40, [.14, -.32, -.20]], [.56, [.07, -.18, -.19]], [.65, [.02, -.10, -.18]],
+    [.72, [.025, -.12, -.17]], [.88, [-.005, .012, -.01]], [1., [0., 0., 0.]]]
+
+REPORT = []
 
 
+# --------------------------------------------------------------------------- #
+# glTF helpers
+# --------------------------------------------------------------------------- #
 def prune_channels(path):
     raw = open(path, 'rb').read()
     offset, binary, doc = 12, b'', None
     while offset < len(raw):
-        size, kind = struct.unpack('<II', raw[offset:offset+8])
-        payload = raw[offset+8:offset+8+size]
-        if kind == 0x4E4F534A: doc = json.loads(payload)
-        elif kind == 0x004E4942: binary = payload
+        size, kind = struct.unpack('<II', raw[offset:offset + 8])
+        payload = raw[offset + 8:offset + 8 + size]
+        if kind == 0x4E4F534A:
+            doc = json.loads(payload)
+        elif kind == 0x004E4942:
+            binary = payload
         offset += size + 8
     for anim in doc.get('animations', []):
         keep = [c for c in anim['channels'] if c['target']['path'] == 'rotation' or
-                (c['target']['path'] == 'translation' and doc['nodes'][c['target']['node']]['name'] in ['Root','Body','Foot.L','Foot.R'])]
+                (c['target']['path'] == 'translation' and
+                 doc['nodes'][c['target']['node']]['name'] in ['Root', 'Body', 'Foot.L', 'Foot.R'])]
         used = sorted({c['sampler'] for c in keep})
-        for c in keep: c['sampler'] = used.index(c['sampler'])
+        for c in keep:
+            c['sampler'] = used.index(c['sampler'])
         anim['channels'] = keep
         anim['samplers'] = [anim['samplers'][i] for i in used]
     data = json.dumps(doc, separators=(',', ':')).encode()
@@ -50,230 +120,622 @@ def prune_channels(path):
     out = struct.pack('<4sII', b'glTF', 2, 28 + len(data) + len(binary))
     out += struct.pack('<II', len(data), 0x4E4F534A) + data
     out += struct.pack('<II', len(binary), 0x004E4942) + binary
-    open(path,'wb').write(out)
+    open(path, 'wb').write(out)
 
 
+# --------------------------------------------------------------------------- #
+# Authoring primitives
+# --------------------------------------------------------------------------- #
 def ease(t):
-    t=max(0.,min(1.,t))
-    return t*t*(3-2*t)
+    t = max(0., min(1., t))
+    return t * t * (3 - 2 * t)
+
+
+def smoother(t):
+    t = max(0., min(1., t))
+    return t * t * t * (t * (t * 6 - 15) + 10)
 
 
 def palm_at(t):
     for (a, av), (b, bv) in zip(PALM_KEYS, PALM_KEYS[1:]):
-        if t <= b: return Vector(av).lerp(Vector(bv), ease((t-a)/(b-a)))
-    return Vector((0,0,0))
+        if t <= b:
+            return Vector(av).lerp(Vector(bv), ease((t - a) / (b - a)))
+    return Vector((0, 0, 0))
 
 
 def empty(name):
-    obj=bpy.data.objects.new(name,None)
+    obj = bpy.data.objects.new(name, None)
     bpy.context.collection.objects.link(obj)
     return obj
 
 
 def curve(obj, data_path, frame, value, linear=False):
-    setattr(obj,data_path,value)
-    obj.keyframe_insert(data_path,frame=frame)
+    setattr(obj, data_path, value)
+    obj.keyframe_insert(data_path, frame=frame)
     for fc in obj.id_data.animation_data.action.fcurves:
-        if fc.data_path != obj.path_from_id(data_path): continue
-        p=fc.keyframe_points[-1]
-        p.interpolation='LINEAR' if linear else 'BEZIER'
-        p.handle_left_type=p.handle_right_type='AUTO_CLAMPED'
+        if fc.data_path != obj.path_from_id(data_path):
+            continue
+        p = fc.keyframe_points[-1]
+        p.interpolation = 'LINEAR' if linear else 'BEZIER'
+        p.handle_left_type = p.handle_right_type = 'AUTO_CLAMPED'
 
 
-def rot(arm,name,keys):
-    bone=arm.pose.bones[name]
-    bone.rotation_mode='XYZ'
-    for frame,angles in keys:
-        curve(bone,'rotation_euler',frame,tuple(math.radians(v) for v in angles))
+def rot(arm, name, keys):
+    bone = arm.pose.bones[name]
+    bone.rotation_mode = 'XYZ'
+    for frame, angles in keys:
+        curve(bone, 'rotation_euler', frame, tuple(math.radians(v) for v in angles))
 
 
 def setup():
     # Only our dedicated authoring scene is cleared, never a user's open scene.
-    for obj in list(bpy.context.scene.objects): bpy.data.objects.remove(obj,do_unlink=True)
-    for action in list(bpy.data.actions): bpy.data.actions.remove(action)
+    for obj in list(bpy.context.scene.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for action in list(bpy.data.actions):
+        bpy.data.actions.remove(action)
     bpy.data.orphans_purge(do_recursive=True)
     bpy.ops.import_scene.gltf(filepath=SRC)
-    arm=next(o for o in bpy.context.scene.objects if o.type=='ARMATURE')
+    arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')
     arm.animation_data_clear()
     for obj in list(bpy.context.scene.objects):
-        if obj.type=='MESH': bpy.data.objects.remove(obj,do_unlink=True)
+        if obj.type == 'MESH':
+            bpy.data.objects.remove(obj, do_unlink=True)
     for bone in arm.pose.bones:
-        bone.rotation_mode='QUATERNION'
-        bone.rotation_quaternion=Quaternion()
-        bone.location=(0,0,0)
-        bone.scale=(1,1,1)
+        bone.rotation_mode = 'QUATERNION'
+        bone.rotation_quaternion = Quaternion()
+        bone.location = (0, 0, 0)
+        bone.scale = (1, 1, 1)
     bpy.ops.mesh.primitive_cube_add(size=.002)
-    proxy=bpy.context.object
-    proxy.name='ClipProxy'
-    proxy.parent=arm
-    mod=proxy.modifiers.new('Armature','ARMATURE'); mod.object=arm
-    proxy.vertex_groups.new(name='Root').add(range(8),1.,'REPLACE')
-    return arm,proxy
+    proxy = bpy.context.object
+    proxy.name = 'ClipProxy'
+    proxy.parent = arm
+    mod = proxy.modifiers.new('Armature', 'ARMATURE')
+    mod.object = arm
+    proxy.vertex_groups.new(name='Root').add(range(8), 1., 'REPLACE')
+    return arm, proxy
 
 
 def leg_controls(arm):
-    controls={}
-    for side in ['L','R']:
-        foot=arm.pose.bones['Foot.'+side]
-        ctl=empty('Contact.'+side)
-        ctl.location=arm.data.bones[foot.name].head_local
-        copy=foot.constraints.new('COPY_LOCATION'); copy.target=ctl
-        ankle=empty('Ankle.'+side); ankle.parent=ctl
-        ankle.location=arm.data.bones['LowerLeg.'+side].tail_local-arm.data.bones[foot.name].head_local
-        knee=empty('KneePlane.'+side)
-        knee.location=(.18 if side=='L' else -.18,-1.5,.6)
-        ik=arm.pose.bones['LowerLeg.'+side].constraints.new('IK')
-        ik.target=ankle; ik.pole_target=knee; ik.chain_count=2
+    controls = {}
+    for side in ['L', 'R']:
+        foot = arm.pose.bones['Foot.' + side]
+        ctl = empty('Contact.' + side)
+        ctl.location = arm.data.bones[foot.name].head_local
+        copy = foot.constraints.new('COPY_LOCATION')
+        copy.target = ctl
+        ankle = empty('Ankle.' + side)
+        ankle.parent = ctl
+        ankle.location = ANKLE_OFFSET
+        knee = empty('KneePlane.' + side)
+        knee.location = (.18 if side == 'L' else -.18, -1.5, .6)
+        ik = arm.pose.bones['LowerLeg.' + side].constraints.new('IK')
+        ik.target = ankle
+        ik.pole_target = knee
+        ik.chain_count = 2
         # Mirrored rest rolls: L needs PI, R needs 0 to bend toward -Y.
-        ik.pole_angle=math.pi if side == 'L' else 0.0
-        ik.use_stretch=False
-        controls[side]=ctl
+        ik.pole_angle = math.pi if side == 'L' else 0.0
+        ik.use_stretch = False
+        controls[side] = ctl
     return controls
 
 
-def feet_key(controls,frame,positions):
-    for side in ['L','R']: curve(controls[side],'location',frame,positions[side],True)
+def feet_key(controls, frame, positions):
+    for side in ['L', 'R']:
+        curve(controls[side], 'location', frame, positions[side], True)
 
 
-def body_key(arm,frame,offset):
-    bone=arm.pose.bones['Body']
+def body_key(arm, frame, offset, linear=False):
+    bone = arm.pose.bones['Body']
     # Blender bone-local translation, converted from armature coordinates.
-    local=arm.data.bones['Body'].matrix_local.to_3x3().inverted() @ Vector(offset)
-    curve(bone,'location',frame,local,True)
+    local = arm.data.bones['Body'].matrix_local.to_3x3().inverted() @ Vector(offset)
+    curve(bone, 'location', frame, local, linear)
 
 
-def gait(arm,name,controls):
-    low=name.startswith('Crouch')
-    idle=name=='CrouchIdle'
-    frames=72 if idle else (30 if low else 24)
-    direction=Vector((0,-1,0))
-    if name in ['StrafeLeft','CrouchLeft']: direction=Vector((1,0,0))
-    if name in ['StrafeRight','CrouchRight']: direction=Vector((-1,0,0))
-    if name in ['BackWalk','CrouchBack']: direction=Vector((0,1,0))
-    lateral=abs(direction.x) > .5
-    stride=(.50 if low else .60) if lateral else (.625 if low else .72) # planted travel / 0.5 cycle: 1.25 / 1.8 m/s
-    if idle: stride=0
-    for frame in range(frames+1):
-        phase=frame/frames
-        positions={}
-        # COM settles onto support leg; pelvis remains inside foot envelope.
-        shift=(.004 if idle else .025)*math.cos(phase*math.tau)
-        body_key(arm,frame,(shift, .055 if low else 0., (-.28 if low else (-.12 if lateral else -.035))-.012*math.cos(phase*math.tau*2)))
-        delays=[('L',0),('R',.18 if lateral else .5)]
-        if direction.x < 0: delays=[('R',0),('L',.18)]
-        for side,delay in delays:
-            q=(phase+delay)%1
-            rest=arm.data.bones['Foot.'+side].head_local.copy()
-            if lateral: rest.x=.24 if side=='L' else -.24
-            if q < .5:
-                travel=stride*(.5-2*q); lift=0.
-            else:
-                u=(q-.5)*2
-                # Breakdowns: toe-off → passing → heel contact, contact velocity
-                # matches the planted segment at both ends (cubic Hermite).
-                h=3*u*u-2*u*u*u
-                travel=stride*(-.5+h-(u*u*u-2*u*u+u)-(u*u*u-u*u))
-                lift=(.075 if low else .115)*math.sin(math.pi*u)**2
-            rest += direction*travel
-            rest.z += 0.0 if idle else lift
-            positions[side]=rest
-        feet_key(controls,frame,positions)
-    rot(arm,'Hips',[(0,(0,0,-2)),(frames/4,(0,0,2)),(frames/2,(0,0,2)),(frames*3/4,(0,0,-2)),(frames,(0,0,-2))])
-    rot(arm,'Abdomen',[(0,(8 if low else 2,0,1.2)),(frames/2,(8 if low else 2,0,-1.2)),(frames,(8 if low else 2,0,1.2))])
+# --------------------------------------------------------------------------- #
+# Locomotion
+# --------------------------------------------------------------------------- #
+def foot_track(q, spec, frames):
+    """Contact position and foot pitch for a foot whose local phase is q.
+
+    q = 0 is heel contact. While planted (q < duty) the contact point travels
+    backwards along the travel direction at exactly spec['speed'], so the
+    rendered foot is ground-locked at playback rate 1.0.
+    """
+    speed = spec['speed']
+    duty = spec['duty']
+    front, back = spec['front'], spec['back']
+    excursion = front + back
+    cycle = frames / FPS
+    d = Vector(spec['dir']).normalized()
+    if q < duty:
+        u = q / duty
+        along = front - speed * (q * cycle)
+        # Heel lifts late in stance; the ankle rises with the contact point and
+        # the foot pitches toe-down so the toe stays on the floor.
+        rise = 0.0 if u < 0.62 else 0.055 * ease((u - 0.62) / 0.38)
+        if u < 0.18:
+            pitch = spec['pitch'][0] * (1.0 - ease(u / 0.18))
+        elif u < 0.62:
+            pitch = spec['pitch'][1] + (spec['pitch'][2] - spec['pitch'][1]) * ease((u - 0.18) / 0.44)
+        else:
+            pitch = spec['pitch'][2] + (spec['pitch'][3] - spec['pitch'][2]) * ease((u - 0.62) / 0.38)
+        lift = rise
+    else:
+        u = (q - duty) / (1.0 - duty)
+        # Heel recovery, knee drive, reach: slow out of toe-off, fast through
+        # mid-swing, decelerating into contact.
+        # Hermite con pendiente final acorde a la velocidad de apoyo: el pie
+        # aterriza casi quieto respecto al suelo (sin derrapar) y sin escalón.
+        swing_time = (1.0 - duty) * (frames / FPS)
+        slope = -0.7 * speed * swing_time / max(excursion, 1e-6)
+        h10 = u * u * u - 2.0 * u * u + u
+        h11 = u * u * u - u * u
+        h01 = -2.0 * u * u * u + 3.0 * u * u
+        along = (front - excursion) + excursion * (h01 + slope * (h10 + h11))
+        lift = 0.055 * (1.0 - u) ** 2.5 + spec['lift'] * math.sin(math.pi * u) ** 1.15
+        if u < 0.45:
+            pitch = spec['pitch'][3] + (spec['pitch'][4] - spec['pitch'][3]) * ease(u / 0.45)
+        else:
+            pitch = spec['pitch'][4] + (spec['pitch'][5] - spec['pitch'][4]) * ease((u - 0.45) / 0.55)
+    return along, lift, pitch
+
+
+def hip_ceiling(spec, feet_state, hip_xy):
+    """Highest hip that still lets every planted foot reach, from real reach.
+
+    Returns None during flight (no planted foot): the caller carries the value
+    across the gap instead of letting a sentinel pollute the smoothing.
+    """
+    limit = 10.0
+    for state in feet_state:
+        ankle_z = GROUND_Z + state['lift'] + ANKLE_OFFSET.z
+        horizontal = Vector((state['pos'].x - hip_xy.x, state['pos'].y - hip_xy.y)).length
+        reach = LEG_REACH - 0.022
+        if horizontal >= reach:
+            return 0.0
+        limit = min(limit, ankle_z + math.sqrt(reach * reach - horizontal * horizontal))
+    return limit
+
+
+def circular_fill(values, period):
+    """Replace None entries by linear interpolation between the nearest real ones."""
+    known = [i for i, v in enumerate(values) if v is not None]
+    if not known:
+        return [0.0] * len(values)
+    filled = list(values)
+    for i in range(len(values)):
+        if filled[i] is not None:
+            continue
+        before = max((k for k in known if k < i), default=None)
+        after = min((k for k in known if k > i), default=None)
+        if before is None:
+            before = known[-1] - period
+        if after is None:
+            after = known[0] + period
+        span = max(after - before, 1e-6)
+        a = values[before % len(values)]
+        b = values[after % len(values)]
+        filled[i] = a + (b - a) * ((i - before) / span)
+    return filled
+
+
+def gait(name, arm, controls):
+    spec = GAIT[name]
+    cycle = (spec['front'] + spec['back']) / (spec['speed'] * spec['duty'])
+    frames = max(14, int(round(cycle * FPS)))
+    crouch = spec['crouch']
+    d = Vector(spec['dir']).normalized()
+    hip_xy = Vector((0.0, -0.0451, 0.0))  # UpperLeg head x/y at rest
+
+    # Pass 1: foot targets and the hip height the reach allows.
+    tracks = {}
+    planted_map = {}
+    ceilings = []
+    for side in ('L', 'R'):
+        delay = 0.0 if side == 'L' else 0.5
+        rest = arm.data.bones['Foot.' + side].head_local.copy()
+        rows = []
+        flags = []
+        for frame in range(frames + 1):
+            phase = (frame % frames) / frames
+            q = (phase + delay) % 1.0
+            along, lift, pitch = foot_track(q, spec, frames)
+            pos = rest + d * along
+            pos.z = GROUND_Z + lift
+            rows.append(dict(pos=pos, lift=lift, pitch=pitch, planted=q < spec['duty']))
+            flags.append(q < spec['duty'])
+        tracks[side] = rows
+        planted_map[side] = flags
+    for frame in range(frames + 1):
+        ceilings.append(hip_ceiling(spec, [tracks['L'][frame], tracks['R'][frame]], hip_xy))
+    ceilings = circular_fill(ceilings, frames)
+    # The COM sits below the reach envelope the whole cycle. Two separate
+    # causes: what the leg geometry forces (reach) and what the pose declares
+    # (crouch). Neither is a hand-tuned constant in disguise.
+    reach_drop = max(0.0, 0.9642 - (min(ceilings) - 0.006))
+    for frame in range(frames + 1):
+        phase = (frame % frames) / frames
+        # Running bob: lowest at mid-stance, highest at mid-flight.
+        bob = spec['bob'] * (1.0 + math.cos(2.0 * math.tau * (phase - spec['duty'] * 0.5))) * 0.5
+        desired = 0.9642 - max(reach_drop, crouch) - bob
+        # The envelope only ever caps: the leg is never asked to over-reach.
+        target = min(desired, ceilings[frame] - 0.006)
+        drop = target - 0.9642
+        sway = spec['sway'] * math.sin(math.tau * phase)
+        body_key(arm, frame, (sway, 0.0, drop), True)
+        positions = {s: tracks[s][frame]['pos'] for s in ('L', 'R')}
+        feet_key(controls, frame, positions)
+        for side in ('L', 'R'):
+            rot(arm, 'Foot.' + side, [(frame, (tracks[side][frame]['pitch'], 0.0, 0.0))])
+        # Pelvis yaw leads the swing leg, spine counter-rotates.
+        yaw = spec['yaw'] * math.cos(math.tau * phase)
+        roll = spec['sway'] * 60.0 * math.sin(math.tau * phase)
+        rot(arm, 'Hips', [(frame, (0.0, roll, -yaw))])
+        rot(arm, 'Abdomen', [(frame, (spec['lean'] * 0.30, 0.0, yaw * 0.45))])
+        rot(arm, 'Torso', [(frame, (spec['lean'] * 0.34, 0.0, yaw * 0.55))])
+        rot(arm, 'Chest', [(frame, (spec['lean'] * 0.26, 0.0, yaw * 0.75))])
+        rot(arm, 'Neck', [(frame, (-spec['lean'] * 0.35, 0.0, 0.0))])
+        rot(arm, 'Head', [(frame, (-spec['lean'] * 0.30, 0.0, -yaw * 0.25))])
+        # Arm swing is cosmetic: runtime IK replaces both arms with the weapon.
+        swing = spec['arms'] * 26.0 * math.cos(math.tau * phase)
+        rot(arm, 'UpperArm.L', [(frame, (-swing * 0.55, 0.0, 0.0))])
+        rot(arm, 'UpperArm.R', [(frame, (swing * 0.55, 0.0, 0.0))])
+        rot(arm, 'LowerArm.L', [(frame, (max(0.0, -swing) * 0.5, 0.0, 0.0))])
+        rot(arm, 'LowerArm.R', [(frame, (max(0.0, swing) * 0.5, 0.0, 0.0))])
+    return frames, planted_map
+
+
+def crouch_idle(arm, controls):
+    """Static low stance with breathing; no leg travel."""
+    frames = int(2.4 * FPS)
+    base = 0.9642 - 0.30
+    for frame in range(frames + 1):
+        phase = (frame % frames) / frames
+        breath = 0.008 * math.sin(math.tau * phase)
+        body_key(arm, frame, (0.0, 0.0, (base - 0.9642) + breath), True)
+        positions = {}
+        for side in ('L', 'R'):
+            rest = arm.data.bones['Foot.' + side].head_local.copy()
+            rest.y -= 0.04 if side == 'L' else -0.02
+            rest.z = GROUND_Z
+            positions[side] = rest
+        feet_key(controls, frame, positions)
+        for side in ('L', 'R'):
+            rot(arm, 'Foot.' + side, [(frame, (4.0, 0.0, 0.0))])
+        rot(arm, 'Hips', [(frame, (0.0, 0.0, 0.0))])
+        rot(arm, 'Abdomen', [(frame, (10.0 + breath * 40.0, 0.0, 0.0))])
+        rot(arm, 'Torso', [(frame, (9.0, 0.0, 0.0))])
+        rot(arm, 'Chest', [(frame, (5.0, 0.0, 0.0))])
+        rot(arm, 'Neck', [(frame, (-6.0, 0.0, 0.0))])
+        rot(arm, 'Head', [(frame, (-5.0, 0.0, 0.0))])
+        rot(arm, 'UpperArm.L', [(frame, (0.0, 0.0, 0.0))])
+        rot(arm, 'UpperArm.R', [(frame, (0.0, 0.0, 0.0))])
+        rot(arm, 'LowerArm.L', [(frame, (0.0, 0.0, 0.0))])
+        rot(arm, 'LowerArm.R', [(frame, (0.0, 0.0, 0.0))])
+    return frames, base
+
+
+# --------------------------------------------------------------------------- #
+# Air chain: anticipation -> push -> release, float, contact -> compression
+# --------------------------------------------------------------------------- #
+def air(name, arm, controls):
+    if name == 'JumpStart':
+        frames = int(0.30 * FPS)
+        # (seconds, com z, foot z L, foot z R, foot y L, foot y R)
+        keys = [(0.00, 0.000, 0.000, 0.000, 0.000, 0.000),
+                (0.07, -0.075, 0.000, 0.000, 0.010, -0.010),
+                (0.13, -0.020, 0.030, 0.020, 0.040, 0.020),
+                (0.20, 0.030, 0.110, 0.070, 0.075, 0.045),
+                (0.30, 0.040, 0.155, 0.105, 0.090, 0.055)]
+        for frame in range(frames + 1):
+            t = frame / FPS
+            for (a, b) in zip(keys, keys[1:]):
+                if t <= b[0] or b is keys[-1]:
+                    u = ease((t - a[0]) / max(b[0] - a[0], 1e-6))
+                    vals = [a[i] + (b[i] - a[i]) * u for i in range(1, 6)]
+                    break
+            body_key(arm, frame, (0.0, 0.0, vals[0]), True)
+            positions = {}
+            for side, idx in (('L', 1), ('R', 2)):
+                rest = arm.data.bones['Foot.' + side].head_local.copy()
+                rest.z = GROUND_Z + vals[idx]
+                rest.y -= vals[idx + 2]
+                positions[side] = rest
+            feet_key(controls, frame, positions)
+            rot(arm, 'Foot.L', [(frame, (-6.0 + 34.0 * ease(t / 0.30), 0.0, 0.0))])
+            rot(arm, 'Foot.R', [(frame, (-6.0 + 30.0 * ease(t / 0.30), 0.0, 0.0))])
+            lean = 4.0 - 6.0 * ease(t / 0.30)
+            rot(arm, 'Abdomen', [(frame, (lean, 0.0, 0.0))])
+            rot(arm, 'Torso', [(frame, (lean * 0.8, 0.0, 0.0))])
+            rot(arm, 'Chest', [(frame, (lean * 0.5, 0.0, 0.0))])
+            rot(arm, 'Neck', [(frame, (-lean * 0.6, 0.0, 0.0))])
+            rot(arm, 'Head', [(frame, (-lean * 0.4, 0.0, 0.0))])
+            rot(arm, 'UpperArm.L', [(frame, (18.0 * ease(t / 0.30), 0.0, 0.0))])
+            rot(arm, 'UpperArm.R', [(frame, (14.0 * ease(t / 0.30), 0.0, 0.0))])
+            rot(arm, 'LowerArm.L', [(frame, (0.0, 0.0, 0.0))])
+            rot(arm, 'LowerArm.R', [(frame, (0.0, 0.0, 0.0))])
+        return frames
+    if name == 'AirLoop':
+        frames = int(0.80 * FPS)
+        for frame in range(frames + 1):
+            phase = (frame % frames) / frames
+            float_z = 0.012 * math.sin(math.tau * phase)
+            body_key(arm, frame, (0.0, 0.0, 0.040 + float_z), True)
+            positions = {}
+            for side, forward, lift, lag in (('L', 0.075, 0.150, 0.0), ('R', -0.030, 0.105, 0.6)):
+                rest = arm.data.bones['Foot.' + side].head_local.copy()
+                rest.y -= forward + 0.010 * math.sin(math.tau * phase + lag)
+                rest.z = GROUND_Z + lift + 0.008 * math.sin(math.tau * phase + lag + 0.9)
+                positions[side] = rest
+            feet_key(controls, frame, positions)
+            rot(arm, 'Foot.L', [(frame, (16.0 + 4.0 * math.sin(math.tau * phase), 0.0, 0.0))])
+            rot(arm, 'Foot.R', [(frame, (24.0 + 4.0 * math.sin(math.tau * phase + 1.2), 0.0, 0.0))])
+            rot(arm, 'Abdomen', [(frame, (6.0 + 1.5 * math.sin(math.tau * phase), 0.0, -3.0))])
+            rot(arm, 'Torso', [(frame, (5.0, 0.0, -2.0))])
+            rot(arm, 'Chest', [(frame, (3.0, 0.0, 2.0 * math.sin(math.tau * phase)))])
+            rot(arm, 'Neck', [(frame, (-4.0, 0.0, 0.0))])
+            rot(arm, 'Head', [(frame, (-3.0, 0.0, 0.0))])
+            rot(arm, 'UpperArm.L', [(frame, (12.0, 0.0, 0.0))])
+            rot(arm, 'UpperArm.R', [(frame, (9.0, 0.0, 0.0))])
+            rot(arm, 'LowerArm.L', [(frame, (6.0, 0.0, 0.0))])
+            rot(arm, 'LowerArm.R', [(frame, (5.0, 0.0, 0.0))])
+        return frames
+    # Land: contact, compression, recovery with a small overshoot.
+    frames = int(0.47 * FPS)
+    # The rest pose already has straight legs: the COM may never rise above it,
+    # or the IK clamps and the foot lifts. Recovery is expressed by the spine.
+    com = [(0.00, 0.020), (0.07, -0.055), (0.15, -0.185), (0.24, -0.120),
+           (0.34, -0.010), (0.47, 0.000)]
+    foot = [(0.00, 0.060), (0.10, 0.000), (0.47, 0.000)]
+    lean = [(0.00, -4.0), (0.15, 11.0), (0.26, 5.0), (0.36, -2.0), (0.47, 0.0)]
+    for frame in range(frames + 1):
+        t = frame / FPS
+
+        def track(table, when):
+            for (a, av), (b, bv) in zip(table, table[1:]):
+                if t <= b:
+                    return av + (bv - av) * ease((t - a) / max(b - a, 1e-6))
+            return table[-1][1]
+
+        body_key(arm, frame, (0.0, 0.0, track(com, t)), True)
+        positions = {}
+        for side in ('L', 'R'):
+            rest = arm.data.bones['Foot.' + side].head_local.copy()
+            rest.z = GROUND_Z + track(foot, t)
+            rest.y -= 0.030 if side == 'L' else 0.010
+            positions[side] = rest
+        feet_key(controls, frame, positions)
+        rot(arm, 'Foot.L', [(frame, (18.0 * (1.0 - ease(t / 0.16)), 0.0, 0.0))])
+        rot(arm, 'Foot.R', [(frame, (16.0 * (1.0 - ease(t / 0.16)), 0.0, 0.0))])
+        a = track(lean, t)
+        rot(arm, 'Abdomen', [(frame, (a, 0.0, 0.0))])
+        rot(arm, 'Torso', [(frame, (a * 0.9, 0.0, 0.0))])
+        rot(arm, 'Chest', [(frame, (a * 0.6, 0.0, 0.0))])
+        rot(arm, 'Neck', [(frame, (-a * 0.7, 0.0, 0.0))])
+        rot(arm, 'Head', [(frame, (-a * 0.5, 0.0, 0.0))])
+        arm_k = 16.0 * (1.0 - ease(t / 0.30))
+        rot(arm, 'UpperArm.L', [(frame, (arm_k, 0.0, 0.0))])
+        rot(arm, 'UpperArm.R', [(frame, (arm_k, 0.0, 0.0))])
+        rot(arm, 'LowerArm.L', [(frame, (arm_k * 0.4, 0.0, 0.0))])
+        rot(arm, 'LowerArm.R', [(frame, (arm_k * 0.4, 0.0, 0.0))])
     return frames
 
 
-def air(arm,name,controls):
-    frames={'JumpStart':8,'AirLoop':24,'Land':14}[name]
-    # Contact before compression; delayed torso recovery supplies overlap.
-    if name=='Land': keys=[(0,-.015),(2,-.08),(4,-.19),(7,-.11),(10,.006),(14,0.)]
-    elif name=='JumpStart': keys=[(0,-.045),(1,-.065),(3,.01),(5,0.),(8,0.)]
-    else: keys=[(0,0.),(12,.004),(24,0.)]
-    for f,z in keys: body_key(arm,f,(0,0,z))
-    for frame in range(frames+1):
-        positions={}
-        for side in ['L','R']:
-            rest=arm.data.bones['Foot.'+side].head_local.copy()
-            if name!='Land':
-                w=ease((frame-2)/6) if name=='JumpStart' else 1.
-                rest.z += (.16 if side=='L' else .10)*w
-                rest.y += (.10 if side=='L' else .06)*w
-            positions[side]=rest
-        feet_key(controls,frame,positions)
-    if name=='Land':
-        rot(arm,'Abdomen',[(0,(0,0,0)),(4,(9,0,0)),(8,(4,0,0)),(11,(-1,0,0)),(14,(0,0,0))])
-        rot(arm,'Chest',[(0,(0,0,0)),(5,(4,0,0)),(9,(1,0,0)),(14,(0,0,0))])
-    return frames
+# --------------------------------------------------------------------------- #
+# Reload / Flinch: the body has to sell the action, not just the hand
+# --------------------------------------------------------------------------- #
+def upper(arm, name):
+    if name == 'Flinch':
+        frames = int(0.40 * FPS)
+        for frame in range(frames + 1):
+            t = frame / FPS
+            hit = ease(t / 0.06) if t < 0.06 else (1.0 - ease((t - 0.06) / 0.22) if t < 0.28 else -0.12 * (1.0 - ease((t - 0.28) / 0.12)))
+            rot(arm, 'Chest', [(frame, (-7.0 * hit, 0.0, 2.0 * hit))])
+            rot(arm, 'Abdomen', [(frame, (-3.0 * hit, 0.0, 1.0 * hit))])
+            rot(arm, 'Neck', [(frame, (-2.5 * hit, 0.0, 0.0))])
+            rot(arm, 'Head', [(frame, (-3.0 * hit, 0.0, 0.0))])
+            rot(arm, 'Shoulder.L', [(frame, (0.0, -2.0 * hit, -2.0 * hit))])
+            rot(arm, 'Shoulder.R', [(frame, (0.0, -1.5 * hit, 1.5 * hit))])
+        return frames
+    # Reload: 1.8 s of torso, shoulder and gaze weight, timed to the palm path.
+    frames = int(1.8 * FPS)
 
+    def track(table, t):
+        for (a, av), (b, bv) in zip(table, table[1:]):
+            if t <= b:
+                return av + (bv - av) * ease((t - a) / max(b - a, 1e-6))
+        return table[-1][1]
 
-def upper(arm,name):
-    if name=='Flinch':
-        rot(arm,'Chest',[(0,(0,0,0)),(2,(-7,0,2)),(5,(2,0,-.5)),(8,(-.5,0,0)),(11,(0,0,0))])
-        rot(arm,'Head',[(0,(0,0,0)),(3,(-3,0,0)),(7,(1,0,0)),(11,(0,0,0))])
-        return 11
-    rot(arm,'Abdomen',[(0,(0,0,0)),(5,(-1,0,1)),(13,(2,0,-3)),(25,(3,0,-4)),(36,(2,0,-2)),(45,(-.7,0,.8)),(54,(0,0,0))])
-    rot(arm,'Chest',[(0,(0,0,0)),(7,(-1,0,1.5)),(17,(3,0,-3)),(27,(4,0,-2)),(34,(1,0,-4)),(40,(2,0,-1)),(48,(-.4,0,.5)),(54,(0,0,0))])
-    rot(arm,'Shoulder.L',[(0,(0,0,0)),(8,(0,-2,-2)),(16,(0,3,5)),(23,(0,1,3)),(33,(0,-3,-2)),(38,(0,1,1)),(48,(0,-.5,-1)),(54,(0,0,0))])
-    rot(arm,'Shoulder.R',[(0,(0,0,0)),(8,(0,-1,1)),(20,(0,2,2)),(36,(0,1,1)),(47,(0,-.4,-.4)),(54,(0,0,0))])
-    rot(arm,'Head',[(0,(0,0,0)),(9,(1,0,0)),(18,(7,0,-3)),(29,(5,0,-2)),(39,(2,0,0)),(47,(-.7,0,.5)),(54,(0,0,0))])
+    # Chest yaw follows the hand toward the magazine, then snaps back on the
+    # seat. Head glances down at the well and returns to the target.
+    chest_yaw = [(0.00, 0.0), (0.14, 3.0), (0.40, 7.5), (0.58, 5.0), (0.74, 2.0), (0.88, -1.5), (1.00, 0.0)]
+    chest_pitch = [(0.00, 0.0), (0.20, 2.0), (0.46, 4.5), (0.70, 1.5), (0.86, 3.0), (1.00, 0.0)]
+    head_yaw = [(0.00, 0.0), (0.18, -6.0), (0.46, -13.0), (0.70, -6.0), (0.90, 1.5), (1.00, 0.0)]
+    head_pitch = [(0.00, 0.0), (0.18, 4.0), (0.46, 9.0), (0.72, 3.0), (0.90, -1.0), (1.00, 0.0)]
+    shoulder_l = [(0.00, 0.0), (0.16, -5.0), (0.44, -8.0), (0.68, -3.0), (0.84, -5.0), (1.00, 0.0)]
+    body_z = [(0.00, 0.0), (0.20, -0.012), (0.44, -0.026), (0.70, -0.014), (0.86, -0.022), (1.00, 0.0)]
+    for frame in range(frames + 1):
+        t = frame / frames
+        rot(arm, 'Abdomen', [(frame, (track(chest_pitch, t) * 0.45, 0.0, track(chest_yaw, t) * 0.35))])
+        rot(arm, 'Torso', [(frame, (track(chest_pitch, t) * 0.55, 0.0, track(chest_yaw, t) * 0.55))])
+        rot(arm, 'Chest', [(frame, (track(chest_pitch, t) * 0.65, 0.0, track(chest_yaw, t) * 0.85))])
+        rot(arm, 'Neck', [(frame, (track(head_pitch, t) * 0.45, 0.0, track(head_yaw, t) * 0.35))])
+        rot(arm, 'Head', [(frame, (track(head_pitch, t) * 0.55, 0.0, track(head_yaw, t) * 0.65))])
+        rot(arm, 'Shoulder.L', [(frame, (0.0, track(shoulder_l, t), track(shoulder_l, t) * 0.6))])
+        rot(arm, 'Shoulder.R', [(frame, (0.0, track(shoulder_l, t) * 0.2, 0.0))])
+        body_key(arm, frame, (0.0, 0.0, track(body_z, t)), True)
     # Visible editable Blender palm target with the same authored path as runtime.
-    ctl=empty('ReloadPalmPath')
-    for t,p in PALM_KEYS:
-        curve(ctl,'location',t*54,Vector((.14+p[0],-.40-p[2],1.38+p[1])))
-    return 54
+    ctl = empty('ReloadPalmPath')
+    for t, p in PALM_KEYS:
+        curve(ctl, 'location', t * frames, Vector((.14 + p[0], -.40 - p[2], 1.38 + p[1])))
+    return frames
 
 
-def build(name):
-    arm,proxy=setup()
-    controls=leg_controls(arm)
-    if name in ['Reload','Flinch']: frames=upper(arm,name)
-    elif name in ['JumpStart','AirLoop','Land']: frames=air(arm,name,controls)
-    else: frames=gait(arm,name,controls)
-    scene=bpy.context.scene
-    scene.render.fps=FPS; scene.frame_start=0; scene.frame_end=frames
+# --------------------------------------------------------------------------- #
+# Verification: reach, ground lock, loop continuity
+# --------------------------------------------------------------------------- #
+def verify(name, arm, frames, expected_speed=None, planted_map=None):
+    scene = bpy.context.scene
+    rows = []
+    for f in range(frames + 1):
+        scene.frame_set(f)
+        bpy.context.view_layer.update()
+        row = {}
+        for side in ('L', 'R'):
+            hip = arm.matrix_world @ arm.pose.bones['UpperLeg.' + side].head
+            ankle = arm.matrix_world @ arm.pose.bones['LowerLeg.' + side].tail
+            foot = arm.matrix_world @ arm.pose.bones['Foot.' + side].head
+            row[side] = (hip, ankle, foot)
+        rows.append(row)
+    worst_reach = 0.0
+    for row in rows:
+        for side in ('L', 'R'):
+            hip, ankle, _ = row[side]
+            worst_reach = max(worst_reach, (ankle - hip).length / LEG_REACH)
+    slides = []
+    for i in range(frames):
+        for side in ('L', 'R'):
+            if planted_map is not None and not (planted_map[side][i] and planted_map[side][i + 1]):
+                continue
+            f0, f1 = rows[i][side][2], rows[i + 1][side][2]
+            if planted_map is None and (f0.z - GROUND_Z > 0.02 or f1.z - GROUND_Z > 0.02):
+                continue
+            slides.append((f1 - f0).length * FPS)
+    loop = 0.0
+    if name in LOOPING:
+        for side in ('L', 'R'):
+            loop = max(loop, (rows[0][side][2] - rows[frames][side][2]).length)
+    REPORT.append(dict(clip=name, frames=frames, seconds=round(frames / FPS, 3),
+                       reach=round(worst_reach, 3),
+                       planted_speed=round(sum(slides) / len(slides), 2) if slides else None,
+                       loop_gap=round(loop, 5), expected=expected_speed))
+    return REPORT[-1]
+
+
+# --------------------------------------------------------------------------- #
+# Build
+# --------------------------------------------------------------------------- #
+def build(name, export=True):
+    arm, proxy = setup()
+    controls = leg_controls(arm)
+    if name == 'Reload' or name == 'Flinch':
+        frames = upper(arm, name)
+        speed = None
+        planted = None
+    elif name in ('JumpStart', 'AirLoop', 'Land'):
+        frames = air(name, arm, controls)
+        speed = None
+        planted = None
+    elif name == 'CrouchIdle':
+        frames, _ = crouch_idle(arm, controls)
+        speed = 0.0
+        planted = None
+    else:
+        frames, planted = gait(name, arm, controls)
+        speed = GAIT[name]['speed']
+    scene = bpy.context.scene
+    scene.render.fps = FPS
+    scene.frame_start = 0
+    scene.frame_end = frames
+    verify(name, arm, frames, speed, planted)
     # Bake world-space constraint solutions to local bone transforms, preserving
     # rotations AND the independent foot/body translations. No solver in GLB.
-    samples=[]
-    for f in range(frames+1):
-        scene.frame_set(f); bpy.context.view_layer.update()
+    samples = []
+    for f in range(frames + 1):
+        scene.frame_set(f)
+        bpy.context.view_layer.update()
         samples.append([b.matrix.copy() for b in arm.pose.bones])
     for b in arm.pose.bones:
-        for c in list(b.constraints): b.constraints.remove(c)
+        for c in list(b.constraints):
+            b.constraints.remove(c)
     arm.animation_data_clear()
-    action=bpy.data.actions.new(name); arm.animation_data_create(); arm.animation_data.action=action
-    for frame,matrices in enumerate(samples):
+    action = bpy.data.actions.new(name)
+    arm.animation_data_create()
+    arm.animation_data.action = action
+    for frame, matrices in enumerate(samples):
         scene.frame_set(frame)
-        for b,matrix in zip(arm.pose.bones,matrices):
-            b.rotation_mode='QUATERNION'; b.matrix=matrix
+        for b, matrix in zip(arm.pose.bones, matrices):
+            b.rotation_mode = 'QUATERNION'
+            b.matrix = matrix
             bpy.context.view_layer.update()
-            b.keyframe_insert('rotation_quaternion',frame=frame)
-            b.keyframe_insert('location',frame=frame)
+            b.keyframe_insert('rotation_quaternion', frame=frame)
+            b.keyframe_insert('location', frame=frame)
     for fc in action.fcurves:
-        for k in fc.keyframe_points: k.interpolation='LINEAR'
+        for k in fc.keyframe_points:
+            k.interpolation = 'LINEAR'
     scene.frame_set(0)
     # Small editable source includes target curves and evaluated action.
-    source=os.path.join(ROOT,'assets/animation_sources')
-    os.makedirs(source,exist_ok=True)
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(source,name+'.blend'),compress=True)
+    os.makedirs(SOURCE_DIR, exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(SOURCE_DIR, name + '.blend'), compress=True)
+    if export:
+        export_source(name, arm, proxy)
+    print('BLOCKFIRE_CLIP', name, frames, flush=True)
+
+
+def export_source(name, arm=None, proxy=None):
+    """Export one .blend source to GLB. Non-destructive: never regenerates."""
+    if arm is None:
+        bpy.ops.wm.open_mainfile(filepath=os.path.join(SOURCE_DIR, name + '.blend'))
+        scene = bpy.context.scene
+        arm = next(o for o in scene.objects if o.type == 'ARMATURE')
+        proxy = scene.objects.get('ClipProxy')
     for other in list(bpy.data.actions):
-        if other != action: bpy.data.actions.remove(other)
-    bpy.ops.object.select_all(action='DESELECT'); arm.select_set(True);proxy.select_set(True)
-    bpy.context.view_layer.objects.active=arm
-    path=os.path.join(OUT_DIR,name+'.glb')
-    bpy.ops.export_scene.gltf(filepath=path,export_format='GLB',use_selection=True,
-        export_animations=True,export_frame_range=True,export_animation_mode='ACTIONS',
-        export_nla_strips=False,export_optimize_animation_size=False,export_skins=True,
-        export_materials='NONE',export_image_format='NONE',export_morph=False)
+        if not arm.animation_data or other != arm.animation_data.action:
+            bpy.data.actions.remove(other)
+    bpy.ops.object.select_all(action='DESELECT')
+    arm.select_set(True)
+    if proxy is not None:
+        proxy.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    path = os.path.join(OUT_DIR, name + '.glb')
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True,
+                              export_animations=True, export_frame_range=True,
+                              export_animation_mode='ACTIONS', export_nla_strips=False,
+                              export_optimize_animation_size=False, export_skins=True,
+                              export_materials='NONE', export_image_format='NONE',
+                              export_morph=False)
     prune_channels(path)
-    print('ASTRA_CLIP',name,frames,os.path.getsize(path),flush=True)
+    print('BLOCKFIRE_EXPORT', name, os.path.getsize(path), flush=True)
 
 
-def main(names=None):
-    os.makedirs(OUT_DIR,exist_ok=True)
-    with open(os.path.join(OUT_DIR,'reload_hand_path.json'),'w') as f: json.dump(PALM_KEYS,f)
-    for name in (names or NAMES):
-        if name not in NAMES: raise ValueError(name)
-        build(name)
+def write_speed_manifest():
+    os.makedirs(OUT_DIR, exist_ok=True)
+    payload = {}
+    for name, spec in GAIT.items():
+        cycle = (spec['front'] + spec['back']) / (spec['speed'] * spec['duty'])
+        payload[name] = dict(speed=spec['speed'], cycle=round(cycle, 4),
+                             duty=spec['duty'], direction=list(spec['dir']))
+    with open(os.path.join(OUT_DIR, 'locomotion_speeds.json'), 'w') as handle:
+        json.dump(payload, handle, indent=1, sort_keys=True)
+    with open(os.path.join(OUT_DIR, 'reload_hand_path.json'), 'w') as handle:
+        json.dump(PALM_KEYS, handle)
+    print('BLOCKFIRE_SPEEDS', json.dumps(payload, sort_keys=True), flush=True)
 
-if __name__=='__main__':
-    main(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else None)
+
+def main(argv):
+    os.makedirs(OUT_DIR, exist_ok=True)
+    rebuild = '--rebuild' in argv
+    verify_only = '--verify' in argv
+    names = [a for a in argv if not a.startswith('--')]
+    write_speed_manifest()
+    targets = names or NAMES
+    for name in targets:
+        if name not in NAMES:
+            raise ValueError(name)
+        source = os.path.join(SOURCE_DIR, name + '.blend')
+        if verify_only:
+            bpy.ops.wm.open_mainfile(filepath=source)
+            arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')
+            frames = int(bpy.context.scene.frame_end)
+            verify(name, arm, frames, GAIT.get(name, {}).get('speed'))
+        elif rebuild or not os.path.exists(source):
+            build(name)
+        else:
+            export_source(name)
+    if REPORT:
+        for row in REPORT:
+            print('BLOCKFIRE_VERIFY', json.dumps(row, sort_keys=True), flush=True)
+
+
+if __name__ == '__main__':
+    main(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])

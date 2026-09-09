@@ -27,6 +27,8 @@ const ANIMATION_SOURCE_PATHS := [
 ## motion). El pack original no trae recarga ni strafe; ver
 ## tools/blender-smooth-character.py y el pipeline de clips del repo.
 const EXTRA_CLIP_PATHS := [
+	"res://assets/models/animation_library/WalkFwd.glb",
+	"res://assets/models/animation_library/SprintFwd.glb",
 	"res://assets/models/animation_library/Reload.glb",
 	"res://assets/models/animation_library/StrafeLeft.glb",
 	"res://assets/models/animation_library/StrafeRight.glb",
@@ -42,7 +44,7 @@ const EXTRA_CLIP_PATHS := [
 	"res://assets/models/animation_library/AirLoop.glb"
 ]
 ## Clips que deben repetir en bucle (glTF no lleva el metadato).
-const LOOPING_CLIPS := ["StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk", "BackWalk", "CrouchLeft", "CrouchRight", "CrouchBack", "AirLoop"]
+const LOOPING_CLIPS := ["WalkFwd", "SprintFwd", "StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk", "BackWalk", "CrouchLeft", "CrouchRight", "CrouchBack", "AirLoop"]
 const WEAPON_IDS := ["rifle", "pistol", "shotgun", "smg"]
 
 ## Cada slot del armario es un conjunto de módulos del pack. Solo un módulo
@@ -59,13 +61,9 @@ const MODULE_SLOTS := {
 		"King_Head", "Punk_Head", "SpaceSuit_Head", "Suit_Head", "Swat_Head", "Worker_Head"],
 }
 
-## Velocidad de suelo que implica cada clip de locomoción, medida sobre el rig
-## (amplitud de la zancada × 2 / duración). Con esto el pie no patina: la
-## reproducción se escala a la velocidad real del actor.
-const LOCOMOTION_CLIPS := [
-	{"clip": "Walk", "implied": 1.32, "min_speed": 0.0},
-	{"clip": "Run_Gun", "implied": 2.48, "min_speed": 1.9},
-]
+## La velocidad de suelo implícita de cada clip de locomoción vive en
+## `locomotion_speeds.json`, escrito por tools/make_anim_clips.py y consumido
+## por OperatorMotion. Aquí no se duplica: dos verdades divergen siempre.
 
 ## Configuración por arma: silueta, longitud real objetivo en metros y agarre.
 ## `grip`/`grip_rot` están en espacio del hueso Wrist.R (la mano derecha); el
@@ -168,6 +166,7 @@ var equipped_weapon_id := "rifle"
 var moving := false
 var firing := false
 var aiming := false
+var sprinting := false
 var dead := false
 var locomotion_speed_scale := 1.0
 var retarget_ready := false
@@ -260,10 +259,13 @@ func set_crouch_state(value: bool) -> void:
 	_refresh_animation_state()
 
 
-func set_combat_state(is_moving: bool, is_firing: bool, is_aiming: bool = false, locomotion_speed: float = 1.0) -> void:
+## Gameplay declara la clase de velocidad (sprint) además de la velocidad real.
+## La animación no la inventa: sólo la consume para elegir clip.
+func set_combat_state(is_moving: bool, is_firing: bool, is_aiming: bool = false, locomotion_speed: float = 1.0, sprinting: bool = false) -> void:
 	moving = is_moving
 	firing = is_firing
 	aiming = is_aiming
+	sprinting = sprinting
 	# Velocidad real en metros por segundo (la animación se calibra con ella).
 	locomotion_speed_scale = maxf(locomotion_speed, 0.0)
 	_refresh_animation_state()
@@ -295,6 +297,7 @@ func revive() -> void:
 	moving = false
 	firing = false
 	aiming = false
+	sprinting = false
 	_head_look_yaw = 0.0
 	_head_look_pitch = 0.0
 	_debug_reload_time = 0.0
@@ -328,6 +331,7 @@ func _process(delta: float) -> void:
 func _read_motion_inputs(delta: float) -> void:
 	motion.crouched = crouched
 	motion.aiming = aiming or firing
+	motion.sprint_intent = sprinting
 	var actor := get_parent()
 	motion.local_velocity = Vector3(0, 0, -locomotion_speed_scale) if moving else Vector3.ZERO
 	if actor is CharacterBody3D:

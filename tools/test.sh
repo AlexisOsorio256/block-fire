@@ -21,4 +21,14 @@ if [ -z "$GODOT_BIN" ]; then
 	echo "Godot 4.7.2 no encontrado. Define BLOCKFIRE_GODOT o instala godot/godot4." >&2
 	exit 1
 fi
-exec "$GODOT_BIN" --headless --path "$ROOT" --script res://tests/smoke.gd
+
+# Dos suites, un proceso Godot cada una (el runner no reutiliza un árbol a medias).
+# smoke.gd: producto completo. animation_layers.gd: contrato de pose/velocidad.
+STATUS=0
+for suite in tests/smoke.gd tests/animation_layers.gd; do
+	echo "── $suite"
+	if ! "$GODOT_BIN" --headless --path "$ROOT" --script "res://$suite"; then
+		STATUS=1
+	fi
+done
+exit "$STATUS"
