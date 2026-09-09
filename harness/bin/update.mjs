@@ -19,6 +19,11 @@
  * effect on the NEXT launch. The process that is running keeps running whatever
  * it booted with. That is the honest guarantee this V1 can make.
  *
+ * WHICH DSH TREES EXIST is not decided here. `installed` and the ACTIVE pin come
+ * from harness/lib/runtime.mjs, the one resolver shared with the launcher,
+ * install.sh and test.sh — a second copy of the discovery rules is exactly the
+ * bug that used to make `harness/bin/blockfire` claim there was no runtime.
+ *
  *   node harness/bin/update.mjs status [--json]
  *   node harness/bin/update.mjs check [--json]
  *   node harness/bin/update.mjs stage <version>
@@ -30,10 +35,11 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PACKAGE, compareVersions, describeInstall, resolveRuntime } from '../lib/runtime.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
@@ -42,7 +48,6 @@ const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const STATE_DIR = join(DSH_HOME, '.blockfire-harness')
 const STATE_FILE = join(STATE_DIR, 'state.json')
 const STAGING_DIR = join(STATE_DIR, 'staging')
-const PACKAGE = '@deepseek-ai/dsh'
 const RELEASES_URL = 'https://api.github.com/repos/deepseek-ai/deepseek-harness/releases'
 
 // `... | head` closes the pipe early; that is not an error worth a stack trace.
@@ -82,45 +87,32 @@ function readJson(text) {
   }
 }
 
-/** The version + bin of a tree that holds `@deepseek-ai/dsh`. */
-function describeTree(nodeModules) {
-  const pkgPath = join(nodeModules, PACKAGE, 'package.json')
-  if (!existsSync(pkgPath)) return undefined
-  const pkg = readJson(readFileSync(pkgPath, 'utf8'))
-  if (pkg?.version === undefined) return undefined
-  const bin = join(nodeModules, '.bin', 'dsh')
-  return {
-    version: pkg.version,
-    bin: existsSync(bin) ? realpathSync(bin) : join(nodeModules, PACKAGE, 'lib', 'bin.js'),
-    nodeModules,
-  }
+/** The tree the launcher is pinned to by `activate`, or undefined. */
+function pinnedTree(state) {
+  const active = state.active
+  if (active === null || active === undefined || typeof active !== 'object') return undefined
+  return describeInstall(active.nodeModules ?? active.bin, 'active-pin')
 }
 
-/** The installation the `dsh` on PATH currently resolves to. */
+/**
+ * What a plain `dsh` on this machine resolves to: the shared resolver without
+ * the BLOCKFIRE-managed sources. PATH alone would miss the npx cache, which is
+ * where DSH normally lives here.
+ */
 function installedTree() {
-  let bin
-  try {
-    bin = execFileSync('bash', ['-lc', 'command -v dsh'], { encoding: 'utf8' }).trim()
-  } catch {
-    return undefined
+  const resolved = resolveRuntime({ skip: ['active-pin', 'staged'] })
+  if (resolved.ok !== true) return undefined
+  return {
+    version: resolved.version,
+    bin: resolved.bin,
+    nodeModules: resolved.nodeModules,
+    source: resolved.source,
+    sourceLabel: resolved.sourceLabel,
   }
-  if (bin === '') return undefined
-  let real = bin
-  try {
-    real = realpathSync(bin)
-  } catch {
-    return undefined
-  }
-  let dir = dirname(real)
-  while (dir !== '/' && dirname(dir) !== dir) {
-    if (dirname(dir).endsWith('node_modules')) return describeTree(dirname(dir))
-    dir = dirname(dir)
-  }
-  return undefined
 }
 
 function activeTree(state) {
-  return state.active ?? installedTree()
+  return pinnedTree(state) ?? installedTree()
 }
 
 function npmView(args) {
@@ -130,27 +122,6 @@ function npmView(args) {
 function npmJson(args) {
   const text = npmView([...args, '--json'])
   return readJson(text)
-}
-
-/** Semantic-ish ordering for `x.y.z-(alpha|rc).n`; a release outranks its own prereleases. */
-function compareVersions(left, right) {
-  const parse = (value) => {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/.exec(value)
-    if (match === null) return { numbers: [0, 0, 0], tag: 0, pre: 0 }
-    const rank = { alpha: 1, beta: 2, rc: 3 }
-    return {
-      numbers: [Number(match[1]), Number(match[2]), Number(match[3])],
-      tag: match[4] === undefined ? 9 : (rank[match[4]] ?? 4),
-      pre: match[5] === undefined ? 0 : Number(match[5]),
-    }
-  }
-  const a = parse(left)
-  const b = parse(right)
-  for (let index = 0; index < 3; index += 1) {
-    if (a.numbers[index] !== b.numbers[index]) return a.numbers[index] - b.numbers[index]
-  }
-  if (a.tag !== b.tag) return a.tag - b.tag
-  return a.pre - b.pre
 }
 
 async function releaseNotes() {
@@ -222,9 +193,12 @@ function status() {
   const state = readState()
   const active = activeTree(state)
   const installed = installedTree()
+  const pinned = pinnedTree(state)
   return {
     package: PACKAGE,
     active: active ?? null,
+    pinned: pinned ?? null,
+    pinStale: state.active !== undefined && pinned === undefined,
     previous: state.previous ?? null,
     runningInstall: installed ?? null,
     staged: stagedTrees(state),
@@ -245,7 +219,7 @@ function stage(version) {
     stdio: ['ignore', 'inherit', 'inherit'],
     timeout: 900000,
   })
-  const tree = describeTree(join(dir, 'node_modules'))
+  const tree = describeInstall(join(dir, 'node_modules'), 'staged')
   if (tree === undefined) fail(`staged tree at ${dir} does not contain ${PACKAGE}`)
   const state = readState()
   state.staged = { ...(state.staged ?? {}), [version]: tree }
@@ -271,6 +245,25 @@ function verify(version) {
   } catch (error) {
     output = `${error.stdout ?? ''}${error.stderr ?? ''}`
     ok = false
+  }
+  // The suite must have run against the CANDIDATE tree. A resolver regression
+  // once made it quietly test the installed runtime instead, which would make
+  // `verify` worthless, so the reported tree is cross-checked here.
+  const usedModules = /^ {2}install modules: (.+)$/m.exec(output)?.[1]?.trim()
+  if (ok && usedModules !== undefined) {
+    let same = usedModules === tree.nodeModules
+    try {
+      same = realpathSync(usedModules) === realpathSync(tree.nodeModules)
+    } catch {
+      same = false
+    }
+    if (!same) {
+      ok = false
+      output = `${output}\nverify: the suite ran against ${usedModules}, not the staged tree ${tree.nodeModules}\n`
+    }
+  } else if (ok && usedModules === undefined) {
+    ok = false
+    output = `${output}\nverify: the suite did not report which node_modules it used — refusing to trust the verdict\n`
   }
   state.verified = {
     ...(state.verified ?? {}),
@@ -313,8 +306,12 @@ function rollback() {
 }
 
 function printStatus(value) {
-  process.stdout.write(`installed (dsh on PATH)  ${value.runningInstall?.version ?? 'unknown'}\n`)
-  process.stdout.write(`launcher pin (active)    ${value.active?.version ?? '(none: dsh on PATH)'}\n`)
+  const installed = value.runningInstall
+  process.stdout.write(`installed (resolver)     ${installed === null ? 'unknown' : `${installed.version} (${installed.sourceLabel ?? installed.source ?? 'unknown'})`}\n`)
+  process.stdout.write(`launcher pin (active)    ${value.active?.version ?? '(none: resolver default)'}\n`)
+  if (value.pinStale === true) {
+    process.stdout.write('WARNING                  the active pin in state.json no longer resolves; the resolver default is used\n')
+  }
   process.stdout.write(`previous (rollback)      ${value.previous?.version ?? '(none)'}\n`)
   const staged = Object.keys(value.staged)
   process.stdout.write(`staged candidates        ${staged.length === 0 ? '(none)' : staged.join(', ')}\n`)

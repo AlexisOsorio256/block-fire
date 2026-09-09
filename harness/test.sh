@@ -53,15 +53,30 @@ bad() { printf '  FAIL  %s\n' "$1"; fail=1; }
 warn() { printf '  warn  %s\n' "$1"; }
 skip() { printf '  skip  %s\n' "$1"; }
 
-if [ -z "$INSTALL_MODULES" ]; then
-	INSTALL_MODULES="$(readlink -f "$DEST_ROOT/build/node_modules" 2>/dev/null || true)"
+# The runtime comes from the one shared resolver, never from `command -v dsh`.
+# --install/--dsh-bin are explicit overrides (update.mjs verify uses them on a
+# staged tree); the resolver validates them, so a broken candidate fails here
+# instead of the suite silently testing some other tree.
+EXPLICIT_RUNTIME=0
+if [ -n "$INSTALL_MODULES" ]; then export BLOCKFIRE_INSTALL_MODULES="$INSTALL_MODULES"; EXPLICIT_RUNTIME=1; fi
+if [ -n "$DSH_BIN" ]; then export BLOCKFIRE_DSH_BIN="$DSH_BIN"; EXPLICIT_RUNTIME=1; fi
+# shellcheck source=lib/runtime.sh
+. "$HERE/lib/runtime.sh"
+if blockfire_runtime_resolve; then
+	INSTALL_MODULES="$BLOCKFIRE_INSTALL_MODULES"
+	DSH_BIN="$BLOCKFIRE_DSH_BIN"
+else
+	if [ "$EXPLICIT_RUNTIME" = 1 ]; then
+		echo "test.sh: the explicit runtime override is not a valid DSH install" >&2
+		echo "test.sh: ${BLOCKFIRE_RUNTIME_ERROR:-unknown}" >&2
+		exit 2
+	fi
+	INSTALL_MODULES=""
+	DSH_BIN=""
 fi
-if [ -z "$DSH_BIN" ]; then
-	DSH_BIN="$(command -v dsh 2>/dev/null || true)"
-fi
-[ -n "$DSH_BIN" ] && DSH_BIN="$(readlink -f "$DSH_BIN")"
 
 echo "BLOCKFIRE harness layer — $(basename "$REPO")/harness"
+echo "  dsh runtime:     ${BLOCKFIRE_RUNTIME_VERSION:-<not found>} (${BLOCKFIRE_RUNTIME_SOURCE_LABEL:-unresolved})"
 echo "  install modules: ${INSTALL_MODULES:-<not found>}"
 echo "  dsh binary:      ${DSH_BIN:-<not found>}"
 
@@ -86,6 +101,8 @@ for file in \
 	"$HERE/install.sh" \
 	"$HERE/lib/check_composition.py" \
 	"$HERE/lib/contract_check.mjs" \
+	"$HERE/lib/runtime.mjs" \
+	"$HERE/lib/runtime.sh" \
 	"$HERE/tests/plugins.test.mjs" \
 	"$HERE/ARCHITECTURE.md"; do
 	if [ -f "$file" ]; then ok "${file#"$REPO"/}"; else bad "missing ${file#"$REPO"/}"; fi
@@ -95,9 +112,40 @@ for space in "${SPACES[@]}"; do
 done
 [ "$(ls -1 "$PRESETS/build/skills" 2>/dev/null | wc -l)" -gt 0 ] || bad "BUILD has no skills"
 
+# ── runtime discovery ───────────────────────────────────────────────────────
+# The failure this section exists for: DSH started with `npx @deepseek-ai/dsh`
+# has no `dsh` in a fresh shell's PATH, so anything that resolved the runtime by
+# itself reported "no dsh runtime found" and left the bridge link unset.
+echo "runtime"
+if [ -n "$DSH_BIN" ] && [ -n "$INSTALL_MODULES" ]; then
+	ok "resolver found DSH $BLOCKFIRE_RUNTIME_VERSION via $BLOCKFIRE_RUNTIME_SOURCE_LABEL"
+	if [ -d "$INSTALL_MODULES/@deepseek-ai/dsh" ]; then
+		ok "node_modules holds @deepseek-ai/dsh: $INSTALL_MODULES"
+	else
+		bad "resolved node_modules does not hold @deepseek-ai/dsh: $INSTALL_MODULES"
+	fi
+else
+	bad "no DSH runtime resolved — harness/bin/blockfire cannot boot and bridges cannot link"
+fi
+shared=0
+for file in "$HERE/bin/blockfire" "$HERE/install.sh" "$HERE/test.sh"; do
+	grep -q 'lib/runtime.sh' "$file" && shared=$((shared + 1))
+done
+grep -q 'lib/runtime.mjs' "$HERE/bin/update.mjs" && shared=$((shared + 1))
+if [ "$shared" = 4 ]; then
+	ok "launcher, install, suite and updater share harness/lib/runtime.mjs"
+else
+	bad "only $shared/4 consumers use the shared runtime resolver"
+fi
+if grep -n 'command -v dsh' "$HERE/bin/blockfire" "$HERE/install.sh" "$HERE/bin/update.mjs" 2>/dev/null | grep -q .; then
+	bad "a consumer still resolves dsh on its own instead of using harness/lib/runtime.mjs"
+else
+	ok "no consumer resolves dsh on its own"
+fi
+
 # ── our own code ────────────────────────────────────────────────────────────
 echo "plugins"
-for file in "$PRESETS/build/plugins/capabilities.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js"; do
+for file in "$PRESETS/build/plugins/capabilities.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs"; do
 	if node --check "$file" 2>/dev/null; then ok "${file#"$REPO"/} parses"; else bad "${file#"$REPO"/} has a syntax error"; fi
 done
 if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; then
@@ -275,11 +323,21 @@ done
 
 # ── installed copy in sync ──────────────────────────────────────────────────
 echo "installation"
-if "$HERE/install.sh" --check >/dev/null 2>&1; then
+# When the suite runs against an explicit candidate (update.mjs verify), the
+# installed copies still belong to the LIVE runtime: strip the override for this
+# check, or a staged tree would look like drift in the installation.
+install_check() {
+	if [ "$BLOCKFIRE_RUNTIME_SOURCE" = "override" ]; then
+		env -u BLOCKFIRE_DSH_BIN -u BLOCKFIRE_INSTALL_MODULES "$HERE/install.sh" --check
+	else
+		"$HERE/install.sh" --check
+	fi
+}
+if install_check >/dev/null 2>&1; then
 	ok "installed copies are in sync with the repo"
 else
 	bad "installed copies differ — run harness/install.sh"
-	"$HERE/install.sh" --check 2>&1 | grep -E 'DRIFT|stale|missing' | head -5 | sed 's/^/        /'
+	install_check 2>&1 | grep -E 'DRIFT|stale|missing' | head -5 | sed 's/^/        /'
 fi
 
 # ── update detection (network) ──────────────────────────────────────────────
@@ -354,6 +412,13 @@ YML
 		bad "negative control 4: a missing relative plugin must FAIL"
 	else
 		ok "negative control 4: a missing plugin file FAILS"
+	fi
+	# The resolver must refuse an invalid explicit override instead of silently
+	# resolving some other tree — that is how a verify run can test the wrong DSH.
+	if BLOCKFIRE_DSH_BIN="$tmp/not-a-runtime" node "$HERE/lib/runtime.mjs" >/dev/null 2>&1; then
+		bad "negative control 5: an invalid explicit runtime override must FAIL"
+	else
+		ok "negative control 5: an invalid explicit runtime override FAILS"
 	fi
 	rm -rf "$tmp"
 fi

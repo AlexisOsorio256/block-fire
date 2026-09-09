@@ -37,6 +37,7 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | `web/` | Plugin propio host+cliente: ruta `/blockfire/update` y página *Settings → BLOCKFIRE* | Update Center visible sin tocar el frontend de upstream |
 | `bin/blockfire` | Launcher: política + parche + versión activa | Una sola forma de arrancar el producto |
 | `bin/update.mjs` | Update Center: detectar, stage, verify, activate, rollback | Actualizar sin congelar y sin rezar |
+| `lib/runtime.mjs` | Resolutor único del runtime DSH (binario + `node_modules`) | Un solo lugar decide qué DSH se arranca y contra qué `node_modules` resuelven los puentes |
 | `bin/session-report.mjs` | Métricas por sesión desde el log real | Cache/contexto medidos, no afirmados |
 | `test.sh` + `lib/` + `tests/` | Suite de compatibilidad y controles negativos | Detectar breaking changes de DSH |
 | `contract/contract.json` | La lista explícita de superficies upstream que usamos | Si DSH rompe, se adapta **esta** zona |
@@ -59,6 +60,28 @@ La capa depende exactamente de esto, y `contract/contract.json` lo nombra:
 DSH (`agentPresets`, `tools`, `skills`, `systemPrompt`, `webServer`) son la
 frontera estable y se usan directamente. Lo que sí existe es una lista explícita
 del contrato y una suite que lo comprueba.
+
+## Resolución del runtime
+
+`lib/runtime.mjs` es el único dueño de la pregunta "¿qué DSH y qué
+`node_modules`?". Launcher, `install.sh`, `test.sh` y `update.mjs` lo consumen
+(`lib/runtime.sh` para los shell, import directo para Node) y ningún consumidor
+mira el PATH por su cuenta; `test.sh` falla si alguno lo intenta.
+
+Orden: override explícito (`BLOCKFIRE_DSH_BIN` / `BLOCKFIRE_INSTALL_MODULES`) →
+pin ACTIVE del Update Center → `dsh` en PATH (o en la shell de login) →
+`node_modules` local → global → caché de npx → candidato staged, como último
+recurso para que una máquina cuyo único DSH esté staged siga arrancando. Un
+candidato solo vale si su `node_modules` contiene de verdad `@deepseek-ai/dsh`
+con versión y binario; un override inválido falla en vez de caer en otro árbol
+(si no, `verify` podría probar un runtime distinto del candidato).
+
+Por qué no basta `command -v dsh`: la forma histórica de arrancar DSH aquí es
+`npx @deepseek-ai/dsh web`, y npx inyecta su caché en el PATH solo dentro de ese
+proceso. En una shell nueva no hay `dsh` y todo lo que dependiera del PATH se
+quedaba sin `node_modules` (puentes opcionales rotos) o decía "no dsh runtime
+found". El resolutor devuelve binario y `node_modules` del **mismo** árbol, que
+es lo que necesita Blender MCP para resolver.
 
 ## Estrategia de contexto
 
@@ -115,3 +138,7 @@ quitan o se quedan, nunca se esconden tras el router.
 5. **CREATOR lee las skills de autoría del preset shipped por ruta de instalación**
    (`node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills`). Si
    upstream mueve ese layout, `test.sh` falla y hay que reapuntar una línea.
+6. **El puente puede apuntar al caché de npx.** Es el DSH que existe sin instalar
+   nada, pero es efímero: `npm cache clean` (o el GC de npx) lo borra y el enlace
+   queda roto hasta `install.sh` o hasta `stage` + `activate` de un runtime
+   administrado. `install.sh --check` lo reporta como `BRIDGE LINK missing`.

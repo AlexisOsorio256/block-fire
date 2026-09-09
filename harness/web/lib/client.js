@@ -92,8 +92,13 @@ window.__ModuleLoader__.load({
       const children = [
         h("div", { style: CARD, key: "now" }, [
           h("div", { style: { fontWeight: 600, marginBottom: 6, color: "var(--dsw-alias-label-primary)" }, key: "t" }, "Runtime"),
-          row("installed (dsh on PATH)", status.runningInstall ? status.runningInstall.version : "unknown"),
-          row("launcher pin", active ? `${active.version}` : "none — uses dsh on PATH"),
+          row(
+            "installed (resolver)",
+            status.runningInstall
+              ? `${status.runningInstall.version}${status.runningInstall.sourceLabel ? ` — ${status.runningInstall.sourceLabel}` : ""}`
+              : "unknown",
+          ),
+          row("launcher pin", active ? `${active.version}` : "none — resolver default"),
           row("rollback target", previous ? previous.version : "none"),
           row(
             "staged candidates",

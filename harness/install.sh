@@ -12,6 +12,10 @@
 #
 # Deliberately does NOT touch: the DSH installation, any shipped preset, the
 # user's own profile patch file (`cordis.patch.yml`), or settings.yaml.
+#
+# The DSH runtime it links against is discovered by harness/lib/runtime.mjs —
+# the one resolver shared by the launcher, this script, the suite and the Update
+# Center. Nothing here looks for `dsh` on PATH by itself.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,23 +43,25 @@ esac
 
 [ -d "$PRESETS_SRC" ] || { echo "install.sh: missing $PRESETS_SRC" >&2; exit 1; }
 
+# ── runtime ─────────────────────────────────────────────────────────────────
 # The installed preset must resolve the optional bridges it mounts on demand
-# (Blender MCP) and the host plugin must resolve nothing extra. Find the DSH
-# install's node_modules from the `dsh` on PATH.
-find_install_node_modules() {
-	local bin real dir
-	bin="$(command -v dsh 2>/dev/null || true)"
-	[ -n "$bin" ] || return 1
-	real="$(readlink -f "$bin" 2>/dev/null || echo "$bin")"
-	dir="$(dirname "$real")"
-	while [ "$dir" != "/" ]; do
-		if [ "$(basename "$dir")" = "node_modules" ]; then echo "$dir"; return 0; fi
-		dir="$(dirname "$dir")"
-	done
-	return 1
-}
+# (Blender MCP) and the host plugin must resolve nothing extra, so install needs
+# both the DSH binary and the matching node_modules. Both come from the one
+# shared resolver; looking for `dsh` on PATH is not enough on a machine that
+# starts DSH with `npx @deepseek-ai/dsh`, where dsh exists only inside that npx
+# process.
+# shellcheck source=lib/runtime.sh
+. "$HERE/lib/runtime.sh"
 
-INSTALL_MODULES="$(find_install_node_modules || true)"
+if blockfire_runtime_resolve; then
+	INSTALL_MODULES="$BLOCKFIRE_INSTALL_MODULES"
+	DSH_BIN="$BLOCKFIRE_DSH_BIN"
+	RUNTIME_NOTE="DSH $BLOCKFIRE_RUNTIME_VERSION via $BLOCKFIRE_RUNTIME_SOURCE_LABEL"
+else
+	INSTALL_MODULES=""
+	DSH_BIN=""
+	RUNTIME_NOTE="no DSH runtime found"
+fi
 
 link_state() {
 	local link="$1" expected="$2"
@@ -72,6 +78,17 @@ link_state() {
 
 check_or_diff() {
 	local rc=0 state
+	if [ -z "$INSTALL_MODULES" ]; then
+		echo "DRIFT: no DSH runtime resolved — bridge links cannot be verified"
+		if command -v node >/dev/null 2>&1; then
+			node "$HERE/lib/runtime.mjs" 2>&1 | sed 's/^/        /'
+		else
+			echo "        ${BLOCKFIRE_RUNTIME_ERROR:-node is not on PATH}"
+		fi
+		rc=1
+	else
+		echo "RUNTIME: $RUNTIME_NOTE"
+	fi
 	for space in "${SPACES[@]}"; do
 		local src="$PRESETS_SRC/$space" dest="$DEST_ROOT/$space"
 		if [ ! -d "$dest" ]; then
@@ -137,10 +154,13 @@ for space in "${SPACES[@]}"; do
 	chmod -R u+rwX,go-rwx "$dest"
 	if [ -n "$INSTALL_MODULES" ]; then
 		ln -sfn "$INSTALL_MODULES" "$dest/node_modules"
-		echo "preset $space -> $dest (bridge link ok)"
+		echo "preset $space -> $dest (bridge link -> $INSTALL_MODULES)"
 	else
-		echo "WARNING: could not locate the DSH install's node_modules; optional" >&2
-		echo "capabilities (Blender MCP) will report a resolution error until fixed." >&2
+		echo "WARNING: no DSH runtime found; optional capabilities (Blender MCP) cannot" >&2
+		echo "resolve until one exists. ${BLOCKFIRE_RUNTIME_ERROR:-}" >&2
+		if command -v node >/dev/null 2>&1; then
+			node "$HERE/lib/runtime.mjs" >&2 || true
+		fi
 		echo "preset $space -> $dest"
 	fi
 done
@@ -156,10 +176,9 @@ done
 # The Web profile directory is created by DSH on first boot; let DSH do it
 # rather than reproducing its manifest here.
 if [ ! -d "$PROFILE_DIR" ]; then
-	dsh_bin="$(command -v dsh 2>/dev/null || true)"
-	if [ -n "$dsh_bin" ]; then
+	if [ -n "$DSH_BIN" ]; then
 		echo "initializing the Web profile (dsh --profile web --dump-config)"
-		"$dsh_bin" --profile web --dump-config >/dev/null 2>&1 || true
+		node "$DSH_BIN" --profile web --dump-config >/dev/null 2>&1 || true
 	fi
 fi
 if [ ! -d "$PROFILE_DIR" ]; then
@@ -179,6 +198,7 @@ fi
 cat <<TXT
 
 installed: presets ${SPACES[*]} under $DEST_ROOT
+runtime:   $RUNTIME_NOTE
 
 Spaces (the only two the user chooses):
   BUILD    project work       — harness/bin/blockfire, then pick BUILD

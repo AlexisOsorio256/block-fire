@@ -35,6 +35,25 @@ upstream puro, sin filas BLOCKFIRE.
 Una sesión ya abierta conserva la composición con la que nació; un cambio en un
 preset aplica a la siguiente sesión.
 
+### Runtime
+
+`harness/lib/runtime.mjs` es el **único** resolutor del runtime DSH: lo consumen
+el launcher, `install.sh`, `test.sh` y el Update Center. No hace falta un `dsh`
+global ni `npm i -g`: en una shell nueva resuelve, en este orden, el runtime
+ACTIVE del Update Center, un `dsh` en el PATH (o en la shell de login), un
+`node_modules` local o global, el caché de `npx @deepseek-ai/dsh` y, como último
+recurso, un candidato staged. Devuelve siempre binario **y** `node_modules` del
+mismo árbol, que es lo que resuelven las capacidades opcionales (Blender MCP).
+
+```
+node harness/lib/runtime.mjs            # qué runtime usaría BLOCKFIRE y por qué
+node harness/lib/runtime.mjs --json     # candidatos y diagnóstico
+BLOCKFIRE_DSH_BIN=/ruta/lib/bin.js harness/bin/blockfire    # forzar uno
+```
+
+`command -v dsh` por sí solo no basta: bajo `npx`, `dsh` existe solo dentro de
+ese proceso npx.
+
 ## Los dos espacios
 
 | Espacio | Para qué | Superficie permanente |

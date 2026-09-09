@@ -22,6 +22,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
+import { resolveRuntime } from '../lib/runtime.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
@@ -69,18 +70,16 @@ function fakeCtx() {
   return { ctx, state }
 }
 
-/** A resolvable Cordis plugin module, used as the router's test capability. */
+/**
+ * A resolvable Cordis plugin module, used as the router's test capability. The
+ * DSH install comes from the shared resolver (harness/lib/runtime.mjs); no path
+ * is baked into this test, and no assumption is made about `dsh` being on PATH.
+ */
 function discoverTestPackage() {
-  const roots = [
-    process.env.BLOCKFIRE_DSH_MODULES,
-    join(process.env.DSH_HOME ?? join(process.env.HOME ?? '', '.dsh'), '.agent-presets', 'build', 'node_modules'),
-    '/home/alex/.npm/_npx/1e7f6d9597241db0/node_modules',
-  ].filter((value) => typeof value === 'string' && value !== '')
-  for (const root of roots) {
-    const candidate = join(root, '@deepseek-ai', 'dsh-tool-todo', 'lib', 'index.js')
-    if (existsSync(candidate)) return candidate
-  }
-  return undefined
+  const resolved = resolveRuntime()
+  if (resolved.ok !== true) return undefined
+  const candidate = join(resolved.nodeModules, '@deepseek-ai', 'dsh-tool-todo', 'lib', 'index.js')
+  return existsSync(candidate) ? candidate : undefined
 }
 
 // ── capability router ───────────────────────────────────────────────────────
