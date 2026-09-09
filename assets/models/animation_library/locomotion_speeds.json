@@ -20,7 +20,7 @@
   "speed": 2.6
  },
  "CrouchLeft": {
-  "cycle": 0.6275,
+  "cycle": 0.4453,
   "direction": [
    1,
    0,
@@ -30,7 +30,7 @@
   "speed": 2.6
  },
  "CrouchRight": {
-  "cycle": 0.6275,
+  "cycle": 0.4453,
   "direction": [
    -1,
    0,
@@ -60,7 +60,7 @@
   "speed": 7.0
  },
  "StrafeLeft": {
-  "cycle": 0.4902,
+  "cycle": 0.3431,
   "direction": [
    1,
    0,
@@ -70,7 +70,7 @@
   "speed": 4.8
  },
  "StrafeRight": {
-  "cycle": 0.4902,
+  "cycle": 0.3431,
   "direction": [
    -1,
    0,

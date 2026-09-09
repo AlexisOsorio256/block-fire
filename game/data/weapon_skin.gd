@@ -12,6 +12,15 @@ const TINTS: Dictionary = {
 	"Carbón": Color("#777d91")
 }
 
+## Orden de presentación del armario = orden de TINTS. Añadir un tinte a TINTS
+## añade su tarjeta en el lobby: hay una sola lista de skins en el repo.
+static func skin_names() -> Array[String]:
+	var names: Array[String] = []
+	for key: String in TINTS:
+		names.append(key)
+	return names
+
+
 static func tint_for(skin: String) -> Color:
 	return TINTS.get(skin, Color.WHITE)
 

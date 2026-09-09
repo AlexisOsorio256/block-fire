@@ -13,7 +13,7 @@ extends SceneTree
 
 const CHARACTER := "res://assets/models/skins/operator_adult_lod.glb"
 
-var _clip := "Reload"
+var _clip := "ReloadRifle"
 var _out := "/tmp/anim.png"
 var _times: Array[float] = [0.0, 0.7]
 var _view := "q34"

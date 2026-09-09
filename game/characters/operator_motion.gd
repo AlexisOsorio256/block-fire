@@ -26,6 +26,15 @@ const CROUCH_FWD := "ual/CrouchWalk"
 const CROUCH_BACK := "ual/CrouchBack"
 const CROUCH_SIDE_L := "ual/CrouchLeft"
 const CROUCH_SIDE_R := "ual/CrouchRight"
+## Recarga visual por arma. Arma larga = dos manos y cargador del cinturón;
+## pistola = recorrido corto desde la cadera y pestillo de corredera. Es una
+## tabla de PRESENTACIÓN: no altera tiempos ni munición.
+const RELOAD_CLIP_BY_WEAPON := {
+	"rifle": "ual/ReloadRifle",
+	"shotgun": "ual/ReloadRifle",
+	"smg": "ual/ReloadRifle",
+	"pistol": "ual/ReloadPistol",
+}
 ## Velocidad implícita declarada por el pipeline de Blender. Sin el archivo se
 ## usan los valores de gameplay para no calibrar a ciegas.
 static var DECLARED_SPEEDS: Dictionary = _load_declared_speeds()
@@ -39,6 +48,11 @@ var aiming := false
 var sprint_intent := false
 var reload_remaining := 0.0
 var reload_duration := 1.6
+## El arma activa manda QUÉ lenguaje corporal de recarga se reproduce, pero no
+## decide gameplay: el timer sigue siendo de WeaponController y aquí solo se
+## consume su progreso normalizado. Rifle, escopeta y SMG comparten el lenguaje
+## de arma larga; la pistola tiene el suyo (más corto y centrado).
+var reload_weapon_id := "rifle"
 var switch_remaining := 0.0
 var reload_phase := 0.0
 var reload_weight := 0.0
@@ -77,6 +91,18 @@ var _position_bones: Array[int] = [0]
 static func _load_declared_speeds() -> Dictionary:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/models/animation_library/locomotion_speeds.json"))
 	return parsed if parsed is Dictionary else {}
+
+## Clip visual de recarga que corresponde al arma equipada. Sólo presentación.
+func reload_clip() -> String:
+	return RELOAD_CLIP_BY_WEAPON.get(reload_weapon_id, RELOAD_CLIP_BY_WEAPON["rifle"])
+
+
+## Clase de recarga ("rifle"/"pistol") que consume el recorrido de mano publicado
+## en reload_hand_path.json. Una sola tabla decide clip y recorrido: no pueden
+## desincronizarse.
+func reload_class() -> String:
+	return "pistol" if reload_weapon_id == "pistol" else "rifle"
+
 
 func declared_speed(clip: String) -> float:
 	var short := clip.get_slice("/", 1) if clip.contains("/") else clip
@@ -310,7 +336,7 @@ func evaluate(delta: float) -> void:
 		_blend(_pose, aim, upper_weight, _upper)
 	else:
 		_blend(_pose, idle, upper_weight, _upper)
-	_add_clip("ual/Reload", reload_phase * length_of("ual/Reload"), reload_weight, _upper)
+	_add_clip(reload_clip(), reload_phase * length_of(reload_clip()), reload_weight, _upper)
 	_add_clip("ual/Flinch", _flinch_time, _flinch_strength * (0.35 if action != Action.READY else 0.55), _reaction)
 	var chest := _skel.find_bone("Chest")
 	_pose[chest].basis *= Basis(Vector3.RIGHT, deg_to_rad(2.4 * recoil))

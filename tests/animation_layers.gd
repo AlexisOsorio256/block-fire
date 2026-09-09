@@ -18,6 +18,7 @@ func _measure_slide(v: OperatorVisual, m: OperatorMotion, feet: Array, velocity:
 	for i in 120: v._process(1.0/60.0)
 	var worst := 0.0
 	var samples := 0
+	var worst_frame := -1
 	for i in 180:
 		var before: Array[Vector3] = []
 		for f in feet:
@@ -32,9 +33,11 @@ func _measure_slide(v: OperatorVisual, m: OperatorMotion, feet: Array, velocity:
 			# Sólo cuenta el deslizamiento HORIZONTAL: el pie rodando en el
 			# sitio (talón→punta) sube y baja sin patinar.
 			var planar := Vector2(now.x - before[support].x, now.z - before[support].z)
-			worst = maxf(worst, planar.length() * 60.0)
+			if planar.length() * 60.0 > worst:
+				worst = planar.length() * 60.0
+				worst_frame = i
 			samples += 1
-	return {"worst": worst, "samples": samples}
+	return {"worst": worst, "samples": samples, "frame": worst_frame}
 
 func run() -> void:
 	var v := OperatorVisual.new()
@@ -44,8 +47,20 @@ func run() -> void:
 	v.debug_manual_state = true
 	var m := v.motion
 	check(not v.animation_player.active, "No parallel animation clock")
-	for clip in ["Reload","StrafeLeft","StrafeRight","CrouchWalk","JumpStart","AirLoop","Land","WalkFwd","SprintFwd"]:
+	for clip in ["ReloadRifle","ReloadPistol","StrafeLeft","StrafeRight","CrouchWalk","JumpStart","AirLoop","Land","WalkFwd","SprintFwd"]:
 		check(v.animation_player.has_animation("ual/"+clip), "Required clip "+clip)
+	# --- Recarga por arma: una sola tabla decide clip y recorrido de mano -----
+	check(m.reload_class() == "rifle", "Default reload class is rifle")
+	m.reload_weapon_id = "pistol"
+	check(m.reload_clip() == "ual/ReloadPistol", "Pistol selects its own reload clip")
+	check(m.reload_class() == "pistol", "Pistol selects its own hand path")
+	for weapon_id in ["rifle", "shotgun", "smg"]:
+		m.reload_weapon_id = weapon_id
+		check(m.reload_clip() == "ual/ReloadRifle", weapon_id + " uses the long-gun reload")
+		check(m.reload_class() == "rifle", weapon_id + " uses the long-gun hand path")
+	m.reload_weapon_id = "rifle"
+	check(OperatorVisual.reload_hand_offset(0.34, "rifle") != OperatorVisual.reload_hand_offset(0.34, "pistol"),
+		"Rifle and pistol hand travels differ at the pouch beat")
 	# --- Contrato de velocidad declarada (una sola verdad) -------------------
 	check(not OperatorMotion.DECLARED_SPEEDS.is_empty(), "locomotion_speeds.json is loaded")
 	check(absf(m.declared_speed("ual/WalkFwd") - 4.8) < 0.01, "WalkFwd declares gameplay walk 4.8")
@@ -138,7 +153,7 @@ func run() -> void:
 	var slide_sprint := _measure_slide(v, m, feet, Vector3(0,0,-7.0), true)
 	check(slide_sprint.worst < 1.20, "No horizontal foot slide at sprint 7.0 (worst %.2f m/s)" % slide_sprint.worst)
 	var slide_side := _measure_slide(v, m, feet, Vector3(-4.8,0,0), false)
-	print("FOOT_SLIDE walk=%.2f sprint=%.2f strafe=%.2f m/s (peor fotograma de aterrizaje)" % [slide_walk.worst, slide_sprint.worst, slide_side.worst])
+	print("FOOT_SLIDE walk=%.2f (f%d) sprint=%.2f (f%d) strafe=%.2f (f%d) m/s (peor fotograma de aterrizaje)" % [slide_walk.worst, slide_walk.frame, slide_sprint.worst, slide_sprint.frame, slide_side.worst, slide_side.frame])
 	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
 	# Numerical reach and singularity guard across all real weapon configurations.
 	for weapon in OperatorVisual.WEAPON_IDS:

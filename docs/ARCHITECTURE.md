@@ -1,0 +1,88 @@
+# BLOCKFIRE — ARQUITECTURA
+
+Mapa de dueños y contratos. Si algo aquí contradice el código, **el código
+manda**: corrige este documento en el mismo commit. Para el estado operativo
+del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
+`PROJECT_RULES.md`.
+
+## Contratos que no se negocian
+
+| Contrato | Dueño | Qué NO puede hacer la animación |
+|---|---|---|
+| Desplazamiento | `Player` / `Bot` (`CharacterBody3D`) | Decidir posición o velocidad. La animación **nunca** mueve al actor. |
+| Gameplay de arma | `WeaponController` | Decidir munición, `reload_timer` o si la recarga termina. |
+| Pose del personaje | `OperatorMotion` | Existir un segundo reloj de animación. `AnimationPlayer` es biblioteca/visor, nunca reloj. |
+| Montaje de arma + IK | `OperatorVisual` | Escribir la pose antes de componerla. El orden es: composición → mirada → arma → IK → manos. |
+| HUD | `HUD` (observador) | Decidir gameplay. Solo lee señales. |
+| Velocidad implícita del clip | `tools/make_anim_clips.py` → `locomotion_speeds.json` | Inventar una segunda tabla de velocidades. Gameplay declara la clase (`sprint_intent`) y la velocidad real; el clip se reproduce a `real / implícita`. |
+
+## Mapa de dueños
+
+| Sistema | Dueño (archivo) | Entradas | Salidas / fuente de verdad | Cómo se prueba | No modificar para |
+|---|---|---|---|---|---|
+| App | `game/app.gd`, `game/app.tscn` | flags `--qa-*`, señales de lobby/match | pantalla actual, tema | `tools/test.sh`, `--qa-ffa` | gameplay, UI |
+| Match | `game/match/match.gd` + `*_rules.gd` | `configure()`, señales HUD/player | rondas, economía, respawn; estado en `match.gd` | `tools/test.sh` (smoke) | daño, IA, layout HUD |
+| Player | `game/player/player.gd` | InputMap, `MobileControls`, SettingsStore | salud, velocidades 4.8/7.0/2.6, cámara y FOV | `tools/test.sh`, `qa_touch`, `probe-aim` | stats de arma, clips, texto HUD |
+| Bot | `game/bots/bot.gd` + `bot_role.gd` | `match_context`, `NavigationAgent3D` | navegación y disparo; números por rol | `tools/test.sh`, `--qa-ffa` | spawns, daño, stats de arma |
+| WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh`, `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
+| OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | pose final del `Skeleton3D`, montaje, IK, armario; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `bf_char_lab`, `probe-ik-quality` | velocidad de gameplay, autoría de clips |
+| OperatorMotion | `game/characters/operator_motion.gd` | velocidad local, intención de sprint, timers del arma | pose compuesta, pesos de capa, elección de clip | `tools/test.sh` (`animation_layers`), `qa_motion` | constantes de velocidad, geometría del clip |
+| Cosmetics | `game/data/cosmetic_catalog.gd` + `settings_store.gd` + `operator_visual.gd` | selección del lobby | módulos visibles; datos en el catálogo | `tools/test.sh`, `probe-wardrobe` | armas |
+| HUD | `game/ui/hud.gd` | señales de match/player/weapon | paneles, editor de controles | `qa_hud_lab`, `qa_shot`, `tools/test.sh` | persistencia, reglas de match |
+| MobileControls | `game/ui/mobile_controls.gd` + `control_editor.gd` | `InputEventScreenTouch/Drag` | vector de movimiento, look, FUEGO/ADS; layout en SettingsStore | `qa_touch`, `tools/test.sh` | matemática de cámara del player |
+| Settings | `game/settings_store.gd` (único autoload) | dos UIs escriben | `values`, layout, loadout | `tools/test.sh` | layout de HUD/lobby |
+| Arena | `game/world/arena.gd` | `build()` del match | geometría, spawns, navegación | `tools/test.sh`, `qa_perf`, `--qa-ffa` | selección de spawn, pathing de bots |
+| CombatFX | `game/fx/combat_fx.gd` | `muzzle_burst/tracer/impact/shell_eject` | partículas y decals con pool | `qa_fx_lab` | posición de boca (eso es `muzzle_marker`) |
+| CameraFX | `game/fx/camera_fx.gd` | `CameraFX.kick(...)` | trauma y FOV punch | `qa_shot` (visual) | posición/pivote de cámara (eso es `player.gd`) |
+| Audio | **sin dueño único** | llamadas ad hoc | buses en `default_bus_layout.tres`, volúmenes en SettingsStore | sin suite (`SIN VERIFICAR`) | timing de gameplay |
+
+## Dónde se configura cada cosa
+
+- **Rifle / pistola / escopeta / SMG** (stats, coste, munición, `reload_time`):
+  `game/data/weapons/<id>.tres`. Presentación del arma (modelo, montaje,
+  agarre, boca, retroceso del cuerpo): `OperatorVisual.WEAPON_CONFIG`.
+- **Recarga visual**: clip por arma en `OperatorMotion.RELOAD_CLIP_BY_WEAPON`,
+  recorrido de la mano en `assets/models/animation_library/reload_hand_path.json`
+  (generado por `tools/make_anim_clips.py`).
+- **Velocidades de locomotion**: `game/player/player.gd` (gameplay) y
+  `tools/make_anim_clips.py` (velocidad implícita del clip). El contrato está
+  en `tests/animation_layers.gd`.
+- **Skins de arma**: `game/data/weapon_skin.gd` (`TINTS`). El lobby deriva su
+  lista con `WeaponSkin.skin_names()`; no la dupliques.
+
+## Fuentes vs generado
+
+| Clase | Ruta | Regla |
+|---|---|---|
+| SOURCE (arte) | `assets/animation_sources/*.blend` | Se edita en **Blender interactivo** y se guarda. `ReloadRifle` y `ReloadPistol` están en `CRAFT_LOCKED`: `--rebuild` se niega a tocarlos. |
+| RUNTIME (export) | `assets/models/animation_library/*.glb` | **No se edita a mano.** Sale de `blender --background --python tools/make_anim_clips.py` (modo export). |
+| GENERATED DATA | `locomotion_speeds.json`, `reload_hand_path.json` | Los escribe el mismo pipeline. No los edites. |
+| MODELO ACTIVO | `assets/models/skins/operator_adult_lod.glb` | Es la malla que usa el juego (`operator_visual.gd`). |
+| QA | `captures/`, `tools/qa_*`, `tools/probe-*` | Salidas ignoradas por git; herramientas versionadas. |
+| CACHÉ | `.godot/`, `*.import`, `*.uid` | Nunca a mano. |
+
+## Descubrimiento de tests
+
+| Si tocas… | Ejecuta |
+|---|---|
+| animación / clips / IK | `tools/bf test` + `tools/bf qa motion` + `tools/probe-reload-hand.gd` |
+| controles táctiles / UI | `tools/bf qa touch` + `tools/bf test` |
+| armas | `tools/bf test` + `tools/bf qa fx` |
+| mundo / arena | `tools/bf test` + `tools/bf qa perf` |
+| HUD / lobby | `tools/bf qa hud` + `tools/bf test` |
+| antes de publicar | `tools/bf test` + `tools/bf qa touch` + `tools/bf build android` |
+
+La suite (`tests/smoke.gd`, `tests/animation_layers.gd`) es la puerta; los
+`tools/qa_*` son las comprobaciones de experiencia y `tools/probe-*` son
+mediciones de diagnóstico. Punto de entrada único: `tools/bf`.
+
+## Recetas
+
+- **Editar una recarga**: abre `assets/animation_sources/ReloadRifle.blend` o
+  `ReloadPistol.blend` en Blender, añade un cuerpo de visualización con
+  `tools/bf_blender_body.py`, mueve claves en el Graph Editor, guarda y exporta
+  con `blender --background --python tools/make_anim_clips.py -- ReloadRifle`.
+  No uses `--rebuild`.
+- **Ver la pose real**: `tools/bf qa motion --mode=reload --weapon=pistol`.
+- **Medir el recorrido de la mano**: `tools/probe-reload-hand.gd` (imprime
+  cuánto baja la mano por clase de arma).

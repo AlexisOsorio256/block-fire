@@ -104,16 +104,26 @@ func _init() -> void:
 func _inject_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 	var ev := InputEventScreenTouch.new()
 	ev.index = pointer
-	ev.position = position
+	ev.position = _to_window(position)
 	ev.pressed = pressed
 	Input.parse_input_event(ev)
 
 func _inject_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 	var ev := InputEventScreenDrag.new()
 	ev.index = pointer
-	ev.position = position
-	ev.relative = relative
+	ev.position = _to_window(position)
+	ev.relative = root.get_final_transform().basis_xform(relative)
 	Input.parse_input_event(ev)
+
+func _to_window(point: Vector2) -> Vector2:
+	# _button_center()/_move_center() devuelven coordenadas de VIEWPORT (lógicas),
+	# pero Input.parse_input_event entrega coordenadas de VENTANA. Con stretch
+	# canvas_items/expand ambas difieren por el final transform de la raíz: en
+	# --headless la ventana dummy es 64x64 y el factor es 1/20, así que sin esta
+	# conversión cada tap caía fuera de la pantalla lógica y los 9 checks de
+	# FUEGO/ADS fallaban siendo el producto correcto. Convertir aquí mantiene el
+	# test independiente del tamaño de ventana.
+	return root.get_final_transform() * point
 
 func _frames(count: int) -> void:
 	for i: int in range(count):

@@ -1,0 +1,154 @@
+#!/bin/bash
+# BLOCKFIRE — punto de entrada único del tooling. No reimplementa nada: solo
+# llama a las herramientas que ya existen. Si un comando falla, imprime la línea
+# exacta que falló para que puedas ejecutarla a mano.
+#
+#   tools/bf doctor                 diagnóstico rápido (sin suites largas)
+#   tools/bf test                   suite completa (smoke + animation_layers)
+#   tools/bf qa motion|touch|perf|fx|hud|anim|shot
+#   tools/bf build android          APK de debug
+#   tools/bf blender <clip...>      exporta sources .blend a GLB (modo export)
+#   tools/bf body <Clip>            añade cuerpo de visualización a un source
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT" || exit 1
+
+GODOT_BIN="${BLOCKFIRE_GODOT:-}"
+find_godot() {
+	if [ -n "$GODOT_BIN" ] && [ -x "$GODOT_BIN" ]; then echo "$GODOT_BIN"; return 0; fi
+	for candidate in "$(command -v godot 2>/dev/null || true)" "$(command -v godot4 2>/dev/null || true)"; do
+		if [ -n "$candidate" ] && [ -x "$candidate" ]; then echo "$candidate"; return 0; fi
+	done
+	return 1
+}
+GODOT_BIN="$(find_godot || true)"
+
+ADB_BIN="${BLOCKFIRE_ADB:-}"
+if [ -z "$ADB_BIN" ]; then
+	for candidate in "$(command -v adb 2>/dev/null || true)" \
+			"$HOME/.local/share/blockfire-tools/android-sdk/platform-tools/adb" \
+			"${ANDROID_HOME:-}/platform-tools/adb" "${ANDROID_SDK_ROOT:-}/platform-tools/adb"; do
+		if [ -n "$candidate" ] && [ -x "$candidate" ]; then ADB_BIN="$candidate"; break; fi
+	done
+fi
+
+die() { echo "bf: $*" >&2; exit 1; }
+need_godot() {
+	[ -n "$GODOT_BIN" ] || die "Godot no encontrado. Define BLOCKFIRE_GODOT=/ruta/a/godot"
+}
+
+run_game_script() { # $1 = res://script, resto = args del script
+	local script="$1"; shift
+	need_godot
+	"$GODOT_BIN" --path "$ROOT" --script "$script" -- "$@"
+}
+
+usage() {
+	sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+cmd_doctor() {
+	local head godot_v blender_v adb_state mcp
+	head="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+	echo "BLOCKFIRE"
+	echo "  HEAD              ${head}$(git diff --quiet 2>/dev/null && echo '' || echo ' (+cambios sin commit)')"
+	if [ -n "$GODOT_BIN" ]; then
+		godot_v="$("$GODOT_BIN" --version 2>/dev/null | head -1)"
+		echo "  Godot             OK  $GODOT_BIN ($godot_v)"
+	else
+		echo "  Godot             NO  define BLOCKFIRE_GODOT"
+	fi
+	if command -v blender >/dev/null 2>&1; then
+		blender_v="$(blender --version 2>/dev/null | head -1)"
+		echo "  Blender           OK  $blender_v"
+	else
+		echo "  Blender           NO"
+	fi
+	# blender-mcp: un ping barato al socket del addon en la GUI abierta.
+	if command -v python3 >/dev/null 2>&1; then
+		mcp="$(python3 - <<'PY' 2>/dev/null
+import json, socket
+try:
+    with socket.create_connection(("127.0.0.1", 9876), timeout=1.0) as s:
+        s.sendall(json.dumps({"type": "ping", "params": {}}).encode())
+        print("OK" if b"success" in s.recv(4096) else "NO")
+except Exception:
+    print("NO")
+PY
+)"
+		echo "  Blender MCP       ${mcp:-NO}  (GUI interactiva en 127.0.0.1:9876)"
+	fi
+	if [ -n "$ADB_BIN" ]; then
+		adb_state="$("$ADB_BIN" devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}' | paste -sd, -)"
+		echo "  ADB device        ${adb_state:-ninguno}"
+	else
+		echo "  ADB device        adb no encontrado"
+	fi
+	echo
+	echo "  Personaje activo  assets/models/skins/operator_adult_lod.glb"
+	echo "  Armas activas     $(grep -h '^id = ' game/data/weapons/*.tres | cut -d'"' -f2 | paste -sd, -)"
+	echo "  Source animación  assets/animation_sources/*.blend ($(ls assets/animation_sources/*.blend 2>/dev/null | wc -l) clips)"
+	echo "  Runtime clips     assets/models/animation_library/*.glb ($(ls assets/models/animation_library/*.glb 2>/dev/null | wc -l))"
+	echo
+	local ok=OK
+	[ -f tests/smoke.gd ] && echo "  SMOKE             OK" || { echo "  SMOKE             NO"; ok=NO; }
+	[ -f tools/qa_motion.gd ] && echo "  MOTION QA         OK" || { echo "  MOTION QA         NO"; ok=NO; }
+	[ -f tools/qa_touch.gd ] && echo "  TOUCH QA          OK" || { echo "  TOUCH QA          NO"; ok=NO; }
+	echo "  Tests             tools/bf test"
+	echo "  Estado operativo  docs/CURRENT_STATE.md"
+	[ "$ok" = OK ] || return 1
+}
+
+cmd_test() {
+	need_godot
+	BLOCKFIRE_GODOT="$GODOT_BIN" tools/test.sh
+}
+
+cmd_qa() {
+	local what="${1:-}"; shift || true
+	case "$what" in
+		motion) run_game_script res://tools/qa_motion.gd "$@" ;;
+		touch)  need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/qa_touch.gd ;;
+		perf)   run_game_script res://tools/qa_perf.gd "$@" ;;
+		fx)     run_game_script res://tools/qa_fx_lab.gd "$@" ;;
+		hud)    run_game_script res://tools/qa_hud_lab.gd "$@" ;;
+		anim)   run_game_script res://tools/qa_anim_lab.gd "$@" ;;
+		shot)   run_game_script res://tools/qa_shot.gd "$@" ;;
+		slide)  run_game_script res://tools/probe-slide.gd "$@" ;;
+		ik)     need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-ik-quality.gd ;;
+		reload) need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-reload-hand.gd ;;
+		*) die "qa desconocido: '${what:-}' (motion|touch|perf|fx|hud|anim|shot|slide|ik|reload)" ;;
+	esac
+}
+
+cmd_build() {
+	case "${1:-}" in
+		android) BLOCKFIRE_GODOT="$GODOT_BIN" tools/build-android.sh ;;
+		*) die "build desconocido: '${1:-}' (android)" ;;
+	esac
+}
+
+cmd_blender() {
+	command -v blender >/dev/null 2>&1 || die "Blender no instalado"
+	blender --background --python tools/make_anim_clips.py -- "$@"
+}
+
+cmd_body() {
+	command -v blender >/dev/null 2>&1 || die "Blender no instalado"
+	local clip="${1:-}"; shift || true
+	[ -n "$clip" ] || die "uso: tools/bf body <Clip>"
+	[ -f "assets/animation_sources/$clip.blend" ] || die "no existe assets/animation_sources/$clip.blend"
+	blender "assets/animation_sources/$clip.blend" --python tools/bf_blender_body.py -- "$@"
+}
+
+case "${1:-}" in
+	doctor) shift; cmd_doctor "$@" ;;
+	test)   shift; cmd_test "$@" ;;
+	qa)     shift; cmd_qa "$@" ;;
+	build)  shift; cmd_build "$@" ;;
+	blender) shift; cmd_blender "$@" ;;
+	body)   shift; cmd_body "$@" ;;
+	""|-h|--help|help) usage ;;
+	*) die "comando desconocido: '$1' (usa tools/bf help)" ;;
+esac

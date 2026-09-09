@@ -57,6 +57,16 @@ func _test_weapon_definitions() -> void:
 	_check(BotRole.make("entry").preferred_weapon_id == "smg", "entry role selects SMG")
 	_check(BotRole.make("support").preferred_weapon_id == "rifle", "support role selects rifle")
 	_check(BotRole.make("anchor").preferred_weapon_id == "rifle", "anchor role selects rifle")
+	# Contrato de presentación: cada arma de gameplay tiene UN perfil visual vivo
+	# en OperatorVisual.WEAPON_CONFIG y no hay perfiles huérfanos. Este dato estaba
+	# duplicado (muerto) en WeaponDefinition, que invitaba a editar el archivo
+	# equivocado.
+	for definition: WeaponDefinition in WeaponController.DEFINITIONS:
+		_check(OperatorVisual.WEAPON_CONFIG.has(definition.id), definition.id + " has a live visual profile")
+	_check(OperatorVisual.WEAPON_CONFIG.size() == WeaponController.DEFINITIONS.size(), "no orphan weapon visual profiles")
+	# El armario del lobby deriva de la tabla de tintes: una sola lista de skins.
+	_check(WeaponSkin.skin_names().size() == WeaponSkin.TINTS.size() and WeaponSkin.skin_names()[0] == "Estándar",
+		"skin list derives from the tint table")
 
 func _test_squad_rules() -> void:
 	_check(SquadRules.buy_duration(1) == 10.0, "first squad buy phase")

@@ -36,7 +36,11 @@ SOURCE_DIR = os.path.join(ROOT, 'assets/animation_sources')
 FPS = 60
 NAMES = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
          'CrouchIdle', 'CrouchWalk', 'CrouchLeft', 'CrouchRight', 'CrouchBack',
-         'Reload', 'JumpStart', 'AirLoop', 'Land', 'Flinch']
+         'ReloadRifle', 'ReloadPistol', 'JumpStart', 'AirLoop', 'Land', 'Flinch']
+# Hand-authored sources. --rebuild REFUSES to touch these: regenerating them
+# from the formulas below would silently destroy the interactive Blender craft.
+# Use the default (export) mode instead, or pass --force-rebuild on purpose.
+CRAFT_LOCKED = {'ReloadRifle', 'ReloadPistol'}
 LEG_REACH = 0.433 + 0.433  # UpperLeg + LowerLeg, measured from the rest skeleton
 ANKLE_OFFSET = Vector((0.0, -0.0039, 0.078))  # ankle above the contact point
 GROUND_Z = 0.0228  # Foot bone head z when the foot is flat on the floor
@@ -59,34 +63,51 @@ GAIT = {
     'BackWalk': dict(speed=4.8, duty=0.33, front=0.46, back=0.36, lift=0.130,
                      bob=0.018, lean=5.0, yaw=6.0, sway=0.022, pitch=(-6, 4, 10, 18, -8, -6),
                      dir=(0, 1, 0), crouch=0.0, arms=0.8),
-    'StrafeLeft': dict(speed=4.8, duty=0.34, front=0.40, back=0.40, lift=0.130,
-                       bob=0.018, lean=4.0, yaw=5.0, sway=0.010, pitch=(-6, 2, 8, 20, -8, -6),
-                       dir=(1, 0, 0), crouch=0.0, arms=0.6),
-    'StrafeRight': dict(speed=4.8, duty=0.34, front=0.40, back=0.40, lift=0.130,
-                        bob=0.018, lean=4.0, yaw=5.0, sway=0.010, pitch=(-6, 2, 8, 20, -8, -6),
-                        dir=(-1, 0, 0), crouch=0.0, arms=0.6),
+    # Strafe: a lateral gait with alternating support can only avoid scissoring
+    # the legs if the per-step sweep (speed * duty * cycle) stays near the stance
+    # width. At 4.8 m/s that means a SHORT excursion and a fast cadence: the
+    # declared speed is untouched, the cycle shrinks and the stance widens.
+    'StrafeLeft': dict(speed=4.8, duty=0.34, front=0.28, back=0.28, lift=0.100,
+                       bob=0.018, lean=4.0, yaw=5.0, sway=0.010, stance=0.070,
+                       pitch=(-6, 2, 8, 20, -8, -6), dir=(1, 0, 0), crouch=0.0, arms=0.6),
+    'StrafeRight': dict(speed=4.8, duty=0.34, front=0.28, back=0.28, lift=0.100,
+                        bob=0.018, lean=4.0, yaw=5.0, sway=0.010, stance=0.070,
+                        pitch=(-6, 2, 8, 20, -8, -6), dir=(-1, 0, 0), crouch=0.0, arms=0.6),
     'CrouchWalk': dict(speed=2.6, duty=0.38, front=0.26, back=0.36, lift=0.095,
                        bob=0.012, lean=15.0, yaw=5.0, sway=0.016, pitch=(-5, 2, 6, 14, -6, -5),
                        dir=(0, -1, 0), crouch=0.30, arms=0.5),
     'CrouchBack': dict(speed=2.6, duty=0.38, front=0.36, back=0.26, lift=0.095,
                        bob=0.012, lean=13.0, yaw=5.0, sway=0.016, pitch=(-4, 2, 6, 12, -6, -4),
                        dir=(0, 1, 0), crouch=0.30, arms=0.5),
-    'CrouchLeft': dict(speed=2.6, duty=0.38, front=0.31, back=0.31, lift=0.095,
-                       bob=0.012, lean=14.0, yaw=3.0, sway=0.008, pitch=(-4, 2, 6, 12, -6, -4),
-                       dir=(1, 0, 0), crouch=0.30, arms=0.5),
-    'CrouchRight': dict(speed=2.6, duty=0.38, front=0.31, back=0.31, lift=0.095,
-                        bob=0.012, lean=14.0, yaw=3.0, sway=0.008, pitch=(-4, 2, 6, 12, -6, -4),
-                        dir=(-1, 0, 0), crouch=0.30, arms=0.5),
+    'CrouchLeft': dict(speed=2.6, duty=0.38, front=0.22, back=0.22, lift=0.075,
+                       bob=0.012, lean=14.0, yaw=3.0, sway=0.008, stance=0.055,
+                       pitch=(-4, 2, 6, 12, -6, -4), dir=(1, 0, 0), crouch=0.30, arms=0.5),
+    'CrouchRight': dict(speed=2.6, duty=0.38, front=0.22, back=0.22, lift=0.075,
+                        bob=0.012, lean=14.0, yaw=3.0, sway=0.008, stance=0.055,
+                        pitch=(-4, 2, 6, 12, -6, -4), dir=(-1, 0, 0), crouch=0.30, arms=0.5),
 }
 
 # Clips whose first and last frame must be identical (phase loop).
 LOOPING = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
            'CrouchIdle', 'CrouchWalk', 'CrouchLeft', 'CrouchRight', 'CrouchBack', 'AirLoop']
 
-PALM_KEYS = [
-    [0., [0., 0., 0.]], [.10, [0., -.005, -.01]], [.23, [.035, -.16, -.17]],
-    [.40, [.14, -.32, -.20]], [.56, [.07, -.18, -.19]], [.65, [.02, -.10, -.18]],
-    [.72, [.025, -.12, -.17]], [.88, [-.005, .012, -.01]], [1., [0., 0., 0.]]]
+# Palm target offset per weapon class, in weapon-mount space. The runtime IK
+# consumes these; a rifle magazine comes from the belt (long travel), a pistol
+# magazine from the hip line (short travel) plus a slide-stop flick on the way
+# back. Keys are (normalised phase, [x, y, z] metres).
+PALM_PATHS = {
+    'rifle': [
+        [0.00, [0.0, 0.0, 0.0]], [0.08, [0.005, -0.02, -0.02]], [0.22, [0.05, -0.18, -0.15]],
+        [0.34, [0.13, -0.30, -0.19]], [0.40, [0.13, -0.30, -0.19]], [0.52, [0.06, -0.16, -0.18]],
+        [0.60, [0.02, -0.09, -0.17]], [0.64, [0.02, -0.11, -0.165]], [0.70, [0.03, -0.12, -0.16]],
+        [0.74, [0.02, -0.08, -0.16]], [0.88, [-0.005, 0.012, -0.01]], [1.00, [0.0, 0.0, 0.0]]],
+    'pistol': [
+        [0.00, [0.0, 0.0, 0.0]], [0.07, [0.0, -0.01, -0.03]], [0.20, [0.03, -0.10, -0.09]],
+        [0.32, [0.08, -0.19, -0.12]], [0.38, [0.08, -0.19, -0.12]], [0.50, [0.03, -0.08, -0.11]],
+        [0.60, [0.015, -0.05, -0.10]], [0.66, [0.02, -0.06, -0.095]], [0.72, [0.03, -0.10, -0.06]],
+        [0.78, [0.01, -0.04, -0.04]], [0.90, [0.0, -0.005, -0.01]], [1.00, [0.0, 0.0, 0.0]]],
+}
+PALM_KEYS = PALM_PATHS['rifle']
 
 REPORT = []
 
@@ -264,14 +285,24 @@ def foot_track(q, spec, frames):
         u = (q - duty) / (1.0 - duty)
         # Heel recovery, knee drive, reach: slow out of toe-off, fast through
         # mid-swing, decelerating into contact.
-        # Hermite con pendiente final acorde a la velocidad de apoyo: el pie
-        # aterriza casi quieto respecto al suelo (sin derrapar) y sin escalón.
+        # Hermite con pendiente final EXACTA a la velocidad de apoyo: el pie
+        # llega al suelo moviéndose ya a la velocidad con la que va a quedar
+        # clavado, así el fotograma de aterrizaje no da un salto de velocidad
+        # (era el peor derrape del walk: 1.05 m/s con el factor 0.7 anterior).
         swing_time = (1.0 - duty) * (frames / FPS)
-        slope = -0.7 * speed * swing_time / max(excursion, 1e-6)
+        slope = -speed * swing_time / max(excursion, 1e-6)
         h10 = u * u * u - 2.0 * u * u + u
         h11 = u * u * u - u * u
         h01 = -2.0 * u * u * u + 3.0 * u * u
         along = (front - excursion) + excursion * (h01 + slope * (h10 + h11))
+        # Aterrizaje C1 también en DISCRETO: en el último 20% del vuelo el pie
+        # se pega a la recta exacta de apoyo, así el delta del fotograma de
+        # contacto es idéntico al de la fase apoyada (antes quedaba un escalón
+        # de 1 m/s justo al tocar el suelo).
+        if u > 0.8:
+            blend = ease((u - 0.8) / 0.2)
+            landing = front + speed * (1.0 - u) * (1.0 - duty) * cycle
+            along = along * (1.0 - blend) + landing * blend
         lift = 0.055 * (1.0 - u) ** 2.5 + spec['lift'] * math.sin(math.pi * u) ** 1.15
         if u < 0.45:
             pitch = spec['pitch'][3] + (spec['pitch'][4] - spec['pitch'][3]) * ease(u / 0.45)
@@ -334,6 +365,9 @@ def gait(name, arm, controls):
     for side in ('L', 'R'):
         delay = 0.0 if side == 'L' else 0.5
         rest = arm.data.bones['Foot.' + side].head_local.copy()
+        # A wider base stance is what buys room for a lateral step without the
+        # legs crossing. It only applies to lateral clips (spec['stance']).
+        rest += Vector((1.0 if side == 'L' else -1.0, 0.0, 0.0)) * spec.get('stance', 0.0)
         rows = []
         flags = []
         for frame in range(frames + 1):
@@ -525,6 +559,8 @@ def air(name, arm, controls):
 # Reload / Flinch: the body has to sell the action, not just the hand
 # --------------------------------------------------------------------------- #
 def upper(arm, name):
+    # ReloadRifle/ReloadPistol are CRAFT_LOCKED: this formula path only exists
+    # for a forced --force-rebuild, never for the normal pipeline.
     if name == 'Flinch':
         frames = int(0.40 * FPS)
         for frame in range(frames + 1):
@@ -537,8 +573,9 @@ def upper(arm, name):
             rot(arm, 'Shoulder.L', [(frame, (0.0, -2.0 * hit, -2.0 * hit))])
             rot(arm, 'Shoulder.R', [(frame, (0.0, -1.5 * hit, 1.5 * hit))])
         return frames
-    # Reload: 1.8 s of torso, shoulder and gaze weight, timed to the palm path.
-    frames = int(1.8 * FPS)
+    # Reload: torso, shoulder and gaze weight, timed to the palm path. A pistol
+    # reload is shorter and much more centred than a rifle reload.
+    frames = int((1.4 if name == 'ReloadPistol' else 1.8) * FPS)
 
     def track(table, t):
         for (a, av), (b, bv) in zip(table, table[1:]):
@@ -618,7 +655,7 @@ def verify(name, arm, frames, expected_speed=None, planted_map=None):
 def build(name, export=True):
     arm, proxy = setup()
     controls = leg_controls(arm)
-    if name == 'Reload' or name == 'Flinch':
+    if name in ('ReloadRifle', 'ReloadPistol', 'Reload', 'Flinch'):
         frames = upper(arm, name)
         speed = None
         planted = None
@@ -682,7 +719,13 @@ def export_source(name, arm=None, proxy=None):
     for other in list(bpy.data.actions):
         if not arm.animation_data or other != arm.animation_data.action:
             bpy.data.actions.remove(other)
-    bpy.ops.object.select_all(action='DESELECT')
+    # A hand-authored source may be saved in Pose Mode, where the object-level
+    # select_all operator has no valid poll in --background. Select directly.
+    active = bpy.context.view_layer.objects.active
+    if active is not None and active.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
     arm.select_set(True)
     if proxy is not None:
         proxy.select_set(True)
@@ -708,13 +751,14 @@ def write_speed_manifest():
     with open(os.path.join(OUT_DIR, 'locomotion_speeds.json'), 'w') as handle:
         json.dump(payload, handle, indent=1, sort_keys=True)
     with open(os.path.join(OUT_DIR, 'reload_hand_path.json'), 'w') as handle:
-        json.dump(PALM_KEYS, handle)
+        json.dump(PALM_PATHS, handle)
     print('BLOCKFIRE_SPEEDS', json.dumps(payload, sort_keys=True), flush=True)
 
 
 def main(argv):
     os.makedirs(OUT_DIR, exist_ok=True)
     rebuild = '--rebuild' in argv
+    force = '--force-rebuild' in argv
     verify_only = '--verify' in argv
     names = [a for a in argv if not a.startswith('--')]
     write_speed_manifest()
@@ -728,6 +772,11 @@ def main(argv):
             arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')
             frames = int(bpy.context.scene.frame_end)
             verify(name, arm, frames, GAIT.get(name, {}).get('speed'))
+        elif rebuild and name in CRAFT_LOCKED and not force:
+            raise SystemExit(
+                f'refusing --rebuild {name}: it is hand-authored in Blender '
+                f'(CRAFT_LOCKED). Export it instead, or pass --force-rebuild '
+                f'to intentionally replace the craft.')
         elif rebuild or not os.path.exists(source):
             build(name)
         else:

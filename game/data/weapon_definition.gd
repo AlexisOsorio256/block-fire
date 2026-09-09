@@ -18,18 +18,9 @@ extends Resource
 @export var recoil: float = 0.025
 @export var automatic: bool = false
 @export var pellets: int = 1
-@export_file("*.glb", "*.tscn") var viewmodel_scene: String = ""
-@export var shot_sound: AudioStream
-
-# First-person pose calibration (controller space, degrees for rotation).
-# Defaults match the legacy shared pose so old resources keep working.
-@export_group("First person pose")
-@export var hip_position: Vector3 = Vector3(0.28, -0.22, -0.46)
-@export var hip_rotation: Vector3 = Vector3(0.0, 180.0, 0.0)
-@export var ads_position: Vector3 = Vector3(0.12, -0.16, -0.56)
-@export var ads_rotation: Vector3 = Vector3(0.0, 180.0, 0.0)
-# Muzzle tip in viewmodel/model space: +Z points out of the barrel.
-@export var muzzle_offset: Vector3 = Vector3(0.0, 0.05, 0.4)
+## Escala del fogonazo. El resto de la presentación del arma (modelo, montaje,
+## agarre, boca) vive en OperatorVisual.WEAPON_CONFIG: aquí solo quedan los
+## números que deciden GAMEPLAY y este único valor de FX que sí se consume.
 @export var muzzle_flash_scale: float = 1.0
 
 func clone() -> WeaponDefinition:

@@ -29,7 +29,8 @@ const ANIMATION_SOURCE_PATHS := [
 const EXTRA_CLIP_PATHS := [
 	"res://assets/models/animation_library/WalkFwd.glb",
 	"res://assets/models/animation_library/SprintFwd.glb",
-	"res://assets/models/animation_library/Reload.glb",
+	"res://assets/models/animation_library/ReloadRifle.glb",
+	"res://assets/models/animation_library/ReloadPistol.glb",
 	"res://assets/models/animation_library/StrafeLeft.glb",
 	"res://assets/models/animation_library/StrafeRight.glb",
 	"res://assets/models/animation_library/Land.glb",
@@ -148,7 +149,9 @@ const DEATH_DROP := -0.05
 const HAND_BIND_MIN_X := 0.60
 const HAND_BIND_MIN_Y := 1.30
 const HAND_BIND_MAX_Y := 1.55
-static var RELOAD_HAND_KEYS: Array = JSON.parse_string(FileAccess.get_file_as_string("res://assets/models/animation_library/reload_hand_path.json"))
+## Recorrido de la mano de apoyo por CLASE de arma ("rifle"/"pistol"), en
+## espacio del montaje. Lo escribe tools/make_anim_clips.py; nadie más lo edita.
+static var RELOAD_HAND_PATHS: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/models/animation_library/reload_hand_path.json"))
 
 var operator_id := "BRAVO"
 var team := "ally"
@@ -341,6 +344,9 @@ func _read_motion_inputs(delta: float) -> void:
 	if weapon != null:
 		motion.reload_remaining = weapon.reload_timer
 		motion.reload_duration = weapon.current_definition().reload_time
+		# El arma activa elige el LENGUAJE visual de recarga; el timer sigue
+		# siendo de WeaponController y la animación solo consume progreso.
+		motion.reload_weapon_id = weapon.current_definition().id
 		motion.switch_remaining = weapon.switching_timer
 		if not weapon.weapon_fired.is_connected(confirmed_shot): weapon.weapon_fired.connect(confirmed_shot)
 	elif debug_force_reload:
@@ -1136,17 +1142,21 @@ func _solve_arms_ik() -> void:
 	# arms retain the same solver and elbow plane throughout the whole reload.
 	var target := foregrip_world
 	if motion != null and motion.reload_weight > 0.0:
-		var path := reload_hand_offset(motion.reload_phase)
+		# La clase de recarga la decide OperatorMotion a partir del weapon_id;
+		# aquí solo se consume para elegir el recorrido de mano publicado.
+		var path := reload_hand_offset(motion.reload_phase, motion.reload_class())
 		target += weapon_mount.global_basis * path * motion.reload_weight
 	_solve_arm_ik("L", target, pole_l)
 	if is_instance_valid(_left_fist): _left_fist.global_position = target
 	if is_instance_valid(_right_fist): _right_fist.global_position = grip_world
 
 
-static func reload_hand_offset(t: float) -> Vector3:
+static func reload_hand_offset(t: float, weapon_class: String = "rifle") -> Vector3:
 	# Anticipation, release, magazine, pouch, insert, seat, return, settle.
 	# Timing is normalized to WeaponDefinition.reload_time; no ammo events here.
-	var keys: Array = RELOAD_HAND_KEYS
+	# El recorrido viene por clase de arma: un cargador de rifle sale del cinturón,
+	# uno de pistola de la cadera y remata con el pestillo de corredera.
+	var keys: Array = RELOAD_HAND_PATHS.get(weapon_class, RELOAD_HAND_PATHS.get("rifle", []))
 	for i in range(keys.size() - 1):
 		var a: Array = keys[i]
 		var b: Array = keys[i + 1]

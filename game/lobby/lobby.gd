@@ -24,7 +24,8 @@ var armory_label: Label3D
 var weapon_display_root: Node3D
 var _time: float = 0.0
 
-const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
+## Derivado de WeaponSkin.TINTS (fuente única del tintado de armas).
+var SKINS: Array[String] = WeaponSkin.skin_names()
 ## Categoría UI -> slot de CosmeticCatalog.
 ## Etiquetas honestas: cada slot cambia GEOMETRÍA real del rig modular, no un
 ## tinte (el nombre antiguo "COLOR SUP." describía el armario ficticio previo).
