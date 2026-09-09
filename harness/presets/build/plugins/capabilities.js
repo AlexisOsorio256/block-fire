@@ -114,10 +114,11 @@ export function apply(ctx, config) {
 
   const prefixOf = (spec) => `mcp__${String(spec?.config?.serverName ?? '')}__`
 
-  function registeredNames(spec) {
+  async function registeredNames(spec, exec) {
     try {
       const prefix = prefixOf(spec)
-      return ctx.tools.schemas()
+      const { scopeOf } = await import('@deepseek-ai/dsh-scope')
+      return ctx.tools.schemas(scopeOf(ownerCtxOf(exec)))
         .map((schema) => schema?.name)
         .filter((toolName) => typeof toolName === 'string' && toolName.startsWith(prefix))
         .sort()
@@ -126,7 +127,7 @@ export function apply(ctx, config) {
     }
   }
 
-  function describeAll(exec) {
+  async function describeAll(exec) {
     const owner = ofOwner(ownerKeyOf(exec))
     const keys = Object.keys(specs)
     if (keys.length === 0) return 'No optional capabilities are declared in this preset.'
@@ -136,7 +137,7 @@ export function apply(ctx, config) {
       const active = owner.has(key)
       lines.push(`- ${key} [${active ? 'ACTIVE' : 'off'}] — ${spec?.whenToUse ?? 'no description'}`)
       if (active) {
-        const names = registeredNames(spec)
+        const names = await registeredNames(spec, exec)
         if (names !== undefined) {
           lines.push(names.length > 0
             ? `    tools now visible: ${names.join(', ')}`
@@ -175,9 +176,14 @@ export function apply(ctx, config) {
     if (typeof plugin !== 'function' && !(plugin && typeof plugin === 'object' && typeof plugin.apply === 'function')) {
       return `Capability "${key}" could not be mounted: ${spec.package} did not export a Cordis plugin.`
     }
+    let fiber
     try {
-      owner.set(key, host.plugin(plugin, spec.config ?? {}))
+      fiber = host.plugin(plugin, spec.config ?? {})
+      await fiber.await()
+      owner.set(key, fiber.dispose)
     } catch (error) {
+      await fiber?.dispose()
+
       return `Capability "${key}" failed to start: ${String(error?.message ?? error)}`
     }
     return [
@@ -188,13 +194,13 @@ export function apply(ctx, config) {
     ].join('\n')
   }
 
-  function deactivate(key, exec) {
+  async function deactivate(key, exec) {
     const owner = ofOwner(ownerKeyOf(exec))
     const dispose = owner.get(key)
     if (dispose === undefined) return `Capability "${key}" is not active in this session.`
     owner.delete(key)
     try {
-      dispose()
+      await dispose()
     } catch (error) {
       return `Capability "${key}" disposed with an error: ${String(error?.message ?? error)}`
     }
@@ -224,12 +230,12 @@ export function apply(ctx, config) {
     },
   })
 
-  ctx.effect(() => () => {
+  ctx.effect(() => async () => {
     disposeTool()
     for (const owner of mounted.values()) {
       for (const dispose of owner.values()) {
         try {
-          dispose()
+          await dispose()
         } catch {
           // Best-effort during teardown; the owning fiber is going away anyway.
         }

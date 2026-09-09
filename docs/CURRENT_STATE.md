@@ -42,6 +42,12 @@ que `OperatorVisual` necesita poder ocultar).
 
 ## Harness
 
+**Traspaso de auditoría (2026-09-09), frente abierto:**
+[harness/ARCHITECTURE_HANDOFF.md](../harness/ARCHITECTURE_HANDOFF.md).
+Contiene fallos confirmados, cambios locales aún sin cierre, evidencia y pasos
+para el siguiente modelo. La verificación histórica que sigue no certifica esos
+cambios nuevos.
+
 Capa BLOCKFIRE V1 en `harness/` (dos espacios BUILD/CREATOR, superficie mínima,
 capacidades JIT, guard de operaciones destructivas, Update Center con stage +
 verify + rollback). Contrato y riesgos: `harness/ARCHITECTURE.md`. Verificado

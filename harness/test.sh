@@ -15,9 +15,9 @@
 #                                         run against a STAGED candidate tree
 #                                         (this is what update.mjs verify calls)
 #
-# What it cannot prove: that the composition mounts in a live runtime. That check
-# is `agentPresets.standingKeyFor(<space>)` inside a session, and it is the first
-# thing a new session does; see harness/README.md.
+# Boots an isolated Web host and creates idle BUILD/CREATOR agents without LLM
+# calls. --live additionally audits historical request logs; those logs do not
+# establish compatibility of a staged candidate.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -155,6 +155,15 @@ else
 	tail -20 /tmp/blockfire-plugin-tests.log | sed 's/^/        /'
 fi
 
+# Exercise actual services, session-scoped tools and skills in the selected tree.
+echo "isolated runtime mount"
+if timeout 60 node "$HERE/tests/mount.mjs" > /tmp/blockfire-mount-tests.log 2>&1; then
+	cat /tmp/blockfire-mount-tests.log
+else
+	bad "runtime mount failed — see /tmp/blockfire-mount-tests.log"
+	tail -25 /tmp/blockfire-mount-tests.log
+fi
+
 # ── compositions ────────────────────────────────────────────────────────────
 echo "compositions"
 if python3 -c 'import yaml' 2>/dev/null; then
@@ -209,7 +218,7 @@ if [ -n "$INSTALL_MODULES" ]; then
 		if [ -d "$INSTALL_MODULES/$package" ]; then ok "capability package present: $package"; else bad "capability package missing: $package"; continue; fi
 		# The router imports the package and mounts its `apply`; a renamed export
 		# would only surface when a user asked for the capability.
-		if (cd "$DEST_ROOT/build" && node --input-type=module -e "const m = await import('$package'); const p = m.default ?? m; if (typeof p.apply !== 'function') { console.error('no apply'); process.exit(1) }" 2>/dev/null); then
+		if (node --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const r = createRequire(process.argv[1] + '/probe.cjs'); const m = await import(pathToFileURL(r.resolve('$package'))); const p = m.default ?? m; if (typeof p.apply !== 'function') { console.error('no apply'); process.exit(1) }" "$INSTALL_MODULES" 2>/dev/null); then
 			ok "capability package mounts as a Cordis plugin: $package"
 		else
 			bad "capability package is not a Cordis plugin (no apply): $package"
@@ -300,8 +309,10 @@ found.sort((a, b) => b.mtime - a.mtime)
 for (const entry of found) {
   try {
     const { execFileSync } = require("node:child_process")
-    const head = execFileSync("zstd", ["-dc", entry.log], { maxBuffer: 8 * 1024 * 1024 }).toString("utf8")
-    const first = JSON.parse(head.split("\n")[0])
+    const head = execFileSync("zstd", ["-dc", entry.log], { maxBuffer: 512 * 1024 * 1024 }).toString("utf8")
+    const events = head.trim().split("\n").map(line => { try { return JSON.parse(line) } catch { return {} } })
+    if (!events.some(event => event.type === "request/header")) continue
+    const first = events[0]
     const preset = first.agentPreset || ""
     if (preset !== space) continue
     process.stdout.write(entry.log)
@@ -311,6 +322,7 @@ for (const entry of found) {
 ' "$space" 2>/dev/null
 }
 
+if [ "$WANT_LIVE" = 1 ]; then
 for space in "${SPACES[@]}"; do
 	log="$(newest_log "$space")"
 	if [ -z "$log" ]; then
@@ -320,6 +332,10 @@ for space in "${SPACES[@]}"; do
 	node "$HERE/lib/contract_check.mjs" log "$log" || fail=1
 	node "$HERE/lib/contract_check.mjs" surface "$log" "$space" || fail=1
 done
+
+else
+	skip "historical logs not used as candidate evidence (--live to audit)"
+fi
 
 # ── installed copy in sync ──────────────────────────────────────────────────
 echo "installation"
@@ -364,6 +380,13 @@ fi
 # A suite that only ever passes proves nothing. These fixtures MUST fail.
 if [ "$WANT_SELF_TEST" = 1 ]; then
 	echo "self-test (negative controls)"
+	if timeout 60 node "$HERE/tests/mount.mjs" --missing-host-service >/tmp/blockfire-mount-negative.log 2>&1; then
+		bad "mount negative control: missing host service must FAIL"
+	elif grep -q 'requires @deepseek-ai/dsh-tool-subagent/model-selection-settings' /tmp/blockfire-mount-negative.log; then
+		ok "mount negative control: missing host service rejected by real runtime"
+	else
+		bad "mount negative control failed for an unexpected reason — /tmp/blockfire-mount-negative.log"
+	fi
 	tmp="$(mktemp -d)"
 	mkdir -p "$tmp/preset/plugins"
 	cat >"$tmp/preset/agent.cordis.yml" <<'YML'
@@ -424,7 +447,7 @@ YML
 fi
 
 # ── what this suite cannot prove ────────────────────────────────────────────
-echo "live mount: not covered here — a new session mounts the space itself; see harness/README.md"
+echo "model behavior / physical QA: not covered by isolated runtime mount"
 echo
 if [ "$fail" = 0 ]; then
 	echo "PASS"

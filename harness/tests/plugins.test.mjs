@@ -56,10 +56,10 @@ function fakeCtx() {
     },
     plugin(plugin, config) {
       state.plugins.push({ plugin, config })
-      return () => {
+      return { await: async () => {}, dispose: async () => {
         const index = state.plugins.findIndex((entry) => entry.plugin === plugin)
         if (index >= 0) state.plugins.splice(index, 1)
-      }
+      } }
     },
     effect(factory) {
       const disposer = factory()
