@@ -52,11 +52,15 @@ def add_display_body(model_path=None, outfit=DEFAULT_OUTFIT):
 
     keep = {'%s_%s' % (outfit, part) for part in OUTFIT_PARTS}
     before = set(bpy.data.objects)
-    # El importador glTF necesita un objeto activo (lo usa para su colección
-    # interna); recién abierto un .blend el contexto puede no tener ninguno.
+    # Tras wm.open_mainfile el contexto del ejecutor puede quedarse sin ventana
+    # (el importador necesita bpy.context.window.scene). Se le pasa una explícita
+    # y bone_heuristic='TEMPERANCE' evita su rama de forma de hueso, que depende
+    # de bpy.context.object.
+    window = bpy.context.window or bpy.context.window_manager.windows[0]
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
-    bpy.ops.import_scene.gltf(filepath=model_path)
+    with bpy.context.temp_override(window=window, screen=window.screen, scene=window.scene):
+        bpy.ops.import_scene.gltf(filepath=model_path, bone_heuristic='TEMPERANCE')
     imported = [o for o in bpy.data.objects if o not in before]
     imported_arm = next((o for o in imported if o.type == 'ARMATURE'), None)
 
