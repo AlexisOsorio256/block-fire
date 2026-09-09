@@ -32,7 +32,7 @@ const UPDATE_CENTER = pathToFileURL(join(HARNESS, 'web', 'lib', 'index.js')).hre
 
 /** Minimal Cordis context: records registrations and runs effect factories. */
 function fakeCtx() {
-  const state = { tools: [], guards: [], plugins: [], disposers: [] }
+  const state = { tools: [], guards: [], plugins: [], disposers: [], fibers: [] }
   const tools = {
     register(definition) {
       state.tools.push(definition)
@@ -56,19 +56,28 @@ function fakeCtx() {
     },
     plugin(plugin, config) {
       state.plugins.push({ plugin, config })
-      return { await: async () => {}, dispose: async () => {
-        const index = state.plugins.findIndex((entry) => entry.plugin === plugin)
-        if (index >= 0) state.plugins.splice(index, 1)
-      } }
+      // Tests queue a Fiber shape to inject startup/release behavior; the
+      // default mimics Cordis: await() settles, dispose() unwinds the plugin.
+      const fiber = state.fibers.shift() ?? {
+        await: async () => {},
+        dispose: async () => {
+          const index = state.plugins.findIndex((entry) => entry.plugin === plugin)
+          if (index >= 0) state.plugins.splice(index, 1)
+        },
+      }
+      return fiber
     },
-    effect(factory) {
+    effect(factory, label = 'anonymous') {
       const disposer = factory()
-      state.disposers.push(disposer)
+      state.disposers.push({ label, disposer })
       return disposer
     },
   }
   return { ctx, state }
 }
+
+/** A tool call attributed to a fake session, the way the runtime issues it. */
+const sessionExec = (ctx, id = 'unit-session') => ({ agent: { id, ctx } })
 
 /**
  * A resolvable Cordis plugin module, used as the router's test capability. The
@@ -117,24 +126,139 @@ test('capabilities: on mounts through ctx.plugin, off disposes it', async () => 
   const { ctx, state } = fakeCtx()
   module.apply(ctx, { capabilities: { probe: { package: target, whenToUse: 'unit-test capability' } } })
   const router = state.tools[0]
-  const activated = await router.execute({ action: 'on', capability: 'probe' }, {})
+  const exec = sessionExec(ctx)
+  const activated = await router.execute({ action: 'on', capability: 'probe' }, exec)
   assert.match(activated, /activated/)
   assert.equal(state.plugins.length, 1, 'the capability was mounted exactly once')
   assert.deepEqual(state.plugins[0].config, {}, 'no config declared means an empty config object')
-  const again = await router.execute({ action: 'on', capability: 'probe' }, {})
+  const again = await router.execute({ action: 'on', capability: 'probe' }, exec)
   assert.match(again, /already active/)
-  const released = await router.execute({ action: 'off', capability: 'probe' }, {})
+  const released = await router.execute({ action: 'off', capability: 'probe' }, exec)
   assert.match(released, /deactivated/)
   assert.equal(state.plugins.length, 0, 'releasing disposed the mount')
-  const missing = await router.execute({ action: 'off', capability: 'probe' }, {})
+  const missing = await router.execute({ action: 'off', capability: 'probe' }, exec)
   assert.match(missing, /not active/)
+})
+
+test('capabilities: activation requires a session context and says so', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  module.apply(ctx, { capabilities: { probe: { package: 'x', whenToUse: 'y' } } })
+  const result = await state.tools[0].execute({ action: 'on', capability: 'probe' }, {})
+  assert.match(result, /only be activated from a session/)
+  assert.equal(state.plugins.length, 0, 'nothing was mounted without a session')
+})
+
+/** A loadable no-op plugin module, so tests exercise the real import path. */
+const NOOP_PACKAGE = 'data:text/javascript,export default function apply() {}'
+
+test('capabilities: a failed start leaves no mount, even when its cleanup also fails', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  let disposeCalls = 0
+  state.fibers.push({
+    await: async () => { throw new Error('bridge exploded') },
+    dispose: async () => { disposeCalls += 1; throw new Error('cleanup exploded too') },
+  })
+  module.apply(ctx, { capabilities: { probe: { package: NOOP_PACKAGE, whenToUse: 'y' } } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  const result = await router.execute({ action: 'on', capability: 'probe' }, exec)
+  assert.match(result, /failed to start/)
+  assert.match(result, /bridge exploded/, 'the startup error is the headline, not the cleanup error')
+  assert.match(result, /cleanup exploded too/, 'the cleanup failure is reported instead of masking the first error')
+  assert.equal(disposeCalls, 1, 'the partially started mount was disposed')
+  const retry = await router.execute({ action: 'on', capability: 'probe' }, exec)
+  assert.doesNotMatch(retry, /already active/, 'the failed attempt freed the slot')
+})
+
+test('capabilities: off resolves only after disposal settles, and a failed release stays visible', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  let disposeResult = Promise.resolve()
+  state.fibers.push({ await: async () => {}, dispose: () => disposeResult })
+  module.apply(ctx, { capabilities: { probe: { package: NOOP_PACKAGE, whenToUse: 'y' } } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  assert.match(await router.execute({ action: 'on', capability: 'probe' }, exec), /activated/)
+  disposeResult = Promise.reject(new Error('release exploded'))
+  const failed = await router.execute({ action: 'off', capability: 'probe' }, exec)
+  assert.match(failed, /disposed with an error/)
+  assert.match(failed, /release exploded/)
+  const listed = await router.execute({ action: 'list' }, exec)
+  assert.match(listed, /release failed/, 'list must not claim a clean release happened')
+  disposeResult = Promise.resolve()
+  assert.match(await router.execute({ action: 'off', capability: 'probe' }, exec), /deactivated/,
+    'the stuck entry can be retried once disposal works')
+  assert.match(await router.execute({ action: 'off', capability: 'probe' }, exec), /not active/)
+})
+
+test('capabilities: two concurrent on calls mount once', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  let release
+  let reached
+  const reachedPromise = new Promise((resolve) => { reached = resolve })
+  state.fibers.push({
+    await: () => {
+      reached()
+      return new Promise((resolve) => { release = resolve })
+    },
+    dispose: async () => {},
+  })
+  module.apply(ctx, { capabilities: { probe: { package: NOOP_PACKAGE, whenToUse: 'y' } } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  const first = router.execute({ action: 'on', capability: 'probe' }, exec)
+  const second = await router.execute({ action: 'on', capability: 'probe' }, exec)
+  assert.match(second, /already starting/, 'the in-flight mount is visible to a concurrent call')
+  await reachedPromise
+  release()
+  assert.match(await first, /activated/)
+  assert.equal(state.plugins.length, 1, 'exactly one mount happened')
+})
+
+test('capabilities: the bookkeeping entry dies with the session that owns it', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  module.apply(ctx, { capabilities: { probe: { package: NOOP_PACKAGE, whenToUse: 'y' } } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  assert.match(await router.execute({ action: 'on', capability: 'probe' }, exec), /activated/)
+  const ownerEffect = state.disposers.find(({ label }) => label === 'blockfire-capability:probe')
+  assert.notEqual(ownerEffect, undefined, 'activation registered an effect on the owning context')
+  await ownerEffect.disposer()
+  const afterClose = await router.execute({ action: 'off', capability: 'probe' }, exec)
+  assert.match(afterClose, /not active/, 'closing the session freed the entry')
+  state.fibers.push({ await: async () => {}, dispose: async () => {} })
+  assert.match(await router.execute({ action: 'on', capability: 'probe' }, exec), /activated/,
+    'a resumed session with the same id can activate again')
+})
+
+test('capabilities: list names the tools a capability really added (no prefix rule needed)', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  // Simulates the real flow: the capability's tools appear while its plugin starts.
+  const visible = ['bash']
+  ctx.tools.schemas = () => visible.map((name) => ({ name }))
+  state.fibers.push({
+    await: async () => { visible.push('cordis_run', 'cordis_stop') },
+    dispose: async () => {},
+  })
+  module.apply(ctx, { capabilities: { cordis: { package: NOOP_PACKAGE, whenToUse: 'y', config: {} } } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  await router.execute({ action: 'on', capability: 'cordis' }, exec)
+  const listed = await router.execute({ action: 'list' }, exec)
+  assert.match(listed, /tools now visible: cordis_run, cordis_stop/,
+    'the activation diff names the real tools even without an mcp__ prefix')
 })
 
 test('capabilities: a package that cannot load reports an actionable error', async () => {
   const module = await import(CAPABILITIES)
   const { ctx, state } = fakeCtx()
   module.apply(ctx, { capabilities: { broken: { package: '@blockfire/does-not-exist', whenToUse: 'x' } } })
-  const result = await state.tools[0].execute({ action: 'on', capability: 'broken' }, {})
+  const result = await state.tools[0].execute({ action: 'on', capability: 'broken' }, sessionExec(ctx))
   assert.match(result, /could not load/)
   assert.match(result, /install\.sh/)
 })

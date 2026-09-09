@@ -104,6 +104,8 @@ for file in \
 	"$HERE/lib/runtime.mjs" \
 	"$HERE/lib/runtime.sh" \
 	"$HERE/tests/plugins.test.mjs" \
+	"$HERE/tests/report.test.mjs" \
+	"$HERE/tests/mount.mjs" \
 	"$HERE/ARCHITECTURE.md"; do
 	if [ -f "$file" ]; then ok "${file#"$REPO"/}"; else bad "missing ${file#"$REPO"/}"; fi
 done
@@ -153,6 +155,12 @@ if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; th
 else
 	bad "plugin unit tests fail — see /tmp/blockfire-plugin-tests.log"
 	tail -20 /tmp/blockfire-plugin-tests.log | sed 's/^/        /'
+fi
+if node "$HERE/tests/report.test.mjs" >/tmp/blockfire-report-tests.log 2>&1; then
+	ok "session-report fixture tests pass ($(grep -c '^ok ' /tmp/blockfire-report-tests.log) tests)"
+else
+	bad "session-report fixture tests fail — see /tmp/blockfire-report-tests.log"
+	tail -20 /tmp/blockfire-report-tests.log | sed 's/^/        /'
 fi
 
 # Exercise actual services, session-scoped tools and skills in the selected tree.
@@ -312,8 +320,10 @@ for (const entry of found) {
     const head = execFileSync("zstd", ["-dc", entry.log], { maxBuffer: 512 * 1024 * 1024 }).toString("utf8")
     const events = head.trim().split("\n").map(line => { try { return JSON.parse(line) } catch { return {} } })
     if (!events.some(event => event.type === "request/header")) continue
-    const first = events[0]
-    const preset = first.agentPreset || ""
+    // Classify by the preset the session actually mounted: an explicit
+    // agent-preset/selected wins over the initial session-event label.
+    const selected = [...events].reverse().find(event => event.type === "agent-preset/selected")
+    const preset = selected?.data?.agentPreset ?? selected?.data?.preset ?? (events[0].agentPreset || "")
     if (preset !== space) continue
     process.stdout.write(entry.log)
     process.exit(0)
@@ -442,6 +452,83 @@ YML
 		bad "negative control 5: an invalid explicit runtime override must FAIL"
 	else
 		ok "negative control 5: an invalid explicit runtime override FAILS"
+	fi
+
+	# Log-contract fixtures: the contract must separate PASS (what happened),
+	# FAIL (a real obligation broken) and SIN EVIDENCIA (nothing to check).
+	fixtures="$tmp/log-fixtures"; mkdir -p "$fixtures"
+	: >"$fixtures/empty.jsonl"
+	cat >"$fixtures/no-requests.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+EOT
+	cat >"$fixtures/valid.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"agent-preset/selected","data":{"agentPreset":"build"}}
+{"type":"request/header","data":{"header":{"system":"S","tools":[{"name":"bash"}],"config":{"model":"m"}}}}
+{"type":"user/message","data":{}}
+{"type":"tool/call","data":{"callId":"c1","name":"bash","arguments":"{}"}}
+{"type":"tool/result","data":{"message":{"source":{"kind":"tool","callId":"c1"},"content":[{"type":"tool-result","toolCallId":"c1","content":[]}],"isError":false}}}
+{"type":"assistant/message","data":{"usage":{"inputTokens":1,"cacheReadTokens":2,"outputTokens":3},"message":{"content":[]}}}
+{"type":"step/end","data":{}}
+EOT
+	# Older runtimes put the callId directly on the result message; both shapes
+	# must keep pairing.
+	cat >"$fixtures/valid-alt-result-shape.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"request/header","data":{"header":{"system":"S","tools":[{"name":"bash"}],"config":{"model":"m"}}}}
+{"type":"tool/call","data":{"callId":"c1","name":"bash","arguments":"{}"}}
+{"type":"tool/result","data":{"message":{"callId":"c1","content":[],"isError":false}}}
+EOT
+	# A call whose result never arrived while the log continued is a real break;
+	# a call at the very end of the log may simply still be running.
+	cat >"$fixtures/lost-result.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"request/header","data":{"header":{"system":"S","tools":[{"name":"bash"}],"config":{"model":"m"}}}}
+{"type":"tool/call","data":{"callId":"c1","name":"bash","arguments":"{}"}}
+{"type":"tool/call","data":{"callId":"c2","name":"read","arguments":"{}"}}
+{"type":"tool/result","data":{"message":{"source":{"kind":"tool","callId":"c2"},"content":[]}}}
+EOT
+	cat >"$fixtures/in-flight.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"request/header","data":{"header":{"system":"S","tools":[{"name":"bash"}],"config":{"model":"m"}}}}
+{"type":"tool/call","data":{"callId":"c1","name":"bash","arguments":"{}"}}
+EOT
+	cat >"$fixtures/bad-header.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"request/header","data":{}}
+EOT
+	# A log mounted as another space must be SIN EVIDENCIA for this space, never
+	# compared against the wrong contract.
+	cat >"$fixtures/other-space.jsonl" <<'EOT'
+{"type":"session","id":"s","cwd":"/x","agentPreset":"build","createdAt":0}
+{"type":"agent-preset/selected","data":{"agentPreset":"creator"}}
+{"type":"request/header","data":{"header":{"system":"S","tools":[{"name":"bash"}],"config":{"model":"m"}}}}
+EOT
+	log_case() {
+		local name="$1" file="$2" expect="$3"
+		case "$expect" in
+			pass) node "$HERE/lib/contract_check.mjs" log "$file" >/dev/null 2>&1 \
+				&& ok "log fixture $name passes" || bad "log fixture $name must pass" ;;
+			fail) node "$HERE/lib/contract_check.mjs" log "$file" >/dev/null 2>&1 \
+				&& bad "log fixture $name must FAIL" || ok "log fixture $name FAILS as it must" ;;
+			skip) if node "$HERE/lib/contract_check.mjs" log "$file" 2>&1 | grep -q 'skip'; then
+				ok "log fixture $name is SIN EVIDENCIA"
+			else
+				bad "log fixture $name must report SIN EVIDENCIA (skip)"
+			fi ;;
+		esac
+	}
+	log_case "empty session (SIN EVIDENCIA)" "$fixtures/empty.jsonl" skip
+	log_case "session without requests (SIN EVIDENCIA)" "$fixtures/no-requests.jsonl" skip
+	log_case "valid session with tools and usage" "$fixtures/valid.jsonl" pass
+	log_case "alternate result callId shape" "$fixtures/valid-alt-result-shape.jsonl" pass
+	log_case "result lost while the log continued" "$fixtures/lost-result.jsonl" fail
+	log_case "newest call still in flight" "$fixtures/in-flight.jsonl" pass
+	log_case "header without header object" "$fixtures/bad-header.jsonl" fail
+	if node "$HERE/lib/contract_check.mjs" surface "$fixtures/other-space.jsonl" build 2>&1 | grep -q 'skip'; then
+		ok "surface fixture mounted as another space is SIN EVIDENCIA"
+	else
+		bad "surface fixture mounted as another space must not be compared"
 	fi
 	rm -rf "$tmp"
 fi

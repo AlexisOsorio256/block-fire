@@ -39,7 +39,7 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | `bin/update.mjs` | Update Center: detectar, stage, verify, activate, rollback | Actualizar sin congelar y sin rezar |
 | `lib/runtime.mjs` | Resolutor único del runtime DSH (binario + `node_modules`) | Un solo lugar decide qué DSH se arranca y contra qué `node_modules` resuelven los puentes |
 | `bin/session-report.mjs` | Métricas por sesión desde el log real | Cache/contexto medidos, no afirmados |
-| `test.sh` + `lib/` + `tests/` | Suite de compatibilidad y controles negativos | Detectar breaking changes de DSH |
+| `test.sh` + `lib/` + `tests/` | Suite de compatibilidad: montaje real aislado (`tests/mount.mjs`), fixtures de contadores y controles negativos | Detectar breaking changes de DSH |
 | `contract/contract.json` | La lista explícita de superficies upstream que usamos | Si DSH rompe, se adapta **esta** zona |
 
 ## Frontera con DSH
@@ -51,8 +51,8 @@ La capa depende exactamente de esto, y `contract/contract.json` lo nombra:
 | Filas de composición (`name: '@deepseek-ai/dsh-*'`) | Montar tools/skills/compaction | `check_composition.py` (paquete instalado, archivo relativo, include, patch sin target) |
 | Roster de presets (`$DSH_HOME/.agent-presets/<id>`, `preset.yml`) | Los dos espacios | `agentPresets.standingKeyFor` en cada sesión nueva + `--dump-config` |
 | Capa de parche del perfil (`--patch`, `cordis.patch.yml`) | Guard, Update Center, roster por defecto | `dsh --profile web --patch <archivo> --dump-config` (falla si un patch no matchea) |
-| `ctx.tools.register/guard/schemas`, `ctx.plugin`, `ctx.effect` | Router y guard | Tests unitarios con contexto falso (`tests/plugins.test.mjs`) |
-| Log de sesión (`request/header`, `assistant/message.usage.*`) | Métricas y contrato de superficie | `contract_check.mjs log/surface` contra sesiones reales |
+| `ctx.tools.register/guard/schemas`, `ctx.plugin` (Fiber: `await()`/`dispose()`), `ctx.effect` | Router y guard | Tests unitarios con contexto falso (`tests/plugins.test.mjs`) + montaje real con Fiber y scopes (`tests/mount.mjs`) |
+| Log de sesión (`request/header`, `assistant/message.usage.*`, `compaction/*`) | Métricas y contrato de superficie | `contract_check.mjs log/surface` contra sesiones reales; fixtures vacías/sin tools/con tools/malformadas en `--self-test` |
 | `dsh.client` + `window.__ModuleLoader__` | Página BLOCKFIRE en Settings | Bundle propio escrito a mano; si el formato cambia, falla al cargar el módulo |
 | Registro npm `@deepseek-ai/dsh` + releases de GitHub | Update Center | `update.mjs check` |
 
@@ -133,6 +133,7 @@ quitan o se quedan, nunca se esconden tras el router.
    lista corta de patrones: no es un sandbox y no pretende serlo.
 3. **La superficie se verifica contra sesiones reales.** Un espacio que todavía
    no ha corrido no tiene evidencia de contrato (`--live` lo reporta como skip).
+   Un log sin model requests es SIN EVIDENCIA, no PASS ni FAIL.
 4. **El Update Center no prueba el candidato en un navegador real**: verifica la
    composición, las filas, el log y los plugins, no una sesión Web completa.
 5. **CREATOR lee las skills de autoría del preset shipped por ruta de instalación**
@@ -142,3 +143,8 @@ quitan o se quedan, nunca se esconden tras el router.
    nada, pero es efímero: `npm cache clean` (o el GC de npx) lo borra y el enlace
    queda roto hasta `install.sh` o hasta `stage` + `activate` de un runtime
    administrado. `install.sh --check` lo reporta como `BRIDGE LINK missing`.
+7. **El ciclo de vida de las capacidades JIT se prueba con un fixture local**
+   (`tests/mount.mjs`: Fiber real, arranque que rechaza, sesión que se cierra con
+   una capacidad activa). No prueba Blender/MCP real, resume de sesión
+   persistida, ni dos sesiones activando la capacidad `cordis` a la vez: eso
+   sigue SIN VERIFICAR hasta que exista Blender conectado o una prueba dedicada.

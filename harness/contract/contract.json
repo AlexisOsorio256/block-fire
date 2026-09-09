@@ -31,7 +31,7 @@
         "web_search",
         "write"
       ],
-      "schemaChars": 16557,
+      "schemaChars": 16576,
       "schemaTolerance": 2500
     },
     "creator": {
@@ -61,11 +61,12 @@
         "web_search",
         "write"
       ],
-      "schemaChars": 21794,
+      "schemaChars": 21819,
       "schemaTolerance": 2500
     }
   },
   "sessionLog": {
+    "_comment": "events = the vocabulary the metrics read (checked conditionally: a log only proves what happened in it). requiredEvents = what must exist whenever a request/header does. Usage fields are adapter-dependent: absence means unavailable, not zero.",
     "events": [
       "session",
       "agent-preset/selected",
@@ -74,7 +75,13 @@
       "assistant/message",
       "tool/call",
       "tool/result",
-      "step/end"
+      "step/end",
+      "compaction/start",
+      "compaction/summary",
+      "compaction/end"
+    ],
+    "requiredEvents": [
+      "session"
     ],
     "fields": {
       "request/header": [

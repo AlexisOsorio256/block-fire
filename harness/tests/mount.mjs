@@ -35,9 +35,19 @@ export function apply(ctx) {
     parameters:{type:'object',properties:{}}, output:{schema:{type:'string'},render:()=>[]},
     execute:async()=> 'pong'}));
 }`)
-  // Test a lightweight local capability through the installed router, without Blender.
+  // A plugin that registers a tool while starting and THEN fails: proves the
+  // router cleans a partial mount instead of leaving tools behind.
+  const failFixture = join(temporary, 'probe-fail.mjs')
+  writeFileSync(failFixture, `export function apply(ctx) {
+  ctx.effect(() => ctx.tools.register({name:'mcp__fail__ping', description:'Partial mount fixture',
+    parameters:{type:'object',properties:{}}, output:{schema:{type:'string'},render:()=>[]},
+    execute:async()=> 'pong'}));
+  throw new Error('probe start failure');
+}`)
+  // Test lightweight local capabilities through the installed router, without Blender.
   appendFileSync(join(temporary, 'presets/build/surface.cordis.yml'),
-    `\n  config:\n    capabilities:\n      probe:\n        package: ${JSON.stringify(fixture)}\n        config:\n          serverName: probe\n`)
+    `\n  config:\n    capabilities:\n      probe:\n        package: ${JSON.stringify(fixture)}\n        config:\n          serverName: probe\n` +
+    `      fail:\n        package: ${JSON.stringify(failFixture)}\n        config:\n          serverName: fail\n`)
   const load = file => loadOverlayPatches('blockfire-mount', file)
   const ownPatch = load(join(harness, 'host/patch.cordis.yml'))
   // Same repo modules as install.sh links, without writing into candidate packages.
@@ -79,11 +89,11 @@ export function apply(ctx) {
     }
     console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
     if (space === 'build') {
+      const router = ctx.tools.get('bf_capability', scope)
       const sibling = await ctx.agents.create({ sessionId: 'blockfire-mount-sibling',
         meta: { cwd: resolve(harness, '..'), agentPreset: space },
         setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
       try {
-        const router = ctx.tools.get('bf_capability', scope)
         const call = action => router.execute({ action, capability: 'probe' }, { agent: handle.agent })
         for (let cycle = 0; cycle < 2; cycle++) {
           assert.match(await call('on'), /activated/)
@@ -95,10 +105,43 @@ export function apply(ctx) {
           assert.equal(ctx.tools.get('mcp__probe__ping', scope), undefined, 'off removes tools')
         }
         console.log('  ok    real capability lifecycle: on/list/off twice, session isolation')
+
+        // A plugin whose start rejects: the error must surface with the original
+        // cause, nothing may stay mounted, and the slot must be free again.
+        const failCall = action => router.execute({ action, capability: 'fail' }, { agent: handle.agent })
+        const failure = await failCall('on')
+        assert.match(failure, /failed to start/)
+        assert.match(failure, /probe start failure/, 'the original startup error reaches the caller')
+        assert.equal(ctx.tools.get('mcp__fail__ping', scope), undefined,
+          'a plugin that registered a tool before failing leaves nothing behind')
+        assert.doesNotMatch(await failCall('on'), /already active/, 'the failed start freed the slot')
+        console.log('  ok    async start failure: original error surfaced, partial mount cleaned')
       } finally { await sibling.dispose() }
     }
     } finally { await handle.dispose() }
   }
+  // Closing a session with a capability active must free the router entry: a
+  // later session with the same id starts OFF (no stale ACTIVE) and can turn it
+  // on again. agent.id === session.id, so this is the resume identity.
+  const resumeSetup = async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'build') }
+  const first = await ctx.agents.create({ sessionId: 'blockfire-mount-resume',
+    meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
+  const router = ctx.tools.get('bf_capability', scopeOf(first.agent.ctx))
+  try {
+    assert.match(await router.execute({ action: 'on', capability: 'probe' },
+      { agent: first.agent }), /activated/)
+  } finally { await first.dispose() }
+  const resumed = await ctx.agents.create({ sessionId: 'blockfire-mount-resume',
+    meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
+  try {
+    const listed = await router.execute({ action: 'list' }, { agent: resumed.agent })
+    assert.match(listed, /\[off\]/, 'a session created after the owner closed must not inherit ACTIVE')
+    assert.match(await router.execute({ action: 'on', capability: 'probe' },
+      { agent: resumed.agent }), /activated/, 'the closed session freed the capability slot')
+    assert.match(await router.execute({ action: 'off', capability: 'probe' },
+      { agent: resumed.agent }), /deactivated/)
+  } finally { await resumed.dispose() }
+  console.log('  ok    session close releases the capability: same-id session starts OFF, re-activates')
 } finally {
   try { await ctx?.fiber.dispose() } finally { rmSync(temporary, { recursive: true, force: true }) }
 }

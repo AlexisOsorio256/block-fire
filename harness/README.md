@@ -125,18 +125,28 @@ harness/test.sh --network       # además comprueba detección de updates real
 harness/test.sh --live          # además compara la superficie con sesiones reales
 harness/test.sh --self-test     # controles negativos: la suite DEBE fallar
 node harness/tests/plugins.test.mjs
+node harness/tests/report.test.mjs
+node harness/tests/mount.mjs
 node harness/bin/session-report.mjs --last 5
 ```
 
 `test.sh` comprueba: estructura, sintaxis y tests unitarios de los plugins,
-resolución de cada fila (paquete instalado, archivo relativo, include, patch sin
-target), composición real del árbol con `dsh --profile web --patch ... --dump-config`,
-contrato del log de sesión, contrato de superficie por espacio, sincronía de las
-copias instaladas y (con `--network`) el Update Center.
+fixtures de los contadores del report, resolución de cada fila (paquete
+instalado, archivo relativo, include, patch sin target), composición real del
+árbol con `dsh --profile web --patch ... --dump-config`, contrato del log de
+sesión (PASS / FAIL / SIN EVIDENCIA, con fixtures), contrato de superficie por
+espacio, sincronía de las copias instaladas y (con `--network`) el Update
+Center.
 
-Lo que no puede probar: que la composición **monte** en un runtime vivo. Eso lo
-hace la propia sesión nueva (`agentPresets.standingKeyFor`), y es la primera
-comprobación que corre al abrir un espacio.
+`tests/mount.mjs` hace lo que la composición estática no puede: arranca un host
+Web aislado (DSH_HOME efímero, puerto loopback, sin telemetría ni llamadas al
+modelo), monta los dos presets de verdad y prueba contra el runtime vivo: la
+superficie de tools y skills de cada espacio, el ciclo completo de una
+capacidad (`on`/`list`/`off` dos veces, aislamiento entre sesiones), un plugin
+cuyo arranque rechaza (error original, nada quedó montado) y el cierre de una
+sesión con una capacidad activa (la entrada se libera; una sesión con el mismo
+id empieza OFF). Lo que sigue sin probar: comportamiento del modelo, el bundle
+cliente en un navegador, MCP externo (Blender) y Android.
 
 ## Auto-mejora
 

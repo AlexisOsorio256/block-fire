@@ -42,11 +42,21 @@ que `OperatorVisual` necesita poder ocultar).
 
 ## Harness
 
-**Traspaso de auditoría (2026-09-09), frente abierto:**
-[harness/ARCHITECTURE_HANDOFF.md](../harness/ARCHITECTURE_HANDOFF.md).
-Contiene fallos confirmados, cambios locales aún sin cierre, evidencia y pasos
-para el siguiente modelo. La verificación histórica que sigue no certifica esos
-cambios nuevos.
+Cierre del traspaso de auditoría (2026-09-09,
+[harness/ARCHITECTURE_HANDOFF.md](../harness/ARCHITECTURE_HANDOFF.md)): el router
+JIT ahora usa el lifecycle real de Cordis (Fiber `await()`/`dispose()`), limpia
+montajes parciales cuando un arranque rechaza, libera la entrada al cerrar la
+sesión dueña y nombra las tools reales de cada capacidad; `harness/test.sh`
+arranca un host Web aislado con los dos presets (`tests/mount.mjs`), el contrato
+de logs distingue PASS / FAIL / SIN EVIDENCIA con fixtures, y el report cuenta
+compaction por lifecycle real. Verificado con `harness/install.sh` +
+`harness/test.sh --self-test` + `harness/test.sh --live` (superficie CREATOR
+24 tools contra contrato; BUILD sin sesión clasificable: SIN EVIDENCIA).
+
+Pendiente registrado: resto de A5 (por-header schema drift, cohortes por
+preset/ruta), resume de sesión persistida con capacidad activa, concurrencia
+`cordis` entre dos sesiones, Blender/MCP real, navegador, Android — SIN
+VERIFICAR hasta tener el entorno o las pruebas.
 
 Capa BLOCKFIRE V1 en `harness/` (dos espacios BUILD/CREATOR, superficie mínima,
 capacidades JIT, guard de operaciones destructivas, Update Center con stage +

@@ -22,35 +22,39 @@ está mal. No es un privilegio decorativo: es el mecanismo de evolución.
 | Capa BLOCKFIRE | `<repo>/harness/` | Sí, aquí |
 | Proyecto BLOCKFIRE | `game/`, `docs/`, `tools/bf`, ... | Solo si la tarea lo pide |
 
-La instalación activa es una **copia** de `harness/` en
-`$DSH_HOME/.agent-presets/blockfire/`. Editar la copia se pierde; editar el repo
-y sincronizar es el camino.
+El mapa completo de componentes, la frontera con DSH y los riesgos abiertos
+están en `harness/ARCHITECTURE.md` — no se duplican aquí.
+
+La instalación activa es una **copia** materializada por `harness/install.sh`:
+los presets de cada espacio en `$DSH_HOME/.agent-presets/build|creator/` y las
+filas host en `$DSH_HOME/profiles/web/`. Editar la copia se pierde; editar el
+repo y sincronizar es el camino.
 
 ```
 harness/
-  presets/blockfire/agent.cordis.yml   # el preset (una fila por capacidad)
-  presets/blockfire/preset.yml         # nombre y descripción para el selector
-  presets/blockfire/plugins/           # código propio de la capa (mínimo)
-  presets/blockfire/skills/*/SKILL.md  # contexto bajo demanda
-  install.sh                           # repo -> $DSH_HOME (idempotente)
-  test.sh                              # smoke de la capa
-  bin/session-report.mjs               # tokens/cache/skills/tools por sesión
+  presets/build/        # espacio BUILD: persona, superficie compartida, skills, plugins/
+  presets/creator/      # espacio CREATOR: persona + deltas sobre la superficie de BUILD
+  host/                 # capa de parche del perfil Web (guard, Update Center, roster)
+  web/                  # página Settings → BLOCKFIRE y ruta /blockfire/update
+  bin/                  # launcher, Update Center, session-report
+  lib/                  # resolutor de runtime, chequeos de composición y contrato
+  tests/                # unit tests de plugins, fixtures del report, montaje real
+  install.sh            # repo -> $DSH_HOME (idempotente)
+  test.sh               # suite de compatibilidad: montaje real + controles negativos
 ```
 
 ## Ciclo de cambio
 
 1. Edita en `harness/` (nunca en `$DSH_HOME`).
 2. `harness/install.sh` — sincroniza la copia activa.
-3. `harness/test.sh` — forma, resolución de filas, frontmatter, plugin y drift.
-   Es estático: no prueba que la composición monte.
-4. Montaje real: en una sesión `cordis`, un plugin temporal llama a
-   `agentPresets.standingKeyFor('blockfire')` y lista `ctx.skills.list({ scope })`.
-   El procedimiento completo está en `harness/README.md`. Si falla, el mensaje
-   nombra la fila o el servicio culpable.
-5. Sesión nueva en la GUI (el preset se monta al crearla; una sesión viva no se
+3. `harness/test.sh` — boots reales: `tests/mount.mjs` arranca un host Web
+   aislado con los dos presets y prueba la superficie y el ciclo de capacidades
+   sin llamadas al modelo; los controles negativos deben fallar con
+   `--self-test`.
+4. Sesión nueva en la GUI (el preset se monta al crearla; una sesión viva no se
    recompone) para confirmar el efecto real. Después:
    `node harness/bin/session-report.mjs --last 1`.
-6. commit + push del cambio de capa.
+5. commit + push del cambio de capa.
 
 ## Reglas que mantienen el diseño sano
 

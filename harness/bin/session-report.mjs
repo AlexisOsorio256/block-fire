@@ -20,7 +20,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -74,17 +74,39 @@ function resolveTargets() {
     if (hit === undefined) fail(`no session log matching "${wantSession}"`)
     return [hit.file]
   }
+  // An explicit --last N wins over the environment: the agent asked for N
+  // sessions, not for whichever session the env variable happens to pin.
+  if (wantLast > 0) {
+    const all = listSessionFiles()
+    if (all.length === 0) fail(`no session logs under ${sessionsRoot}`)
+    return all.slice(0, wantLast).map((entry) => entry.file)
+  }
   const fromEnv = process.env.DSH_SESSION_JSONL
   if (fromEnv !== undefined && existsSync(fromEnv)) return [fromEnv]
   const all = listSessionFiles()
   if (all.length === 0) fail(`no session logs under ${sessionsRoot}`)
-  return (wantLast > 0 ? all.slice(0, wantLast) : all.slice(0, 1)).map((entry) => entry.file)
+  return all.slice(0, 1).map((entry) => entry.file)
+}
+
+/** Zstd files start with 0x28 B5 2F FD; anything else is treated as plain JSONL. */
+function isZstd(file) {
+  const magic = Buffer.alloc(4)
+  const fd = openSync(file, 'r')
+  try {
+    readSync(fd, magic, 0, 4, 0)
+  } finally {
+    closeSync(fd)
+  }
+  return magic.equals(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]))
 }
 
 function readEvents(file) {
   let text
   try {
-    text = execFileSync('zstd', ['-dc', file], { maxBuffer: 1024 * 1024 * 512 }).toString('utf8')
+    // Real session logs are zstd; plain JSONL is accepted (fixtures, exports).
+    text = isZstd(file)
+      ? execFileSync('zstd', ['-dc', file], { maxBuffer: 1024 * 1024 * 512 }).toString('utf8')
+      : readFileSync(file, 'utf8')
   } catch (error) {
     fail(`cannot decompress ${file}: ${String(error?.message ?? error)}`)
   }
@@ -111,9 +133,14 @@ function fold(file, events) {
     permission: {},
     startedAt: undefined,
     requests: 0,
+    usageReports: 0,
+    requestHeaders: 0,
     turns: 0,
     retries: 0,
     compactions: 0,
+    compactionsOk: 0,
+    compactionsFailed: 0,
+    compactionsIncomplete: 0,
     inputTokens: 0,
     cacheReadTokens: 0,
     outputTokens: 0,
@@ -131,6 +158,9 @@ function fold(file, events) {
     userMessages: 0,
     lastEventTime: undefined,
   }
+
+  // Compaction attempts still open when the log ends: started, never closed.
+  const openCompactions = new Set()
 
   for (const event of events) {
     if (typeof event.time === 'number') report.lastEventTime = event.time
@@ -163,11 +193,26 @@ function fold(file, events) {
       case 'llm/retry':
         report.retries += 1
         break
+      case 'compaction/start':
+        report.compactions += 1
+        if (typeof event.data?.compactionId === 'string') openCompactions.add(event.data.compactionId)
+        break
+      case 'compaction/end': {
+        if (event.data?.error !== undefined) report.compactionsFailed += 1
+        else report.compactionsOk += 1
+        if (typeof event.data?.compactionId === 'string') openCompactions.delete(event.data.compactionId)
+        break
+      }
+      // Older vocabulary: one event per compaction, no lifecycle to pair.
       case 'compaction':
       case 'manual-compaction':
         report.compactions += 1
+        report.compactionsOk += 1
         break
       case 'request/header': {
+        // A surface snapshot: in current runtimes this is logged once (the
+        // first request), so it must never be read as the request count.
+        report.requestHeaders += 1
         const header = event.data?.header ?? {}
         report.model = header.config?.model ?? report.model
         report.provider = header.config?.provider ?? report.provider
@@ -190,17 +235,23 @@ function fold(file, events) {
         report.userMessages += 1
         break
       case 'assistant/message': {
-        const usage = event.data?.usage
-        if (usage === undefined) break
+        // One event per model response: this is the request count. Usage is
+        // adapter-dependent and counted separately; tool calls are counted
+        // whether or not this message carried usage.
         report.requests += 1
-        report.inputTokens += usage.inputTokens ?? 0
-        report.cacheReadTokens += usage.cacheReadTokens ?? 0
-        report.outputTokens += usage.outputTokens ?? 0
-        report.reasoningTokens += usage.reasoningTokens ?? 0
-        if (report.firstRequestInput === undefined) {
-          report.firstRequestInput = usage.inputTokens ?? 0
-          report.firstRequestCached = usage.cacheReadTokens ?? 0
+        const usage = event.data?.usage
+        if (usage !== undefined) {
+          report.usageReports += 1
+          report.inputTokens += usage.inputTokens ?? 0
+          report.cacheReadTokens += usage.cacheReadTokens ?? 0
+          report.outputTokens += usage.outputTokens ?? 0
+          report.reasoningTokens += usage.reasoningTokens ?? 0
+          if (report.firstRequestInput === undefined) {
+            report.firstRequestInput = usage.inputTokens ?? 0
+            report.firstRequestCached = usage.cacheReadTokens ?? 0
+          }
         }
+        // Tool calls are counted whether or not this message carried usage.
         for (const block of event.data?.message?.content ?? []) {
           if (block.type !== 'tool-call') continue
           report.tools[block.name] = (report.tools[block.name] ?? 0) + 1
@@ -236,6 +287,7 @@ function fold(file, events) {
     }
   }
 
+  report.compactionsIncomplete = openCompactions.size
   const promptTokens = report.inputTokens + report.cacheReadTokens
   report.cacheHitPercent = promptTokens > 0
     ? Math.round((report.cacheReadTokens / promptTokens) * 1000) / 10
@@ -264,7 +316,8 @@ for (const report of reports) {
   if (Object.keys(report.permission).length > 0) {
     lines.push(`  policy         preset=${report.permission.preset ?? '?'}  sandbox=${report.permission.sandbox ?? '?'}  approval=${report.permission.approval ?? '?'}`)
   }
-  lines.push(`  requests       ${report.requests}  (turns ${report.turns}, user messages ${report.userMessages}, llm retries ${report.retries}, compactions ${report.compactions})`)
+  lines.push(`  requests       ${report.requests}  (usage reports ${report.usageReports}, surface headers ${report.requestHeaders}, turns ${report.turns}, user messages ${report.userMessages}, llm retries ${report.retries})`)
+  lines.push(`  compactions    ${report.compactions} attempts (ok ${report.compactionsOk}, failed ${report.compactionsFailed}, incomplete ${report.compactionsIncomplete})`)
   if (report.wallMs !== undefined) {
     lines.push(`  wall time      ${(report.wallMs / 1000).toFixed(1)}s`)
   }

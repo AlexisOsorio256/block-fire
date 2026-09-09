@@ -24,6 +24,22 @@
  * the bridge is disposed with the session that asked for it. The router's own
  * tool stays in the preset scope and disappears with the preset.
  *
+ * `host.plugin()` returns a Cordis Fiber: activation is awaited with
+ * `fiber.await()` (it rethrows startup errors) and release is `fiber.dispose()`.
+ * Bookkeeping per session/capability is written BEFORE any await, so two
+ * concurrent `on` calls see the same entry instead of mounting twice, and the
+ * entry is deleted when the owning session scope dies (effect on the owner
+ * context) — a resumed session starts with the capability OFF instead of
+ * inheriting a stale ACTIVE. `off` resolves only after the disposal settles; a
+ * failed release keeps the entry in a `stuck` state so `list` never lies.
+ *
+ * TOOL DISCOVERY FOR `list`
+ * A capability may declare `toolPrefix` (for example `mcp__blender__`). When it
+ * does not, MCP-style prefixes are still derived from `config.serverName`, and
+ * otherwise `list` falls back to the tools the capability actually ADDED at
+ * activation time (schema diff before/after mount) — that is how the Cordis
+ * toolset (`cordis_*`) reports its real names without assuming any bridge shape.
+ *
  * FAIL-SOFT AT THE BOUNDARY
  * The router imports nothing at load time: the tool definition is built from the
  * documented `ctx.tools.register()` contract, so a missing optional dependency
@@ -89,19 +105,34 @@ const DESCRIPTION = [
 
 export function apply(ctx, config) {
   const specs = { ...DEFAULT_CAPABILITIES, ...(config?.capabilities ?? {}) }
-  /** @type {Map<string, Map<string, () => void>>} ownerKey -> capability -> disposer */
+  /**
+   * Per-session bookkeeping: ownerKey -> capability -> entry. An entry exists in
+   * state `starting` from the synchronous moment `on` begins, becomes `active`
+   * (with its Fiber disposer and the tools it added) once the mount settles, or
+   * `stuck` when a release failed. Removing it always follows the owner's own
+   * lifecycle: the entry carries an effect on the owner context, so closing or
+   * resuming a session never leaves a stale ACTIVE behind.
+   *
+   * @type {Map<string, Map<string, {
+   *   state: 'starting'|'active'|'stuck',
+   *   dispose?: () => unknown,
+   *   discovered?: Set<string>,
+   * }>>}
+   */
   const mounted = new Map()
 
+  /** The calling session's agent, or undefined when no session issued the call. */
   const ownerOf = (exec) => (exec?.agent !== undefined && exec.agent !== null ? exec.agent : undefined)
   const ownerKeyOf = (exec) => {
     const agent = ownerOf(exec)
-    if (agent === undefined) return 'preset'
-    return typeof agent.id === 'string' ? agent.id : 'preset'
+    if (agent === undefined || typeof agent.id !== 'string') return undefined
+    return agent.id
   }
+  /** The session context a capability mounts into, or undefined without a session. */
   const ownerCtxOf = (exec) => {
     const agent = ownerOf(exec)
     if (agent !== undefined && agent.ctx !== undefined && typeof agent.ctx.plugin === 'function') return agent.ctx
-    return ctx
+    return undefined
   }
   const ofOwner = (ownerKey) => {
     let entry = mounted.get(ownerKey)
@@ -112,32 +143,77 @@ export function apply(ctx, config) {
     return entry
   }
 
-  const prefixOf = (spec) => `mcp__${String(spec?.config?.serverName ?? '')}__`
-
-  async function registeredNames(spec, exec) {
+  /**
+   * The scope key a context is tagged with. Falls back to the context itself
+   * when the scope package cannot resolve (read-only listing must not depend on
+   * node_modules layout); every real runtime path resolves through `scopeOf`.
+   */
+  async function scopeKeyOf(scope) {
     try {
-      const prefix = prefixOf(spec)
       const { scopeOf } = await import('@deepseek-ai/dsh-scope')
-      return ctx.tools.schemas(scopeOf(ownerCtxOf(exec)))
+      return scopeOf(scope)
+    } catch {
+      return scope
+    }
+  }
+
+  /**
+   * Schema names a scope sees, or undefined when the schema service is
+   * unavailable. Read-only: a scopeless query answers with the global view, so
+   * `list` can still name tools when called outside a session.
+   */
+  async function schemaNames(scope) {
+    try {
+      return ctx.tools.schemas(scope === undefined ? undefined : await scopeKeyOf(scope))
         .map((schema) => schema?.name)
-        .filter((toolName) => typeof toolName === 'string' && toolName.startsWith(prefix))
-        .sort()
+        .filter((toolName) => typeof toolName === 'string')
     } catch {
       return undefined
     }
   }
 
+  /** Declared selector first; MCP-style derivation from serverName second. */
+  const toolPrefixOf = (spec) => {
+    if (typeof spec?.toolPrefix === 'string' && spec.toolPrefix !== '') return spec.toolPrefix
+    const serverName = spec?.config?.serverName
+    return typeof serverName === 'string' && serverName !== '' ? `mcp__${serverName}__` : undefined
+  }
+
+  /**
+   * Tools a capability contributes right now: names matching its declared or
+   * derived prefix, plus the names it actually added when it was mounted (the
+   * activation diff). Capabilities without any selector rely on the diff, which
+   * is measured, not assumed.
+   */
+  async function registeredNames(spec, entry, scope) {
+    const names = await schemaNames(scope)
+    if (names === undefined) return undefined
+    const prefix = toolPrefixOf(spec)
+    const discovered = entry?.discovered
+    return names
+      .filter((toolName) => (prefix !== undefined && toolName.startsWith(prefix)) || discovered?.has(toolName) === true)
+      .sort()
+  }
+
   async function describeAll(exec) {
-    const owner = ofOwner(ownerKeyOf(exec))
+    const ownerKey = ownerKeyOf(exec)
+    const owner = ownerKey !== undefined ? mounted.get(ownerKey) : undefined
     const keys = Object.keys(specs)
     if (keys.length === 0) return 'No optional capabilities are declared in this preset.'
     const lines = ['Optional capabilities (off by default; each costs tool-schema tokens only while active):']
     for (const key of keys) {
       const spec = specs[key]
-      const active = owner.has(key)
-      lines.push(`- ${key} [${active ? 'ACTIVE' : 'off'}] — ${spec?.whenToUse ?? 'no description'}`)
-      if (active) {
-        const names = await registeredNames(spec, exec)
+      const entry = owner?.get(key)
+      const state = entry === undefined
+        ? 'off'
+        : entry.state === 'starting'
+          ? 'STARTING'
+          : entry.state === 'stuck'
+            ? 'ACTIVE (release failed; call off again to retry)'
+            : 'ACTIVE'
+      lines.push(`- ${key} [${state}] — ${spec?.whenToUse ?? 'no description'}`)
+      if (entry !== undefined && entry.state !== 'starting') {
+        const names = await registeredNames(spec, entry, ownerCtxOf(exec) ?? ctx)
         if (names !== undefined) {
           lines.push(names.length > 0
             ? `    tools now visible: ${names.join(', ')}`
@@ -153,57 +229,123 @@ export function apply(ctx, config) {
     if (spec === undefined || typeof spec !== 'object') {
       return `Unknown capability "${key}". Declared: ${Object.keys(specs).join(', ') || '(none)'}`
     }
-    const owner = ofOwner(ownerKeyOf(exec))
-    if (owner.has(key)) return `Capability "${key}" is already active in this session.`
+    const host = ownerCtxOf(exec)
+    const ownerKey = ownerKeyOf(exec)
+    if (host === undefined || ownerKey === undefined) {
+      return `Capability "${key}" can only be activated from a session: this call carried no agent context to mount into.`
+    }
+    const owner = ofOwner(ownerKey)
+    const existing = owner.get(key)
+    if (existing !== undefined) {
+      return existing.state === 'starting'
+        ? `Capability "${key}" is already starting in this session.`
+        : `Capability "${key}" is already active in this session.`
+    }
     if (typeof spec.package !== 'string' || spec.package === '') {
       return `Capability "${key}" has no "package" configured.`
     }
-    const host = ownerCtxOf(exec)
-    if (typeof host.plugin !== 'function') {
-      return `Capability "${key}" cannot be mounted: this runtime exposes no plugin mounting on the session context.`
-    }
-    let moduleNamespace
-    try {
-      moduleNamespace = await import(spec.package)
-    } catch (error) {
-      return [
-        `Capability "${key}" could not load ${spec.package}: ${String(error?.message ?? error)}`,
-        'The bridge resolves from the installed preset directory. Run `harness/install.sh`',
-        '(it links node_modules into the installed copy) and try again.',
-      ].join('\n')
-    }
-    const plugin = moduleNamespace?.default ?? moduleNamespace
-    if (typeof plugin !== 'function' && !(plugin && typeof plugin === 'object' && typeof plugin.apply === 'function')) {
-      return `Capability "${key}" could not be mounted: ${spec.package} did not export a Cordis plugin.`
-    }
-    let fiber
-    try {
-      fiber = host.plugin(plugin, spec.config ?? {})
-      await fiber.await()
-      owner.set(key, fiber.dispose)
-    } catch (error) {
-      await fiber?.dispose()
 
-      return `Capability "${key}" failed to start: ${String(error?.message ?? error)}`
+    // Claimed synchronously, BEFORE the first await: a concurrent `on` sees
+    // `starting` instead of issuing a second mount. Every early return below
+    // happens while state is still `starting`, so the finally frees the slot.
+    const entry = { state: 'starting', discovered: undefined }
+    owner.set(key, entry)
+    try {
+      let moduleNamespace
+      try {
+        moduleNamespace = await import(spec.package)
+      } catch (error) {
+        return [
+          `Capability "${key}" could not load ${spec.package}: ${String(error?.message ?? error)}`,
+          'The bridge resolves from the installed preset directory. Run `harness/install.sh`',
+          '(it links node_modules into the installed copy) and try again.',
+        ].join('\n')
+      }
+      const plugin = moduleNamespace?.default ?? moduleNamespace
+      if (typeof plugin !== 'function' && !(plugin && typeof plugin === 'object' && typeof plugin.apply === 'function')) {
+        return `Capability "${key}" could not be mounted: ${spec.package} did not export a Cordis plugin.`
+      }
+
+      let before
+      let fiber
+      try {
+        before = await schemaNames(host)
+        fiber = host.plugin(plugin, spec.config ?? {})
+        await fiber.await()
+      } catch (error) {
+        // Best-effort cleanup of a partially started mount. Its failure must not
+        // replace the startup error as the answer to the caller.
+        let cleanupNote = ''
+        if (fiber !== undefined && typeof fiber.dispose === 'function') {
+          try {
+            await fiber.dispose()
+          } catch (cleanupError) {
+            cleanupNote = ` Cleaning the partial mount also failed: ${String(cleanupError?.message ?? cleanupError)}`
+          }
+        }
+        owner.delete(key)
+        return `Capability "${key}" failed to start: ${String(error?.message ?? error)}.${cleanupNote} Nothing was left mounted.`
+      }
+
+      // Remember what this capability actually added, so `list` can name its real
+      // tools even when no prefix rule applies to it.
+      if (before !== undefined) {
+        const after = await schemaNames(host)
+        if (after !== undefined) {
+          const added = new Set(after.filter((toolName) => !before.includes(toolName)))
+          if (added.size > 0) entry.discovered = added
+        }
+      }
+
+      entry.state = 'active'
+      entry.dispose = typeof fiber.dispose === 'function' ? fiber.dispose : undefined
+      // Follow the owner's lifecycle: when this session scope dies the entry goes
+      // with it, so a resumed session reports the capability OFF, never ACTIVE.
+      if (typeof host.effect === 'function') {
+        host.effect(() => async () => {
+          const current = mounted.get(ownerKey)
+          if (current?.get(key) === entry) {
+            current.delete(key)
+            if (current.size === 0) mounted.delete(ownerKey)
+          }
+        }, `blockfire-capability:${key}`)
+      }
+      return [
+        `Capability "${key}" activated from ${spec.package} for this session.`,
+        'Its tools appear in the catalog on the next step (a stdio bridge needs a moment to list them).',
+        'This changes the tool-schema prefix for this session: KV-cache reuse resumes from the new prefix.',
+        'Call this tool again with action "list" to confirm the tools are registered, or action "off" to release them.',
+      ].join('\n')
+    } finally {
+      if (entry.state === 'starting') owner.delete(key)
     }
-    return [
-      `Capability "${key}" activated from ${spec.package} for this session.`,
-      'Its tools appear in the catalog on the next step (a stdio bridge needs a moment to list them).',
-      'This changes the tool-schema prefix for this session: KV-cache reuse resumes from the new prefix.',
-      'Call this tool again with action "list" to confirm the tools are registered, or action "off" to release them.',
-    ].join('\n')
   }
 
   async function deactivate(key, exec) {
-    const owner = ofOwner(ownerKeyOf(exec))
-    const dispose = owner.get(key)
-    if (dispose === undefined) return `Capability "${key}" is not active in this session.`
-    owner.delete(key)
-    try {
-      await dispose()
-    } catch (error) {
-      return `Capability "${key}" disposed with an error: ${String(error?.message ?? error)}`
+    const ownerKey = ownerKeyOf(exec)
+    const entry = ownerKey !== undefined ? mounted.get(ownerKey)?.get(key) : undefined
+    if (entry === undefined) return `Capability "${key}" is not active in this session.`
+    if (entry.state === 'starting') {
+      return `Capability "${key}" is still starting; call off again in a moment.`
     }
+    if (typeof entry.dispose !== 'function') {
+      entry.state = 'stuck'
+      return `Capability "${key}" has no disposer to call; it may still be mounted. Report this as a harness defect.`
+    }
+    try {
+      await entry.dispose()
+    } catch (error) {
+      // Success is only announced after the disposal settled. Keeping the entry
+      // (as `stuck`) means `list` still shows it and another `off` can retry.
+      entry.state = 'stuck'
+      return [
+        `Capability "${key}" disposed with an error: ${String(error?.message ?? error)}`,
+        'Its tools may still be visible; call off again to retry, and treat "stuck" in list as still mounted.',
+      ].join('\n')
+    }
+    const owner = mounted.get(ownerKey)
+    owner?.delete(key)
+    if (owner !== undefined && owner.size === 0) mounted.delete(ownerKey)
     return `Capability "${key}" deactivated; its tools are gone from the catalog.`
   }
 
@@ -233,9 +375,10 @@ export function apply(ctx, config) {
   ctx.effect(() => async () => {
     disposeTool()
     for (const owner of mounted.values()) {
-      for (const dispose of owner.values()) {
+      for (const entry of owner.values()) {
+        if (typeof entry.dispose !== 'function') continue
         try {
-          await dispose()
+          await entry.dispose()
         } catch {
           // Best-effort during teardown; the owning fiber is going away anyway.
         }
