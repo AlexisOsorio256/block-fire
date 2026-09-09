@@ -16,13 +16,13 @@ var values: Dictionary = {
 	"control_layout": {},
 	# Apariencia del avatar (cosmética, sin stats). Claves por slot de
 	# CosmeticCatalog; "" = sin accesorio en ese slot.
-	"cosmetic_head": "head_swat",
+	"cosmetic_head": "head_short",
 	"cosmetic_headwear": "",
 	"cosmetic_eyewear": "",
 	"cosmetic_mask": "",
-	"cosmetic_top": "top_swat",
-	"cosmetic_bottom": "bottom_swat",
-	"cosmetic_shoes": "shoes_swat",
+	"cosmetic_top": "top_tactical",
+	"cosmetic_bottom": "bottom_jeans",
+	"cosmetic_shoes": "shoes_tactical",
 	"cosmetic_skin": "skin_light"
 }
 
@@ -34,6 +34,20 @@ func cosmetic_loadout() -> Dictionary:
 		if key.begins_with("cosmetic_"):
 			loadout[key.trim_prefix("cosmetic_")] = values[key]
 	return loadout
+
+
+## Migración: un id guardado que ya no existe en el catálogo (prendas viejas
+## basadas en color) se sustituye por el item por defecto de su slot para que
+## el armario nunca muestre "equipado" algo invisible.
+func _migrate_cosmetics() -> void:
+	var defaults := CosmeticCatalog.default_loadout()
+	for slot: String in defaults:
+		var key := "cosmetic_" + slot
+		var item_id := str(values.get(key, ""))
+		if item_id.is_empty() and slot in ["headwear", "eyewear", "mask"]:
+			continue
+		if not item_id.is_empty() and CosmeticCatalog.item_for(slot, item_id) == null:
+			values[key] = defaults[slot]
 
 
 func set_cosmetic_slot(slot: String, item_id: String) -> void:
@@ -74,6 +88,7 @@ func _load() -> void:
 	for key: String in values.keys():
 		if config.has_section_key("settings", key):
 			values[key] = config.get_value("settings", key)
+	_migrate_cosmetics()
 
 func _save() -> void:
 	var config := ConfigFile.new()

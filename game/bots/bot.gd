@@ -141,7 +141,7 @@ func _physics_process(delta: float) -> void:
 		_stop_navigation()
 		desired_velocity = separation_velocity
 	_move_with_velocity(desired_velocity, delta)
-	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held, weapon.fire_held and can_see, desired_velocity.length() / 4.4)
+	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held, weapon.fire_held and can_see, desired_velocity.length())
 	if desired_velocity.length_squared() > 0.1 or (target_alive and can_see):
 		var facing := desired_velocity.normalized()
 		if target_alive and can_see:
@@ -262,6 +262,8 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 		_die(source)
 	else:
 		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+		if visual != null:
+			visual.flinch(clampf(amount / 35.0, 0.35, 1.2))
 	return true
 
 func _die(killer: Node) -> void:
@@ -296,6 +298,8 @@ func reset_at(spawn: Vector3, immunity: float = 0.8) -> void:
 	last_damage_headshot = false
 	reposition_timer = rng.randf_range(0.2, 1.0)
 	weapon.clear_combat_input()
+	if visual != null:
+		visual.revive()
 
 func break_spawn_immunity() -> void:
 	spawn_immunity = 0.0

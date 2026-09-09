@@ -43,6 +43,29 @@ var mobile_qa: bool = false
 ## Actores congelados mientras un overlay interactivo está abierto.
 var _editor_frozen: Array[Node] = []
 var _overlay_input_states: Dictionary = {}
+## Feedback de combate (sesión FX): hit marker, números de daño flotantes,
+## kill feed, indicador de recarga/cargador bajo y viñeta de daño recibido.
+var _hit_marker: Control
+var _hit_marker_timer := 0.0
+var _hit_marker_headshot := false
+var _hit_marker_kill := false
+var _damage_popups: Array[Label] = []
+var _damage_popup_cursor := 0
+var _kill_feed: VBoxContainer
+var _kill_feed_entries: Array[Label] = []
+var _kill_feed_cursor := 0
+var _reload_label: Label
+var _reload_bar: ProgressBar
+var _damage_vignette: ColorRect
+var _vignette_alpha := 0.0
+var _low_ammo := false
+var _hitstop_until_ms := 0
+## Contador de FPS para medición en dispositivo. Nunca aparece por defecto: se
+## activa con el argumento `--fps` (APK de QA) o con el ajuste `show_fps`.
+var _fps_label: Label
+var _fps_elapsed := 0.0
+var _fps_min := 999.0
+var _fps_max := 0.0
 
 func setup(context: Node, use_mobile_qa: bool) -> void:
 	match_context = context
@@ -121,18 +144,19 @@ func _build() -> void:
 	crosshair.offset_bottom = 17
 	root.add_child(crosshair)
 
+	# HUD periférico: vida a la izquierda (a la derecha del joystick), cargador
+	# arriba a la derecha. El centro queda libre para mundo, punto de mira y
+	# enemigo, que es lo que el jugador necesita leer mientras dispara.
 	bottom_bar = HBoxContainer.new()
-	bottom_bar.anchor_left = 0.5
+	bottom_bar.anchor_left = 0.0
 	bottom_bar.anchor_top = 1.0
-	bottom_bar.anchor_right = 0.5
+	bottom_bar.anchor_right = 0.0
 	bottom_bar.anchor_bottom = 1.0
-	bottom_bar.offset_left = -154
-	bottom_bar.offset_right = 154
-	# Información compacta, separada de los pulgares: suficiente altura para la
-	# barra de vida y el cargador sin convertir el centro inferior en un panel.
+	bottom_bar.offset_left = 268
+	bottom_bar.offset_right = 420
 	bottom_bar.offset_top = -92
 	bottom_bar.offset_bottom = -18
-	bottom_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bottom_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 	bottom_bar.add_theme_constant_override("separation", 8)
 	root.add_child(bottom_bar)
 	var health_panel := PanelContainer.new()
@@ -156,8 +180,16 @@ func _build() -> void:
 	health_stack.add_child(health_bar)
 	var ammo_panel := PanelContainer.new()
 	ammo_panel.custom_minimum_size = Vector2(156, 44)
+	ammo_panel.anchor_left = 1.0
+	ammo_panel.anchor_right = 1.0
+	ammo_panel.anchor_top = 0.0
+	ammo_panel.anchor_bottom = 0.0
+	ammo_panel.offset_left = -176
+	ammo_panel.offset_right = -16
+	ammo_panel.offset_top = 64
+	ammo_panel.offset_bottom = 116
 	ammo_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#071127d9"), Color("#49607e"), 10, 1))
-	bottom_bar.add_child(ammo_panel)
+	root.add_child(ammo_panel)
 	var ammo_stack := VBoxContainer.new()
 	ammo_stack.add_theme_constant_override("separation", 0)
 	ammo_panel.add_child(ammo_stack)
@@ -174,6 +206,20 @@ func _build() -> void:
 	weapon_label = BlockfireTheme.label("PISTOL", 9, Color("#9db7db"))
 	weapon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ammo_stack.add_child(weapon_label)
+
+	_build_combat_feedback()
+	if _fps_enabled():
+		_fps_label = BlockfireTheme.label("FPS --", 12, Color("#8ff1c5"))
+		_fps_label.anchor_left = 0.0
+		_fps_label.anchor_top = 0.0
+		_fps_label.offset_left = 12
+		_fps_label.offset_top = 8
+		_fps_label.offset_right = 260
+		_fps_label.offset_bottom = 28
+		_fps_label.add_theme_color_override("font_shadow_color", Color("#000000cc"))
+		_fps_label.add_theme_constant_override("shadow_offset_x", 2)
+		_fps_label.add_theme_constant_override("shadow_offset_y", 2)
+		root.add_child(_fps_label)
 
 	status_label = BlockfireTheme.label("", 13, Color("#ffd471"))
 	status_label.anchor_left = 0.5
@@ -221,6 +267,250 @@ func _build() -> void:
 		mobile_controls.configure(mobile_qa)
 		root.add_child(mobile_controls)
 
+## Construye el feedback de combate. Todo se crea una vez y se reutiliza: no se
+## instancia ni un nodo durante el fuego.
+func _build_combat_feedback() -> void:
+	# Viñeta de daño recibido (por debajo del resto del HUD).
+	_damage_vignette = ColorRect.new()
+	_damage_vignette.name = "DamageVignette"
+	_damage_vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_damage_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_vignette.color = Color(0.75, 0.05, 0.06, 0.0)
+	_damage_vignette.z_index = -1
+	root.add_child(_damage_vignette)
+
+	# Indicador de recarga / cargador bajo, justo bajo el panel de munición.
+	_reload_label = BlockfireTheme.label("", 12, Color("#ffd471"))
+	_reload_label.anchor_left = 1.0
+	_reload_label.anchor_right = 1.0
+	_reload_label.anchor_top = 0.0
+	_reload_label.anchor_bottom = 0.0
+	_reload_label.offset_left = -176
+	_reload_label.offset_right = -16
+	_reload_label.offset_top = 120
+	_reload_label.offset_bottom = 140
+	_reload_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_reload_label.add_theme_color_override("font_shadow_color", Color("#000000aa"))
+	_reload_label.add_theme_constant_override("shadow_offset_x", 2)
+	_reload_label.add_theme_constant_override("shadow_offset_y", 2)
+	root.add_child(_reload_label)
+	_reload_bar = ProgressBar.new()
+	_reload_bar.anchor_left = 1.0
+	_reload_bar.anchor_right = 1.0
+	_reload_bar.anchor_top = 0.0
+	_reload_bar.anchor_bottom = 0.0
+	_reload_bar.offset_left = -176
+	_reload_bar.offset_right = -16
+	_reload_bar.offset_top = 142
+	_reload_bar.offset_bottom = 148
+	_reload_bar.min_value = 0.0
+	_reload_bar.max_value = 100.0
+	_reload_bar.value = 0.0
+	_reload_bar.show_percentage = false
+	_reload_bar.visible = false
+	_reload_bar.add_theme_stylebox_override("background", BlockfireTheme.button_style(Color("#15233a"), Color("#2c4361"), 3))
+	_reload_bar.add_theme_stylebox_override("fill", BlockfireTheme.button_style(Color("#ffd471"), Color("#ffe9a8"), 3))
+	root.add_child(_reload_bar)
+
+	# Kill feed: arriba a la derecha.
+	_kill_feed = VBoxContainer.new()
+	_kill_feed.anchor_left = 1.0
+	_kill_feed.anchor_right = 1.0
+	_kill_feed.anchor_top = 0.0
+	_kill_feed.anchor_bottom = 0.0
+	_kill_feed.offset_left = -330
+	_kill_feed.offset_right = -16
+	_kill_feed.offset_top = 158
+	_kill_feed.offset_bottom = 262
+	_kill_feed.alignment = BoxContainer.ALIGNMENT_BEGIN
+	_kill_feed.add_theme_constant_override("separation", 2)
+	root.add_child(_kill_feed)
+	for _index: int in range(4):
+		var entry := BlockfireTheme.label("", 12, Color.WHITE)
+		entry.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		entry.modulate = Color(1, 1, 1, 0)
+		entry.add_theme_color_override("font_shadow_color", Color("#000000aa"))
+		entry.add_theme_constant_override("shadow_offset_x", 2)
+		entry.add_theme_constant_override("shadow_offset_y", 2)
+		_kill_feed.add_child(entry)
+		_kill_feed_entries.append(entry)
+
+	# Números de daño flotantes (pool de 8, centro de pantalla).
+	for _index: int in range(8):
+		var popup := BlockfireTheme.label("", 19, Color("#ffe9c2"))
+		popup.anchor_left = 0.5
+		popup.anchor_right = 0.5
+		popup.anchor_top = 0.5
+		popup.anchor_bottom = 0.5
+		popup.offset_left = -60
+		popup.offset_right = 60
+		popup.offset_top = -12
+		popup.offset_bottom = 24
+		popup.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		popup.add_theme_color_override("font_shadow_color", Color("#000000cc"))
+		popup.add_theme_constant_override("shadow_offset_x", 2)
+		popup.add_theme_constant_override("shadow_offset_y", 2)
+		popup.modulate = Color(1, 1, 1, 0)
+		root.add_child(popup)
+		_damage_popups.append(popup)
+
+	# Hit marker dibujado por encima del crosshair.
+	_hit_marker = Control.new()
+	_hit_marker.name = "HitMarker"
+	_hit_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hit_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hit_marker.z_index = 2
+	_hit_marker.draw.connect(_draw_hit_marker)
+	root.add_child(_hit_marker)
+
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if _hit_marker_timer > 0.0:
+		_hit_marker_timer = maxf(0.0, _hit_marker_timer - delta)
+		if _hit_marker != null:
+			_hit_marker.queue_redraw()
+	if _vignette_alpha > 0.0 and _damage_vignette != null:
+		_vignette_alpha = maxf(0.0, _vignette_alpha - delta * 1.9)
+		_damage_vignette.color = Color(0.75, 0.05, 0.06, _vignette_alpha)
+	if _hitstop_until_ms > 0 and Time.get_ticks_msec() >= _hitstop_until_ms:
+		_hitstop_until_ms = 0
+		Engine.time_scale = 1.0
+	_update_fps_counter(delta)
+	_update_reload_indicator()
+
+
+func _fps_enabled() -> bool:
+	if OS.get_cmdline_user_args().has("--fps") or OS.get_cmdline_args().has("--fps"):
+		return true
+	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	return settings != null and bool(settings.get_value("show_fps", false))
+
+
+func _update_fps_counter(delta: float) -> void:
+	if _fps_label == null:
+		return
+	var fps := Engine.get_frames_per_second()
+	_fps_min = minf(_fps_min, fps)
+	_fps_max = maxf(_fps_max, fps)
+	_fps_elapsed += delta
+	if _fps_elapsed < 0.25:
+		return
+	_fps_elapsed = 0.0
+	_fps_label.text = "FPS %d   min %d   max %d" % [fps, int(_fps_min), int(_fps_max)]
+
+
+## El arma local se lee del contexto de partida: no hace falta que match.gd
+## emita nada nuevo para el indicador de recarga.
+func _local_weapon() -> Node:
+	if match_context == null:
+		return null
+	var local_player: Node = match_context.get("player")
+	if local_player == null:
+		return null
+	return local_player.get("weapon")
+
+
+func _update_reload_indicator() -> void:
+	if _reload_label == null:
+		return
+	var weapon := _local_weapon()
+	var reloading := false
+	if weapon != null:
+		reloading = float(weapon.get("reload_timer")) > 0.0
+		if reloading:
+			var definition: WeaponDefinition = weapon.call("current_definition")
+			var total := maxf(0.05, definition.reload_time)
+			_reload_bar.value = clampf(1.0 - float(weapon.get("reload_timer")) / total, 0.0, 1.0) * 100.0
+	_reload_bar.visible = reloading
+	if reloading:
+		_reload_label.text = "RECARGANDO"
+		_reload_label.add_theme_color_override("font_color", Color("#ffd471"))
+	elif _low_ammo:
+		_reload_label.text = "CARGADOR BAJO"
+		_reload_label.add_theme_color_override("font_color", Color("#ff8b72"))
+	else:
+		_reload_label.text = ""
+
+
+func _draw_hit_marker() -> void:
+	if _hit_marker_timer <= 0.0 or _hit_marker == null:
+		return
+	var strength := clampf(_hit_marker_timer / 0.26, 0.0, 1.0)
+	var center := _hit_marker.size * 0.5
+	var gap := 9.0 + 6.0 * (1.0 - strength)
+	var arm := 12.0 + (7.0 if _hit_marker_kill else 0.0)
+	var width := 3.2 if _hit_marker_kill else 2.4
+	var color := Color("#ff5a4a") if _hit_marker_kill else (Color("#ffd35f") if _hit_marker_headshot else Color("#eaf6ff"))
+	color.a = strength
+	for direction: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var diagonal := direction.normalized()
+		_hit_marker.draw_line(center + diagonal * gap, center + diagonal * (gap + arm), color, width, true)
+
+
+func _spawn_damage_popup(amount: float, headshot: bool) -> void:
+	if _damage_popups.is_empty():
+		return
+	var popup: Label = _damage_popups[_damage_popup_cursor % _damage_popups.size()]
+	var slot := _damage_popup_cursor % _damage_popups.size()
+	_damage_popup_cursor += 1
+	popup.text = "%d" % roundi(amount)
+	popup.add_theme_color_override("font_color", Color("#ffd35f") if headshot else Color("#ffe9c2"))
+	popup.add_theme_font_size_override("font_size", 24 if headshot else 19)
+	# Escalona en rejilla 3x3: dos impactos seguidos no se pisan en pantalla.
+	var base_x := float(slot % 3 - 1) * 48.0 + randf_range(-8.0, 8.0)
+	var base_y := -14.0 - float((slot / 3) % 3) * 27.0
+	popup.offset_left = base_x - 60.0
+	popup.offset_right = base_x + 60.0
+	popup.offset_top = base_y
+	popup.offset_bottom = base_y + 36.0
+	popup.modulate = Color(1, 1, 1, 1)
+	var drift := randf_range(-26.0, 26.0)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(popup, "offset_left", base_x - 60.0 + drift, 0.72)
+	tween.tween_property(popup, "offset_right", base_x + 60.0 + drift, 0.72)
+	tween.tween_property(popup, "offset_top", base_y - 52.0, 0.72)
+	tween.tween_property(popup, "offset_bottom", base_y - 16.0, 0.72)
+	tween.tween_property(popup, "modulate", Color(1, 1, 1, 0), 0.5).set_delay(0.22)
+
+
+func _push_kill_feed(text: String, color: Color) -> void:
+	if _kill_feed_entries.is_empty():
+		return
+	var entry: Label = _kill_feed_entries[_kill_feed_cursor % _kill_feed_entries.size()]
+	_kill_feed_cursor += 1
+	entry.text = text
+	entry.add_theme_color_override("font_color", color)
+	entry.modulate = Color(1, 1, 1, 1)
+	var tween := create_tween()
+	tween.tween_interval(2.4)
+	tween.tween_property(entry, "modulate", Color(1, 1, 1, 0), 0.5)
+
+
+func _flash_damage_vignette(strength: float) -> void:
+	_vignette_alpha = maxf(_vignette_alpha, clampf(strength, 0.10, 0.40))
+
+
+## Hit-stop en la baja: micro-dip de time_scale que se restaura siempre por
+## temporizador real (no por delta escalado) y también al salir del árbol.
+func _hit_stop(duration: float, scale: float) -> void:
+	Engine.time_scale = clampf(scale, 0.6, 1.0)
+	_hitstop_until_ms = Time.get_ticks_msec() + int(duration * 1000.0)
+
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0
+	_hitstop_until_ms = 0
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		Engine.time_scale = 1.0
+		_hitstop_until_ms = 0
+
+
 func update_score(ally: int, enemy: int, round_number: int) -> void:
 	if score_label != null:
 		score_label.text = "%d   —   %d" % [ally, enemy]
@@ -249,6 +539,10 @@ func update_ammo(current: int, reserve: int, definition: WeaponDefinition) -> vo
 		reserve_label.text = "/ %d" % reserve
 	if weapon_label != null:
 		weapon_label.text = definition.short_name
+	_low_ammo = current <= maxi(1, int(definition.magazine_size * 0.25))
+	if ammo_label != null:
+		ammo_label.add_theme_color_override("font_color",
+			Color("#ff8b72") if _low_ammo else Color.WHITE)
 
 func set_status(text: String, color: Color = Color("#ffd471")) -> void:
 	if status_label != null:
@@ -273,15 +567,32 @@ func show_damage(text: String, headshot: bool = false) -> void:
 	var tween := create_tween()
 	tween.tween_interval(0.55)
 	tween.tween_property(damage_label, "modulate", Color(1, 1, 1, 0), 0.28)
+	_flash_damage_vignette(0.16 if headshot else 0.11)
 
 func show_hit_feedback(amount: float, headshot: bool) -> void:
-	show_damage("%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot)
+	# El label central queda para daño RECIBIDO (match.gd llama show_damage con
+	# "-N"). El daño infligido se lee ahora en el popup flotante y el marker,
+	# así que aquí no se duplica texto.
 	if crosshair != null:
 		crosshair.register_hit(headshot)
+	_hit_marker_timer = 0.26
+	_hit_marker_headshot = headshot
+	_hit_marker_kill = false
+	if _hit_marker != null:
+		_hit_marker.queue_redraw()
+	_spawn_damage_popup(amount, headshot)
 	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_hit.ogg")
 
 func show_kill(headshot: bool = false) -> void:
 	show_banner("HEADSHOT" if headshot else "ELIMINACIÓN", 0.8)
+	_hit_marker_timer = 0.30
+	_hit_marker_headshot = headshot
+	_hit_marker_kill = true
+	if _hit_marker != null:
+		_hit_marker.queue_redraw()
+	_push_kill_feed("TÚ  ▸  %s" % ("HEADSHOT" if headshot else "ENEMIGO"),
+		Color("#ffd35f") if headshot else Color("#eaf6ff"))
+	_hit_stop(0.05, 0.82)
 	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_kill.ogg")
 
 func _play_ui_sound(path: String) -> void:
@@ -445,6 +756,16 @@ func _close_settings_panel() -> void:
 	if is_instance_valid(settings_panel):
 		settings_panel.queue_free()
 		settings_panel = null
+	# Los controles, la barra de vida y la mira se ocultan al abrir ajustes (ver
+	# _open_settings_panel). Si no se restauran aquí, al pulsar CONTINUAR el
+	# juego queda sin mandos visibles ni mira aunque sigan capturando toques:
+	# bug reportado en dispositivo.
+	if mobile_controls != null:
+		mobile_controls.visible = true
+	if bottom_bar != null:
+		bottom_bar.visible = true
+	if crosshair != null:
+		crosshair.visible = true
 
 func _open_settings_panel() -> void:
 	if is_instance_valid(settings_panel):

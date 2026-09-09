@@ -31,6 +31,7 @@ var previous_fire: bool = false
 var muzzle_flash: MeshInstance3D
 var muzzle_anchor: Node3D
 var shot_audio: AudioStreamPlayer3D
+var shot_tail_audio: AudioStreamPlayer3D
 var reload_audio: AudioStreamPlayer3D
 var switch_audio: AudioStreamPlayer3D
 var empty_audio: AudioStreamPlayer3D
@@ -40,6 +41,12 @@ var rng := RandomNumberGenerator.new()
 var muzzle_flash_scale := 1.0
 var recoil_amount: float = 0.0
 var impact_played_this_shot: bool = false
+var combat_fx: CombatFX
+## Calor de dispersión acumulado por disparos seguidos: el arma "abre" el
+## cono mientras se mantiene el gatillo y se cierra al soltar. Es lo que hace
+## legible una ráfaga frente a disparos sueltos.
+var spread_heat: float = 0.0
+const SPREAD_HEAT_MAX := 2.6
 
 func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = null) -> void:
 	actor = owner_actor
@@ -52,6 +59,12 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	shot_audio.bus = "SFX"
 	shot_audio.max_distance = 42.0
 	add_child(shot_audio)
+	# Capa de cola: la misma muestra más grave y baja, en paralelo, para dar
+	# cuerpo al disparo sin depender de samples nuevos.
+	shot_tail_audio = AudioStreamPlayer3D.new()
+	shot_tail_audio.name = "WeaponTailSfx"
+	shot_tail_audio.bus = "SFX"
+	add_child(shot_tail_audio)
 	reload_audio = AudioStreamPlayer3D.new()
 	reload_audio.name = "ReloadSfx"
 	reload_audio.bus = "SFX"
@@ -72,6 +85,9 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	impact_audio.bus = "SFX"
 	impact_audio.max_distance = 28.0
 	add_child(impact_audio)
+	combat_fx = CombatFX.new()
+	combat_fx.name = "CombatFX"
+	add_child(combat_fx)
 	_reset_ammo_from_definitions()
 	available_indices.clear()
 	for index: int in range(DEFINITIONS.size()):
@@ -81,6 +97,7 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 
 func _physics_process(delta: float) -> void:
 	recoil_amount = move_toward(recoil_amount, 0.0, delta * (2.2 + current_definition().recoil * 4.0))
+	spread_heat = move_toward(spread_heat, 0.0, delta * (2.4 + current_definition().recoil * 26.0))
 	_update_muzzle_anchor()
 	cooldown = maxf(0.0, cooldown - delta)
 	if switching_timer > 0.0:
@@ -140,6 +157,7 @@ func clear_combat_input() -> void:
 	cooldown = 0.0
 	reload_timer = 0.0
 	switching_timer = 0.0
+	spread_heat = 0.0
 	ai_target = null
 	ai_can_see = false
 
@@ -164,6 +182,7 @@ func switch_to(index: int) -> bool:
 		reload_timer = 0.0
 	active_index = index
 	switching_timer = 0.34
+	spread_heat = 0.0
 	_refresh_presentation()
 	_emit_ammo()
 	weapon_changed.emit(current_definition())
@@ -195,6 +214,7 @@ func request_reload() -> void:
 	if ammo[active_index] >= definition.magazine_size or reserve[active_index] <= 0:
 		return
 	reload_timer = definition.reload_time
+	spread_heat = 0.0
 	_play_reload("start")
 
 func try_fire() -> bool:
@@ -211,6 +231,7 @@ func try_fire() -> bool:
 	cooldown = definition.fire_interval
 	var recoil_scale := 0.76 if aim_held else 1.0
 	recoil_amount = minf(0.26, recoil_amount + definition.recoil * 2.4 * recoil_scale)
+	spread_heat = minf(SPREAD_HEAT_MAX, spread_heat + (0.34 + definition.recoil * 5.0) * recoil_scale)
 	if actor != null and actor.has_method("break_spawn_immunity"):
 		actor.break_spawn_immunity()
 	if actor != null and actor.has_method("apply_weapon_recoil"):
@@ -219,15 +240,36 @@ func try_fire() -> bool:
 	weapon_fired.emit(definition)
 	_play_shot(definition.id)
 	_show_muzzle_flash()
+	_emit_muzzle_fx(definition)
 	impact_played_this_shot = false
 	for pellet: int in range(definition.pellets):
-		_fire_pellet(definition)
+		_fire_pellet(definition, pellet)
 	return true
 
-func _fire_pellet(definition: WeaponDefinition) -> void:
+
+## Fogonazo (luz + humo) y casquillo: presupuesto fijo de 1 luz + 1 quad + 1
+## casquillo por disparo, servido desde piscinas en CombatFX.
+func _emit_muzzle_fx(definition: WeaponDefinition) -> void:
+	if combat_fx == null or muzzle_anchor == null or not is_instance_valid(muzzle_anchor):
+		return
+	var muzzle := muzzle_anchor.global_position
+	var basis := muzzle_anchor.global_transform.basis
+	var forward := -basis.z
+	var flash_scale := clampf(muzzle_flash_scale, 0.6, 2.0)
+	combat_fx.muzzle_burst(muzzle, forward, flash_scale)
+	combat_fx.shell_eject(muzzle - forward * 0.22, basis.x, basis.y)
+
+
+func _muzzle_origin() -> Vector3:
+	if muzzle_anchor != null and is_instance_valid(muzzle_anchor):
+		return muzzle_anchor.global_position
+	return _aim_origin()
+
+
+func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	var origin: Vector3 = _aim_origin()
 	var direction: Vector3 = _aim_direction()
-	var spread := definition.spread
+	var spread := definition.spread * (1.0 + spread_heat * (0.42 if aim_held else 0.95))
 	if actor != null and actor.get("is_bot"):
 		if ai_target == null or not ai_can_see:
 			return
@@ -244,15 +286,27 @@ func _fire_pellet(definition: WeaponDefinition) -> void:
 	if actor is CollisionObject3D:
 		query.exclude = [actor.get_rid()]
 	var hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(query)
+	if combat_fx != null:
+		# Una sola trazadora por disparo: en escopeta (8 perdigones) dibujar
+		# ocho beams multiplica el coste sin cambiar la lectura en pantalla.
+		if pellet_index == 0:
+			var tracer_end := origin + direction * minf(definition.range, 30.0)
+			if not hit.is_empty():
+				tracer_end = hit.position
+			combat_fx.tracer(_muzzle_origin(), tracer_end)
 	if hit.is_empty():
 		return
 	var collider: Object = hit.get("collider")
 	var target := _find_actor(collider)
 	if target == null or not target.has_method("get_team"):
+		if combat_fx != null:
+			combat_fx.impact(hit.position, hit.get("normal", Vector3.UP))
 		_play_impact_once()
 		return
 	if actor.has_method("get_team") and target.get_team() == actor.get_team():
 		return
+	if combat_fx != null:
+		combat_fx.impact(hit.position, hit.get("normal", Vector3.UP), true)
 	var distance: float = origin.distance_to(hit.position)
 	var multiplier: float = 1.0
 	var headshot := false
@@ -356,6 +410,11 @@ func _update_muzzle_anchor() -> void:
 		var marker: Node3D = actor_visual.get("muzzle_marker") as Node3D
 		if marker != null and is_instance_valid(marker):
 			muzzle_anchor.global_transform = marker.global_transform
+			# Patada visual: la boca sube con el retroceso acumulado. Se aplica
+			# sobre la copia del marker, así el arma nunca se queda desfasada.
+			if recoil_amount > 0.0005:
+				var basis := muzzle_anchor.global_transform.basis
+				muzzle_anchor.global_basis = basis.rotated(basis.x, recoil_amount * 0.9)
 		else:
 			muzzle_anchor.global_rotation = actor.global_rotation
 	else:
@@ -383,8 +442,10 @@ func _show_muzzle_flash() -> void:
 		muzzle_flash.position = Vector3(0.0, 0.0, 0.03)
 	var flash_scale := maxf(0.6, muzzle_flash_scale)
 	# El flash de boca se dimensiona para leerse en móvil: a escala 1.0 el abanico
-	# de pétalos media ~0.03 unidades en mundo y se perdía contra el cañón.
-	muzzle_flash.scale = Vector3.ONE * flash_scale * 2.2
+	# de pétalos media ~0.03 unidades en mundo y se perdía contra el cañón. El
+	# factor 2.2 lo hacía ocupar ~0,5 m en cámara de hombro y tapaba al
+	# personaje; 1.1 lo deja del ancho del arma.
+	muzzle_flash.scale = Vector3.ONE * flash_scale * 1.1
 	# Random roll around the barrel axis so each shot reads unique.
 	muzzle_flash.rotation = Vector3(0.0, 0.0, rng.randf_range(0.0, TAU))
 	muzzle_flash.visible = true
@@ -392,7 +453,10 @@ func _show_muzzle_flash() -> void:
 	var tween := create_tween()
 	# 45 ms was effectively invisible in a 60 fps Android capture. Keep the
 	# burst attached to the imported muzzle but give it two rendered frames.
-	tween.tween_property(muzzle_flash, "transparency", 0.85, 0.085)
+	# `maxf` garantiza esos dos frames incluso en un dispositivo lento o tras
+	# un hitch de arranque (un delta grande consumía el tween en un frame).
+	var fade_time := maxf(0.085, 2.0 * get_process_delta_time())
+	tween.tween_property(muzzle_flash, "transparency", 0.85, fade_time)
 	tween.tween_callback(func() -> void:
 		if is_instance_valid(muzzle_flash):
 			muzzle_flash.visible = false
@@ -410,9 +474,13 @@ func _muzzle_flash_mesh() -> ArrayMesh:
 		var radius := 0.16 if i % 2 == 0 else 0.06
 		verts.append(Vector3(cos(angle) * radius, sin(angle) * radius, 0.0))
 	for i: int in range(petals):
-		indices.append(center)
-		indices.append(center + 1 + i * 2)
-		indices.append(center + 1 + ((i * 2 + 2) % (petals * 2)))
+		# Puntas reales: se usan los vértices interiores (2,4,6,8,10). El fan
+		# anterior los ignoraba y el "flash" salía como un pentágono plano.
+		var outer_a := center + 1 + i * 2
+		var inner := center + 1 + (i * 2 + 1) % (petals * 2)
+		var outer_b := center + 1 + ((i * 2 + 2) % (petals * 2))
+		indices.append_array([center, outer_a, inner])
+		indices.append_array([center, inner, outer_b])
 	# Forward petal: three thin triangles pointing +Z (out of the barrel).
 	var forward := verts.size()
 	verts.append(Vector3(0, 0, 0.34))
@@ -474,25 +542,43 @@ func _play_shot(weapon_id: String) -> void:
 	else:
 		shot_audio.pitch_scale = 1.0
 		shot_audio.volume_db = 0.0
+	# Variación perceptual (±60 cents) + falloff 3D: sin esto cada disparo de
+	# una ráfaga es el mismo sample y el arma suena a bucle.
+	var base_pitch := shot_audio.pitch_scale
+	var base_volume := shot_audio.volume_db
+	shot_audio.pitch_scale = CombatAudio.jitter_pitch(base_pitch)
+	CombatAudio.configure_falloff(shot_audio, 46.0, 5.0)
 	shot_audio.play()
+	if shot_tail_audio != null:
+		shot_tail_audio.stream = shot_audio.stream
+		shot_tail_audio.pitch_scale = CombatAudio.jitter_pitch(base_pitch * 0.74)
+		shot_tail_audio.volume_db = CombatAudio.tail_volume_db(base_volume)
+		CombatAudio.configure_falloff(shot_tail_audio, 58.0, 7.0)
+		shot_tail_audio.play()
 
 func _play_reload(phase: String) -> void:
 	if reload_audio == null:
 		return
 	var path := "res://assets/sfx/reload_start.ogg" if phase == "start" else "res://assets/sfx/reload_end.ogg"
 	reload_audio.stream = load(path) as AudioStream
+	reload_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.05)
+	CombatAudio.configure_falloff(reload_audio, 22.0, 2.4)
 	reload_audio.play()
 
 func _play_switch() -> void:
 	if switch_audio == null:
 		return
 	switch_audio.stream = load("res://assets/sfx/switch.ogg") as AudioStream
+	switch_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.05)
+	CombatAudio.configure_falloff(switch_audio, 22.0, 2.4)
 	switch_audio.play()
 
 func _play_empty() -> void:
 	if empty_audio == null:
 		return
 	empty_audio.stream = load("res://assets/sfx/empty.ogg") as AudioStream
+	empty_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.06)
+	CombatAudio.configure_falloff(empty_audio, 18.0, 2.0)
 	empty_audio.play()
 
 func _play_impact_once() -> void:
@@ -500,4 +586,6 @@ func _play_impact_once() -> void:
 		return
 	impact_played_this_shot = true
 	impact_audio.stream = load("res://assets/sfx/sfx_impact_wall.ogg") as AudioStream
+	impact_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.07)
+	CombatAudio.configure_falloff(impact_audio, 30.0, 3.0)
 	impact_audio.play()

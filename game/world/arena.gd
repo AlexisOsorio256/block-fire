@@ -9,6 +9,8 @@ const NAVIGATION_AGENT_RADIUS := 0.5
 
 var navigation_region: NavigationRegion3D
 var gameplay_obstacles: Array[Dictionary] = []
+var _tree_placements: Array = []
+
 var spawn_squad: Array[Vector3] = [
 	Vector3(-28, 0.2, 0), Vector3(-24, 0.2, -7), Vector3(-24, 0.2, 7), Vector3(-20, 0.2, 0),
 	Vector3(28, 0.2, 0), Vector3(24, 0.2, -7), Vector3(24, 0.2, 7), Vector3(20, 0.2, 0)
@@ -54,6 +56,18 @@ func _create_environment() -> void:
 	environment.ambient_light_sky_contribution = 0.82
 	environment.ambient_light_energy = 0.72
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.tonemap_exposure = 1.0
+	# Post-proceso barato para móvil: brillo suave en luces y una gradación
+	# ligera. Sin esto la imagen sale lavada y "de motor genérico".
+	environment.glow_enabled = true
+	environment.glow_intensity = 0.30
+	environment.glow_bloom = 0.06
+	environment.glow_hdr_threshold = 1.08
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	environment.adjustment_enabled = true
+	environment.adjustment_saturation = 1.08
+	environment.adjustment_contrast = 1.05
+	environment.adjustment_brightness = 1.01
 	world.environment = environment
 	add_child(world)
 	var sun := DirectionalLight3D.new()
@@ -75,6 +89,232 @@ func _create_ground() -> void:
 	for position: Vector3 in [Vector3(-47, 0, -43), Vector3(46, 0, -38), Vector3(-45, 0, 38), Vector3(45, 0, 41)]:
 		_add_tree(position, 1.25)
 		_add_tree(position + Vector3(3.0, 0, 2.0), 0.85)
+	_create_horizon_forest()
+
+
+## Cinturón de árboles fuera de la zona jugable: cierra el horizonte y evita
+## que el jugador vea el vacío más allá del borde del mapa.
+func _create_horizon_forest() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77123
+	for i: int in range(84):
+		var angle := TAU * float(i) / 84.0 + rng.randf_range(-0.03, 0.03)
+		var radius := rng.randf_range(64.0, 88.0)
+		var position := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+		_add_tree(position, rng.randf_range(0.85, 1.45))
+
+
+## Caminos de tierra: cintas de anchura fija pegadas al terreno. Solo visual
+## (sin collider, no entran en la malla de navegación) y sin tocar lanes ni
+## spawns; hacen que el mapa se lea diseñado en vez de campo abierto.
+func _create_paths() -> void:
+	# Rutas que bordean la estación en vez de atravesarla (radio del edificio
+	# ~3,4 m): dos diagonales hacia los flancos y dos accesos laterales.
+	var routes: Array = [
+		[Vector3(0, 0, 8), Vector3(6, 0, 4), Vector3(16, 0, -4), Vector3(26, 0, -12)],
+		[Vector3(0, 0, 8), Vector3(-6, 0, 4), Vector3(-16, 0, -4), Vector3(-26, 0, -12)],
+		[Vector3(-26, 0, 0), Vector3(-12, 0, 0), Vector3(-4.6, 0, 0)],
+		[Vector3(26, 0, 0), Vector3(12, 0, 0), Vector3(4.6, 0, 0)],
+	]
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var half_width := 1.15
+	for route: Array in routes:
+		for segment in range(route.size() - 1):
+			var from: Vector3 = route[segment]
+			var to: Vector3 = route[segment + 1]
+			var direction := (to - from).normalized()
+			var side := Vector3(-direction.z, 0.0, direction.x) * half_width
+			var steps := 12
+			for step in range(steps):
+				var t0 := float(step) / float(steps)
+				var t1 := float(step + 1) / float(steps)
+				var a := from.lerp(to, t0)
+				var b := from.lerp(to, t1)
+				for pair: Array in [[a - side, a + side, b - side], [b - side, a + side, b + side]]:
+					for point: Vector3 in pair:
+						surface.set_uv(Vector2(point.x * 0.05, point.z * 0.05))
+						# +0,07: el terreno es una malla lineal cada 3,1 m y la
+						# función de altura es curva, así que con menos margen la
+						# cinta se hundía entre vértices y no se veía.
+						surface.add_vertex(Vector3(point.x, _terrain_height(point.x, point.z) + 0.07, point.z))
+	surface.generate_normals()
+	var mesh := surface.commit()
+	if mesh == null:
+		return
+	var path := MeshInstance3D.new()
+	path.name = "DirtPaths"
+	path.mesh = mesh
+
+	var material := _material(Color("#6a5539"))
+	material.detail_enabled = false
+	material.uv1_scale = Vector3(2.0, 2.0, 1.0)
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.roughness = 0.98
+	path.material_override = material
+	add_child(path)
+
+
+## Construye el bosque completo con un solo MultiMesh de malla fusionada
+## (tronco + ramas + copa en una superficie con color de vértice).
+func _build_tree_multimesh() -> void:
+	if _tree_placements.is_empty():
+		return
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_append_cylinder(surface, Vector3(0, 1.55, 0), 0.15, 3.1, Color("#5b4634"), 8)
+	_append_cylinder(surface, Vector3(0.42, 2.85, 0.16), 0.07, 1.15, Color("#54402f"), 6)
+	_append_cylinder(surface, Vector3(-0.36, 3.05, -0.12), 0.06, 1.05, Color("#54402f"), 6)
+	var canopy: Array = [
+		[Vector3(0.0, 4.35, 0.0), 1.45, Color("#5c8b4c")],
+		[Vector3(0.95, 3.95, 0.30), 1.10, Color("#4f7c41")],
+		[Vector3(-0.90, 4.05, -0.25), 1.05, Color("#48743c")],
+		[Vector3(0.35, 3.65, 0.85), 0.95, Color("#456f39")],
+		[Vector3(-0.40, 3.70, -0.90), 0.90, Color("#426a36")],
+		[Vector3(0.10, 5.15, -0.10), 0.95, Color("#639253")],
+		[Vector3(-0.15, 3.25, 0.35), 0.80, Color("#3d6233")],
+	]
+	for blob: Array in canopy:
+		_append_sphere(surface, blob[0] as Vector3, float(blob[1]), blob[2] as Color, 8, 5)
+	surface.generate_normals()
+	var tree_mesh := surface.commit()
+	if tree_mesh == null:
+		return
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 0.92
+	material.detail_enabled = true
+	material.detail_albedo = _world_grain()
+	material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+	material.uv1_scale = Vector3(2.0, 2.0, 1.0)
+	tree_mesh.surface_set_material(0, material)
+	var multimesh := MultiMesh.new()
+	multimesh.mesh = tree_mesh
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.instance_count = _tree_placements.size()
+	for index in range(_tree_placements.size()):
+		var placement: Dictionary = _tree_placements[index]
+		var scale_value := float(placement["scale"])
+		var basis := Basis(Vector3.UP, float((index * 2654435761) % 360) * PI / 180.0)
+		basis = basis.scaled(Vector3.ONE * scale_value)
+		multimesh.set_instance_transform(index, Transform3D(basis, placement["position"] as Vector3))
+	var node := MultiMeshInstance3D.new()
+	node.name = "Forest"
+	node.multimesh = multimesh
+	add_child(node)
+
+
+## Primitivas con color de vértice para poder fusionar todo el bosque en una
+## sola superficie (el MultiMesh no admite materiales distintos por instancia).
+func _append_cylinder(surface: SurfaceTool, centre: Vector3, radius: float, height: float, color: Color, segments: int) -> void:
+	surface.set_color(color)
+	var half := height * 0.5
+	for segment in range(segments):
+		var a0 := TAU * float(segment) / float(segments)
+		var a1 := TAU * float(segment + 1) / float(segments)
+		var p0 := centre + Vector3(cos(a0) * radius, -half, sin(a0) * radius)
+		var p1 := centre + Vector3(cos(a1) * radius, -half, sin(a1) * radius)
+		var p2 := centre + Vector3(cos(a1) * radius, half, sin(a1) * radius)
+		var p3 := centre + Vector3(cos(a0) * radius, half, sin(a0) * radius)
+		for point: Vector3 in [p0, p1, p2, p2, p3, p0]:
+			surface.set_uv(Vector2(point.x, point.z))
+			surface.add_vertex(point)
+
+
+func _append_sphere(surface: SurfaceTool, centre: Vector3, radius: float, color: Color, segments: int, rings: int) -> void:
+	surface.set_color(color)
+	for ring in range(rings):
+		var phi0 := PI * float(ring) / float(rings)
+		var phi1 := PI * float(ring + 1) / float(rings)
+		for segment in range(segments):
+			var th0 := TAU * float(segment) / float(segments)
+			var th1 := TAU * float(segment + 1) / float(segments)
+			var p0 := centre + Vector3(sin(phi0) * cos(th0), cos(phi0), sin(phi0) * sin(th0)) * radius
+			var p1 := centre + Vector3(sin(phi0) * cos(th1), cos(phi0), sin(phi0) * sin(th1)) * radius
+			var p2 := centre + Vector3(sin(phi1) * cos(th1), cos(phi1), sin(phi1) * sin(th1)) * radius
+			var p3 := centre + Vector3(sin(phi1) * cos(th0), cos(phi1), sin(phi1) * sin(th0)) * radius
+			for point: Vector3 in [p0, p1, p2, p2, p3, p0]:
+				surface.set_uv(Vector2(point.x, point.z))
+				surface.add_vertex(point)
+
+
+## Matas de hierba con MultiMesh: cientos de instancias en una sola llamada de
+## dibujo, sin collider. Da textura de suelo sin tocar navegación ni huellas.
+func _create_grass_tufts() -> void:
+	var blade := CylinderMesh.new()
+	blade.top_radius = 0.0
+	blade.bottom_radius = 0.10
+	blade.height = 0.38
+	blade.radial_segments = 3
+	blade.rings = 1
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color("#5f8440")
+	material.roughness = 0.95
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	blade.material = material
+	var multimesh := MultiMesh.new()
+	multimesh.mesh = blade
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 424242
+	var count := 3600
+	multimesh.instance_count = count
+	var placed := 0
+	var attempts := 0
+	# En manchas de 3-6 matas: dispersas una a una se leían como pinchos
+	# uniformes en lugar de vegetación.
+	while placed < count and attempts < count * 6:
+		attempts += 1
+		var centre := Vector3(rng.randf_range(-54.0, 54.0), 0.0, rng.randf_range(-54.0, 54.0))
+		if centre.length() < 7.5:
+			continue
+		var clump := rng.randi_range(3, 6)
+		var clump_scale := rng.randf_range(0.75, 1.35)
+		for _blade in range(clump):
+			if placed >= count:
+				break
+			var offset := Vector3(rng.randf_range(-0.75, 0.75), 0.0, rng.randf_range(-0.75, 0.75))
+			var scale_value := clump_scale * rng.randf_range(0.75, 1.25)
+			var basis := Basis(Vector3.UP, rng.randf_range(0.0, TAU)).scaled(Vector3(scale_value, scale_value * rng.randf_range(0.75, 1.6), scale_value))
+			multimesh.set_instance_transform(placed, Transform3D(basis, centre + offset))
+			placed += 1
+	multimesh.visible_instance_count = placed
+	var node := MultiMeshInstance3D.new()
+	node.name = "GrassTufts"
+	node.multimesh = multimesh
+	add_child(node)
+
+
+## Detalle visual puramente decorativo: arbustos y piedras pequeñas SIN
+## collider. No altera spawns, lanes, navegación ni huellas de colisión; solo
+## llena el vacío entre los hitos para que el mapa no se lea como una llanura.
+func _scatter_detail() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260908
+	var placed: Array[Vector3] = []
+	var attempts := 0
+	while placed.size() < 54 and attempts < 600:
+		attempts += 1
+		var candidate := Vector3(rng.randf_range(-52.0, 52.0), 0.0, rng.randf_range(-52.0, 52.0))
+		# Fuera del edificio central y de los pasillos de spawn.
+		if candidate.length() < 13.0:
+			continue
+		if absf(candidate.x) < 4.0 and absf(candidate.z) < 34.0:
+			continue
+		var too_close := false
+		for other: Vector3 in placed:
+			if other.distance_to(candidate) < 5.0:
+				too_close = true
+				break
+		if too_close:
+			continue
+		placed.append(candidate)
+		if rng.randf() < 0.62:
+			_add_shrub(self, candidate, rng.randf_range(0.55, 1.15))
+		else:
+			_add_boulder(self, candidate + Vector3(0, 0.18, 0),
+				Vector3(rng.randf_range(0.5, 1.1), rng.randf_range(0.35, 0.7), rng.randf_range(0.5, 1.1)),
+				Color("#7a7263"))
 
 
 func _create_layout() -> void:
@@ -94,6 +334,10 @@ func _create_layout() -> void:
 	_add_obstacle("NorthGateRight", Vector3(7, 3.0, -32), Vector3(1.2, 6.0, 1.2), Color("#5b6361"), 0.0)
 	_create_gate_lintel()
 	_create_landmarks()
+	_create_paths()
+	_scatter_detail()
+	_create_grass_tufts()
+	_build_tree_multimesh()
 
 
 func _add_obstacle(node_name: String, position: Vector3, size: Vector3, color: Color, yaw_degrees: float) -> void:
@@ -105,9 +349,12 @@ func _add_obstacle(node_name: String, position: Vector3, size: Vector3, color: C
 func _create_floor() -> void:
 	var floor := MeshInstance3D.new()
 	floor.name = "GroundVisual"
-	floor.mesh = _terrain_mesh(120.0, 48)
+	# El terreno visual es mayor que la zona jugable (120 m) para que el borde
+	# del mapa no se vea como una banda oscura en el horizonte.
+	floor.mesh = _terrain_mesh(200.0, 64)
 	floor.material_override = _ground_material()
 	add_child(floor)
+
 	var body := StaticBody3D.new()
 	body.name = "Ground"
 	body.add_to_group(NAVIGATION_SOURCE_GROUP)
@@ -137,12 +384,15 @@ func _terrain_mesh(size: float, subdivisions: int) -> ArrayMesh:
 			var p01 := Vector3(x0, _terrain_height(x0, z1), z1)
 			var p10 := Vector3(x1, _terrain_height(x1, z0), z0)
 			var p11 := Vector3(x1, _terrain_height(x1, z1), z1)
+			# Winding en sentido que Godot considera frontal visto desde
+			# arriba: con el orden anterior el terreno quedaba culled y solo se
+			# veía el color de suelo del cielo.
 			_surface_vertex(surface, p00, Vector2(uv0.x, uv0.y))
-			_surface_vertex(surface, p01, Vector2(uv0.x, uv1.y))
-			_surface_vertex(surface, p10, Vector2(uv1.x, uv0.y))
 			_surface_vertex(surface, p10, Vector2(uv1.x, uv0.y))
 			_surface_vertex(surface, p01, Vector2(uv0.x, uv1.y))
+			_surface_vertex(surface, p10, Vector2(uv1.x, uv0.y))
 			_surface_vertex(surface, p11, uv1)
+			_surface_vertex(surface, p01, Vector2(uv0.x, uv1.y))
 	surface.generate_normals()
 	var mesh := surface.commit()
 	return mesh if mesh != null else ArrayMesh.new()
@@ -215,8 +465,22 @@ func _create_cover_visual(node_name: String, position: Vector3, size: Vector3, c
 
 
 func _add_station(root: Node3D, color: Color) -> void:
+	# Estación con lectura de edificio: zócalo, cuerpo, banda de ventanas,
+	# alero y puerta. Un cilindro liso se leía como una torre genérica.
+	_add_cylinder(root, "StationBase", Vector3(0, 0.18, 0), 2.72, 0.36, color.darkened(0.28), 16)
 	_add_cylinder(root, "StationCore", Vector3(0, 1.6, 0), 2.5, 3.2, color, 16)
-	_add_cylinder(root, "StationRoof", Vector3(0, 3.3, 0), 3.4, 0.22, Color("#d2a45b"), 20)
+	_add_cylinder(root, "StationWindows", Vector3(0, 2.25, 0), 2.53, 0.62, Color("#1d2b33"), 16)
+	_add_cylinder(root, "StationTrim", Vector3(0, 2.62, 0), 2.58, 0.12, Color("#8a9490"), 16)
+	_add_cylinder(root, "StationRoof", Vector3(0, 3.34, 0), 3.35, 0.24, Color("#d2a45b"), 20)
+	_add_cylinder(root, "StationRoofLip", Vector3(0, 3.5, 0), 2.55, 0.18, Color("#b98d46"), 16)
+	var door := MeshInstance3D.new()
+	door.name = "StationDoor"
+	var door_mesh := BoxMesh.new()
+	door_mesh.size = Vector3(1.35, 2.05, 0.22)
+	door.mesh = door_mesh
+	door.material_override = _material(Color("#2a3439"))
+	door.position = Vector3(0.0, 1.02, 2.48)
+	root.add_child(door)
 	for offset: Vector3 in [Vector3(-3.4, 0.9, -2.5), Vector3(3.4, 0.9, -2.5), Vector3(-3.4, 0.9, 2.5), Vector3(3.4, 0.9, 2.5)]:
 		_add_boulder(root, offset, Vector3(2.0, 1.7, 1.8), Color("#6f6759"))
 	_add_light_post(root, Vector3(-3.6, 0.0, 0.0))
@@ -237,17 +501,13 @@ func _add_gate_post(root: Node3D, color: Color) -> void:
 
 
 func _add_tree(position: Vector3, scale_value: float) -> void:
-	var root := Node3D.new()
-	root.name = "Tree"
-	root.position = position
-	add_child(root)
-	_add_tree_to(root, Vector3.ZERO, scale_value)
+	# Los árboles se acumulan y se dibujan con un único MultiMesh: antes cada
+	# árbol eran ~10 MeshInstance3D y el horizonte solo costaba ~840 draw calls.
+	_tree_placements.append({"position": position, "scale": scale_value})
 
 
 func _add_tree_to(root: Node3D, position: Vector3, scale_value: float) -> void:
-	_add_cylinder(root, "Trunk", position + Vector3(0, 1.7 * scale_value, 0), 0.16 * scale_value, 3.4 * scale_value, Color("#584537"), 8)
-	for crown: Vector3 in [Vector3(0, 3.8, 0), Vector3(0.65, 3.25, 0.25), Vector3(-0.6, 3.1, -0.2)]:
-		_add_sphere(root, "Foliage", position + crown * scale_value, Vector3.ONE * 1.7 * scale_value, Color("#4e7e46"))
+	_tree_placements.append({"position": root.position + position, "scale": scale_value})
 
 
 func _add_shrub(root: Node3D, position: Vector3, scale_value: float) -> void:
@@ -346,27 +606,72 @@ func _mesh_node(node_name: String, mesh: Mesh, position: Vector3, material: Mate
 	return node
 
 
+var _grain_texture: Texture2D
+
+
+func _world_grain() -> Texture2D:
+	if _grain_texture != null:
+		return _grain_texture
+	var size := 64
+	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9911
+	for y in range(size):
+		for x in range(size):
+			var value := 0.82 + rng.randf_range(-0.10, 0.14)
+			image.set_pixel(x, y, Color(value, value, value))
+	_grain_texture = ImageTexture.create_from_image(image)
+	return _grain_texture
+
+
 func _ground_material() -> StandardMaterial3D:
-	var material := _material(Color("#506b43"))
+	# Césped con textura REAL tileada (Kenney CC0) más un ruido suave encima.
+	# Antes el ruido se estiraba sobre los 120 m del mapa y el suelo se leía
+	# como una llanura plana de color uniforme.
+	# `assets/textures/ground.png` es una placa metálica de Kenney: teñida de
+	# verde no daba césped, solo una llanura gris-verde. La variación de hierba
+	# se genera con ruido fractal y se tilea sobre el terreno.
+	var material := _material(Color.WHITE)
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	noise.frequency = 0.045
-	noise.fractal_octaves = 4
+	# NoiseTexture2D muestrea el ruido en coordenadas de PÍXEL: con frecuencia
+	# alta caben decenas de oscilaciones en 256 px y el mipmap lo aplana a un
+	# color uniforme. Frecuencia baja = manchas de hierba de ~1 m visibles.
+	noise.frequency = 0.014
+	noise.fractal_octaves = 3
+	noise.fractal_gain = 0.5
 	var noise_texture := NoiseTexture2D.new()
 	noise_texture.noise = noise
 	noise_texture.width = 256
 	noise_texture.height = 256
 	noise_texture.seamless = true
+	noise_texture.in_3d_space = false
+	# Rampa de dos verdes: el ruido crudo es gris de bajo contraste y teñido
+	# se leía como color plano. Con rampa la variación es visible.
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color("#3c5729"))
+	ramp.set_color(1, Color("#8fa96b"))
+	ramp.add_point(0.5, Color("#5f7c42"))
+	noise_texture.color_ramp = ramp
 	material.albedo_texture = noise_texture
-	material.uv1_scale = Vector3(1.0, 1.0, 1.0)
+	# UV del terreno 0..4 sobre 120 m: con escala 9 cada mancha mide ~3,3 m.
+	material.uv1_scale = Vector3(9.0, 9.0, 1.0)
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	material.roughness = 0.96
+	material.cull_mode = BaseMaterial3D.CULL_BACK
 	return material
 
 
+## Material de mundo con grano procedural: los colores planos hacían que
+## rocas, muros y estructuras se leyeran como bloques de plástico.
 func _material(color: Color, emission: float = 0.0) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.84
+	material.detail_enabled = true
+	material.detail_albedo = _world_grain()
+	material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+	material.uv1_scale = Vector3(3.0, 3.0, 1.0)
 	if emission > 0.0:
 		material.emission_enabled = true
 		material.emission = color

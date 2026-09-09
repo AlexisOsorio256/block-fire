@@ -106,6 +106,13 @@ pause={
 
 renderer/rendering_method="mobile"
 textures/vram_compression/import_etc2_astc=true
-lights_and_shadows/directional_shadow/size=2048
+; Rendimiento medido en SM_S901E: 31-34 fps sostenidos con sombra 2048 y escala
+; 1,0. En el renderer Mobile la sombra direccional y el reescalado son las dos
+; palancas grandes: 1024 + escala 0,85 sube el frame time sin tocar gameplay.
+lights_and_shadows/directional_shadow/size=1024
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
+lights_and_shadows/directional_shadow/size.mobile=1024
+rendering/scaling_3d/mode=1
+rendering/scaling_3d/scale=0.85
 environment/defaults/default_clear_color=Color(0.027451, 0.0588235, 0.109804, 1)
-lights_and_shadows/directional_shadow/max_distance=55.0
+lights_and_shadows/directional_shadow/max_distance=45.0

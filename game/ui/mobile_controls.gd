@@ -108,6 +108,11 @@ func is_looking() -> bool:
 	return look_pointer >= 0 or fire_pointer >= 0 or aim_pointer >= 0
 
 func is_sprinting() -> bool:
+	# Auto-carrera: con el joystick empujado al tope el personaje corre sin
+	# exigir un segundo dedo en CORRER. El botón sigue siendo un latch
+	# independiente para medias inclinaciones.
+	if move_vector.length() >= 0.92:
+		return true
 	return sprinting
 
 func set_edit_mode(enabled: bool) -> void:
@@ -311,6 +316,10 @@ func _in_move(position: Vector2) -> bool:
 	# Use both the radial hit test and a broad lower-left lane. Android safe-area
 	# transforms can move the rendered joystick by a few dozen pixels; movement
 	# must not silently fall through to camera look when the thumb lands there.
+	# Los botones SIEMPRE ganan sobre la lane: CORRER vive dentro de ella y con
+	# el pulgar viniendo del joystick el puntero quedaba pegado al movimiento.
+	if _in_any_button(position):
+		return false
 	return position.distance_to(_move_center()) < 140.0 * _control_scale("joystick") \
 		or (position.x < size.x * 0.34 and position.y > size.y * 0.55)
 

@@ -10,6 +10,7 @@ var qa_combat: bool = false
 var qa_editor: bool = false
 
 func _ready() -> void:
+	_apply_brand_theme()
 	BlockfireInputSetup.ensure_actions()
 	var args := OS.get_cmdline_user_args()
 	mobile_qa = args.has("--mobile-qa")
@@ -24,6 +25,17 @@ func _ready() -> void:
 	_show_lobby()
 	if qa_mode != "":
 		call_deferred("_start_match", qa_mode, "BRAVO", "Estándar")
+
+## Fuente de marca (Rajdhani, OFL) para todo el árbol de UI. Sin esto la
+## interfaz usa la fuente por defecto del motor y se lee genérica.
+func _apply_brand_theme() -> void:
+	var brand := Theme.new()
+	var font := load("res://assets/fonts/Rajdhani-SemiBold.ttf") as Font
+	if font != null:
+		brand.default_font = font
+	brand.default_font_size = 16
+	get_tree().root.theme = brand
+
 
 func _show_lobby() -> void:
 	_clear_screen()

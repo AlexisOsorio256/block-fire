@@ -6,12 +6,16 @@ probar: no inventar.
 
 ## 1. Producto y prioridades
 
-BLOCKFIRE es un FPS arcade estilizado, colorido, legible y rápido para
+BLOCKFIRE es un TPS arcade estilizado, colorido, legible y rápido para
 Android en orientación horizontal. El núcleo es moverse, apuntar, disparar,
 impactar, matar, morir y repetir.
 
 Prioridades inmutables: estabilidad → gameplay → rendimiento → UX → inmersión
 → features.
+
+La presentación visual canónica es **tercera persona sobre el hombro**. No se
+vuelve a primera persona, no se reintroducen brazos PSX y ningún documento
+antiguo que diga "FPS" autoriza a revertir esa decisión.
 
 La ruta canónica es Godot 4.7.2 Standard, GDScript y renderer Mobile. El
 proyecto no debe volver a incorporar Unity, Three.js, WebGL como runtime,

@@ -25,10 +25,20 @@ var look_pitch: float = 0.0
 var jump_requested: bool = false
 var assist_target: Node
 var camera_recoil: float = 0.0
+## Offset de cámara sobre el hombro derecho, en espacio del pivote.
+const CAMERA_OFFSET := Vector3(0.55, 0.20, 3.25)
+const CAMERA_MIN_DISTANCE := 1.35
+## Offset de cámara en ADS (más cerca y más al hombro).
+const CAMERA_ADS_OFFSET := Vector3(0.72, 0.24, 2.35)
+## Por debajo de esta distancia el avatar se oculta para no tapar la pantalla.
+const CAMERA_BODY_HIDE_DISTANCE := 1.75
 var gravity: float = 22.0
-var walk_speed: float = 6.6
-var sprint_speed: float = 9.2
-var crouch_speed: float = 3.7
+## Velocidades calibradas con la zancada real del rig (Walk = 1,32 m/s,
+## Run_Gun = 2,48 m/s): por encima de 7,1 m/s el clip no da más de sí y los
+## pies patinan. 4,8/7,0 se cubren exactamente escalando la reproducción.
+var walk_speed: float = 4.8
+var sprint_speed: float = 7.0
+var crouch_speed: float = 2.6
 var acceleration: float = 32.0
 var assist_break_timer: float = 0.0
 var step_timer: float = 0.0
@@ -66,6 +76,7 @@ func _notification(what: int) -> void:
 			weapon.clear_combat_input()
 
 func _physics_process(delta: float) -> void:
+	_update_camera_collision(delta)
 	assist_break_timer = maxf(0.0, assist_break_timer - delta)
 	camera_recoil = move_toward(camera_recoil, 0.0, delta * 5.0)
 	if spawn_immunity > 0.0:
@@ -119,9 +130,10 @@ func _physics_process(delta: float) -> void:
 	_update_footsteps(delta)
 	if visual != null:
 		var horizontal_speed := Vector2(velocity.x, velocity.z).length()
-		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed / maxf(walk_speed, 0.1))
+		# El visual recibe la velocidad REAL (m/s) para calibrar el clip.
+		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed)
 	if camera != null:
-		var target_fov := 54.0 if (weapon != null and weapon.aim_held) else 70.0
+		var target_fov := 52.0 if (weapon != null and weapon.aim_held) else 68.0
 		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -154,6 +166,8 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 		_die(source)
 	else:
 		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+		if visual != null:
+			visual.flinch(clampf(amount / 35.0, 0.35, 1.2))
 	return true
 
 func _die(killer: Node) -> void:
@@ -211,6 +225,9 @@ func apply_weapon_recoil(amount: float, ads: bool) -> void:
 	var kick := rad_to_deg(amount) * (0.72 if ads else 0.9)
 	camera_recoil += kick
 	look_pitch = clampf(look_pitch + kick, -78.0, 78.0)
+	# Sacudida + golpe de FOV del dueño de efectos (game/fx/camera_fx.gd).
+	# Solo toca rotation/h_offset/v_offset de la cámara, nunca el pivot.
+	CameraFX.kick(self, amount, ads)
 
 func _play_feedback(path: String) -> void:
 	if feedback_audio == null:
@@ -459,16 +476,55 @@ func _create_camera() -> void:
 	camera.near = 0.10
 	# Cámara sobre el hombro: el avatar, la mochila y el arma permanecen en
 	# cuadro. El raycast sigue saliendo de esta cámara, no del modelo.
-	camera.position = Vector3(0.62, 0.22, 3.85)
+	camera.position = CAMERA_OFFSET
 	camera_pivot.add_child(camera)
 	weapon = WeaponController.new()
 	weapon.name = "WeaponController"
 	add_child(weapon)
 	weapon.setup(self, camera, mobile_controls)
 
-func _update_crouch_visual() -> void:
+## La cámara nunca debe atravesar muro, esquina ni cover: se lanza un rayo del
+## pivote a la posición deseada contra el mundo (capa 1) y se acerca el brazo
+## de la cámara al primer impacto, con margen para no cortar el personaje.
+func _update_camera_collision(delta: float) -> void:
+	if camera == null or camera_pivot == null:
+		return
+	var desired_local := CAMERA_OFFSET
+	if weapon != null and weapon.aim_held:
+		# ADS: la cámara se acerca y se desplaza al hombro para que el punto de
+		# mira quede libre y el arma se lea, sin cambiar el origen del raycast.
+		desired_local = CAMERA_ADS_OFFSET
+	if crouched:
+		desired_local.y -= 0.16
+	var pivot_transform := camera_pivot.global_transform
+	var from := pivot_transform * Vector3(0.0, 0.0, 0.0)
+	var desired := pivot_transform * desired_local
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(from, desired)
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	var hit := space.intersect_ray(query)
+	var target_local := desired_local
+	if not hit.is_empty():
+		var hit_local := pivot_transform.affine_inverse() * (hit["position"] as Vector3)
+		var direction := (hit_local - desired_local).normalized()
+		target_local = hit_local + direction * 0.35
+	# Nunca por debajo de la distancia mínima: pegada al cuerpo la espalda del
+	# personaje llena la pantalla y se pierde el mundo (visto con un árbol
+	# detrás del jugador en SM_S901E).
+	target_local.z = clampf(target_local.z, CAMERA_MIN_DISTANCE, desired_local.z)
+	camera.position = camera.position.lerp(target_local, clampf(delta * 14.0, 0.0, 1.0))
+	# Si el entorno obliga a pegar la cámara, el cuerpo tapa toda la pantalla:
+	# se oculta mientras esté por debajo del umbral (práctica estándar en TPS).
 	if visual != null:
-		visual.scale.y = 0.72 if crouched else 1.0
+		visual.visible = camera.position.z > CAMERA_BODY_HIDE_DISTANCE
+
+
+func _update_crouch_visual() -> void:
+	# Sin squash de escala: el agachado usa clips reales (CrouchIdle/CrouchWalk)
+	# y el clip ya baja el Root. Aplastar la malla deformaba todo el personaje.
+	if visual != null:
+		visual.set_crouch_state(crouched)
 	if camera_pivot != null:
 		camera_pivot.position.y = 1.18 if crouched else 1.58
 

@@ -2,7 +2,7 @@
 
 # 🔥 BLOCKFIRE
 
-**FPS arcade Godot para Android, con laboratorio Linux headless.**
+**TPS arcade Godot para Android (tercera persona sobre el hombro), con laboratorio Linux headless.**
 
 Entras. Te mueves. Disparas. Matas. Mueres. Repites.
 Duelo de Escuadras 4v4 por rondas o Todos contra Todos a 20 kills.

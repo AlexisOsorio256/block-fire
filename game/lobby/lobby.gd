@@ -26,14 +26,16 @@ var _time: float = 0.0
 
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
 ## Categoría UI -> slot de CosmeticCatalog.
+## Etiquetas honestas: cada slot cambia GEOMETRÍA real del rig modular, no un
+## tinte (el nombre antiguo "COLOR SUP." describía el armario ficticio previo).
 const WARDROBE_CATEGORIES: Array = [
-	["COLOR CASCO", "head"],
+	["CABEZA", "head"],
 	["GORRA", "headwear"],
-	["LENTES", "eyewear"],
+	["GAFAS", "eyewear"],
 	["MÁSCARA", "mask"],
-	["COLOR SUP.", "top"],
-	["COLOR INF.", "bottom"],
-	["COLOR CALZ.", "shoes"],
+	["TOP", "top"],
+	["PANTALÓN", "bottom"],
+	["CALZADO", "shoes"],
 	["PIEL", "skin"],
 ]
 
@@ -123,18 +125,53 @@ func _build_world() -> void:
 
 	_add_lamp(Vector3(-3.2, 0.0, 2.2))
 	_add_lamp(Vector3(5.8, 0.0, 2.4))
+	_add_lobby_props()
 
 	hero = OperatorVisual.new()
 	hero.position = Vector3(1.55, 0.0, 0)
 	# Yaw hacia la cámara (la cámara está en +X/+Z del héroe): con -28 el rifle
 	# del showcase quedaba detrás del panel de UI y el personaje daba la espalda
 	# al eje de lectura del lobby.
-	hero.rotation_degrees.y = 14.0
+	hero.rotation_degrees.y = 52.0
 	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
 	# El lobby presenta al personaje, no una pose de combate que le tape la cara.
 	hero.set_combat_state(false, false)
 	hero.set_showcase_mode(true, "", selected_skin)
+
+## Atrezzo de fondo del lobby: cajas, barreras y un contenedor para que el
+## escaparate no sea un vacío azul. Sin collider (el lobby no se juega).
+func _add_lobby_props() -> void:
+	var crate_material := _material(Color("#4a5b6e"))
+	var dark_crate := _material(Color("#39485a"))
+	var container_material := _material(Color("#3f5f6b"))
+	# La cámara del lobby está en (2.55, 1.52, 3.85) mirando al héroe: el atrezzo
+	# se coloca a la espalda y a los lados de esa línea, no fuera de cuadro.
+	var specs: Array = [
+		[Vector3(-3.1, 0.55, -1.8), Vector3(1.6, 1.1, 1.6), 18.0, crate_material],
+		[Vector3(-1.9, 0.45, -2.6), Vector3(1.2, 0.9, 1.2), -12.0, dark_crate],
+		[Vector3(-2.9, 1.35, -2.1), Vector3(1.1, 0.8, 1.1), 32.0, dark_crate],
+		[Vector3(4.4, 0.5, -1.6), Vector3(2.2, 1.0, 1.2), -8.0, crate_material],
+		[Vector3(-4.6, 0.6, 1.2), Vector3(1.4, 1.2, 1.4), 24.0, dark_crate],
+	]
+	for spec: Array in specs:
+		var box := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = spec[1] as Vector3
+		box.mesh = mesh
+		box.position = spec[0] as Vector3
+		box.rotation_degrees.y = float(spec[2])
+		box.material_override = spec[3] as Material
+		add_child(box)
+	var container := MeshInstance3D.new()
+	var container_mesh := BoxMesh.new()
+	container_mesh.size = Vector3(6.4, 2.6, 2.6)
+	container.mesh = container_mesh
+	container.position = Vector3(3.9, 1.3, -6.2)
+	container.rotation_degrees.y = -14.0
+	container.material_override = container_material
+	add_child(container)
+
 
 func _add_lamp(position: Vector3) -> void:
 	var root := Node3D.new()
@@ -196,7 +233,7 @@ func _build_ui() -> void:
 	title.add_theme_constant_override("shadow_offset_x", 3)
 	title.add_theme_constant_override("shadow_offset_y", 3)
 	left.add_child(title)
-	var subtitle := BlockfireTheme.label("FPS MÓVIL · 4v4 / FFA", 12, Color("#9db7db"))
+	var subtitle := BlockfireTheme.label("TPS MÓVIL · 4v4 / FFA", 12, Color("#9db7db"))
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(subtitle)
 
@@ -229,7 +266,7 @@ func _build_ui() -> void:
 	var chars := HBoxContainer.new()
 	chars.add_theme_constant_override("separation", 8)
 	left.add_child(chars)
-	var wardrobe := _make_select_button("ESTILO\nCOLORES Y EQUIPO", 13)
+	var wardrobe := _make_select_button("ROPA\nY EQUIPO", 13)
 	var armory := _make_select_button("ARMAS\nSKINS", 13)
 	chars.add_child(wardrobe)
 	chars.add_child(armory)
@@ -298,7 +335,7 @@ func _toggle_wardrobe() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 6)
 	wardrobe_panel.add_child(stack)
-	var heading := BlockfireTheme.label("ESTILO · COLOR Y EQUIPO", 15, BlockfireTheme.GOLD)
+	var heading := BlockfireTheme.label("ARMARIO · ROPA Y ACCESORIOS", 15, BlockfireTheme.GOLD)
 	stack.add_child(heading)
 	wardrobe_category_buttons.clear()
 	var cats := GridContainer.new()

@@ -98,17 +98,33 @@ func _test_visual_in_tree() -> void:
 	_check(visual.model_root != null, "avatar visual builds a model root")
 	_check(visual.model_root != null and visual.model_root.find_child("CharacterModel", true, false) != null,
 		"avatar instantiates the downloaded rigged skin")
-	_check(visual.skeleton != null and visual.skeleton.get_bone_count() >= 400,
-		"avatar keeps the source deformation skeleton")
+	_check(visual.skeleton != null and visual.skeleton.get_bone_count() >= 20,
+		"avatar keeps the modular deformation skeleton")
 	_check(visual.animation_player != null and visual.retarget_ready,
-		"avatar installs the UAL retarget library")
+		"avatar exposes its native animation library")
 	if visual.animation_player != null:
-		_check(visual.animation_player.has_animation("ual/Idle"), "retargeted idle clip is addressable")
-		_check(visual.animation_player.has_animation("ual/Pistol_Shoot"), "retargeted pistol shoot clip is addressable")
+		_check(visual.animation_player.has_animation("Idle_Gun"), "native idle clip is addressable")
+		_check(visual.animation_player.has_animation("Idle_Aim"), "native aim clip is addressable")
+		_check(visual.animation_player.has_animation("Idle_Shoot"), "native shoot clip is addressable")
+		_check(visual.animation_player.has_animation("Walk"), "native walk clip is addressable")
+		_check(visual.animation_player.has_animation("Run_Gun"), "native run clip is addressable")
+		_check(visual.animation_player.has_animation("Death"), "native death clip is addressable")
 	visual.set_combat_state(false, false)
 	await process_frame
-	_check(visual.animation_player != null and visual.animation_player.current_animation == "ual/Idle",
-		"avatar starts in retargeted idle")
+	_check(visual.animation_player != null and visual.animation_player.current_animation == "Idle_Gun",
+		"avatar starts in native idle")
+	# El armario debe ser geometría real: cada prenda enciende su módulo.
+	var wardrobe_settings: Node = get_root().get_node("SettingsStore")
+	wardrobe_settings.set_cosmetic_slot("top", "top_tactical")
+	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
+	var tactical_module := visual.model_root.find_child("Swat_Body", true, false) as MeshInstance3D
+	var casual_module := visual.model_root.find_child("Casual2_Body", true, false) as MeshInstance3D
+	_check(tactical_module != null and tactical_module.visible, "tactical top shows its modular mesh")
+	_check(casual_module != null and not casual_module.visible, "unselected tops stay hidden")
+	wardrobe_settings.set_cosmetic_slot("top", "top_hoodie")
+	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
+	var hoodie_module := visual.model_root.find_child("Casual_Body", true, false) as MeshInstance3D
+	_check(hoodie_module != null and hoodie_module.visible, "changing the top changes real geometry")
 	_check(visual.model_root != null and visual.model_root.find_child("TeamRing", true, false) != null,
 		"avatar keeps the team marker outside the skinned mesh")
 	_check(visual.weapon_mount != null and visual.muzzle_marker != null,
@@ -116,17 +132,17 @@ func _test_visual_in_tree() -> void:
 	# Regresión P0: ownership humano/bot no depende del string de team.
 	# Un bot aliado nunca debe heredar el loadout persistido del jugador.
 	var settings: Node = get_root().get_node("SettingsStore")
-	settings.set_cosmetic_slot("top", "top_suit")
-	settings.set_cosmetic_slot("bottom", "bottom_suit")
+	settings.set_cosmetic_slot("top", "top_jacket")
+	settings.set_cosmetic_slot("bottom", "bottom_trousers")
 	var ally_bot_visual := OperatorVisual.new()
 	ally_bot_visual.name = "AllyBotOwnership"
 	get_root().add_child(ally_bot_visual)
 	await process_frame
 	ally_bot_visual.configure("TALON", "ally", Color("#f0a064"))
 	var ally_loadout := ally_bot_visual.resolve_default_loadout(42)
-	_check(String(ally_loadout.get("top", "")) != "top_suit", "ally bot does not inherit player top")
-	settings.set_cosmetic_slot("top", "top_swat")
-	settings.set_cosmetic_slot("bottom", "bottom_swat")
+	_check(String(ally_loadout.get("top", "")) != "top_jacket", "ally bot does not inherit player top")
+	settings.set_cosmetic_slot("top", "top_tactical")
+	settings.set_cosmetic_slot("bottom", "bottom_jeans")
 	# El escaparate debe sobrevivir al rebuild que provoca cambiar una prenda:
 	# el rifle es parte del lifecycle del visual y no del lobby por frame.
 	visual.set_showcase_mode(true, "", "Estándar")
@@ -149,7 +165,7 @@ func _test_visual_in_tree() -> void:
 	get_root().add_child(bot)
 	await process_frame
 	_check(bot.visual != null and bot.visual.model_root != null, "bot builds its own visual")
-	_check(bot.visual != null and bot.visual.skeleton != null and bot.visual.skeleton.get_bone_count() >= 400,
+	_check(bot.visual != null and bot.visual.skeleton != null and bot.visual.skeleton.get_bone_count() >= 20,
 		"bot keeps the same rigged third-person avatar")
 	_check((bot.collision_mask & 2) != 0, "bot body blocks combatant overlap")
 	var collision_player := BlockfirePlayer.new()
@@ -198,8 +214,17 @@ func _test_cosmetic_catalog() -> void:
 		_check(_slot_count(items, slot) >= 1, "cosmetic slot has at least one outfit piece: " + slot)
 	for slot: String in ["headwear", "eyewear", "mask", "skin"]:
 		_check(_slot_count(items, slot) >= 1, "cosmetic slot has at least one item: " + slot)
-	var swat := CosmeticCatalog.item_for("top", "top_swat")
-	_check(swat != null and swat.mesh_node == "Swat_Body", "swat top maps to its modular mesh")
+	# Cada prenda debe apuntar a un módulo REAL del rig y a un solo slot.
+	for slot: String in CosmeticCatalog.SLOT_MODULES:
+		var items_for_slot: Array = CosmeticCatalog.items_by_slot().get(slot, [])
+		_check(items_for_slot.size() >= 2, "wardrobe offers real geometry options for slot " + slot)
+		for item: CosmeticItem in items_for_slot:
+			_check(CosmeticCatalog.SLOT_MODULES[slot].has(item.mesh_node),
+				"garment maps to a real module: " + item.id)
+	var tactical := CosmeticCatalog.item_for("top", "top_tactical")
+	_check(tactical != null and tactical.mesh_node == "Swat_Body", "tactical top maps to its modular mesh")
+	var hoodie := CosmeticCatalog.item_for("top", "top_hoodie")
+	_check(hoodie != null and hoodie.mesh_node != tactical.mesh_node, "different tops use different geometry")
 	_check(ResourceLoader.exists("res://assets/models/quaternius_modular/avatar_rig.gltf"), "modular avatar asset imports")
 	var loadout := CosmeticCatalog.default_loadout()
 	for slot: String in ["head", "top", "bottom", "shoes", "skin"]:

@@ -115,7 +115,9 @@ func _start_round() -> void:
 		for index: int in range(1, 8):
 			_create_bot(spawns[index], "bot_%d" % index, ["entry", "support", "anchor"][index % 3], ["VULTURE", "TALON", "DUNE", "HAVOC"][index % 4], 0.05)
 		if player != null:
-			player.weapon.set_available_weapons([0, 1, 2, 3], 1)
+			# FFA arranca con la SMG equipada (silueta TPS legible); las cuatro
+			# armas siguen en la rueda de cambio.
+			player.weapon.set_available_weapons([0, 1, 2, 3], 3)
 			hud.update_ffa_score(0, FfaRules.KILLS_TO_WIN)
 		_start_combat()
 	kills.clear()
@@ -173,12 +175,16 @@ func _create_player(spawn: Vector3, team_id: String) -> void:
 	player.global_position = spawn
 	player.spawn_immunity = 1.2
 	player.input_enabled = mode == "ffa"
-	player.weapon.set_available_weapons([0, 1, 2, 3] if mode == "ffa" else [1], 1)
 	player.player_died.connect(_on_player_died)
 	player.health_changed.connect(hud.update_health)
 	player.weapon.ammo_changed.connect(hud.update_ammo)
 	player.weapon.weapon_changed.connect(func(definition: WeaponDefinition) -> void: hud.update_ammo(player.weapon.ammo[player.weapon.active_index], player.weapon.reserve[player.weapon.active_index], definition))
 	player.weapon.damage_confirmed.connect(func(amount: float, headshot: bool) -> void: hud.show_hit_feedback(amount, headshot))
+	# Las armas se fijan DESPUÉS de conectar señales: el primer emit debe llegar
+	# al HUD o el panel de munición muestra el arma equivocada toda la partida.
+	# En FFA se empieza con la SMG (silueta TPS legible); el rifle se reserva
+	# para la tienda de escuadras.
+	player.weapon.set_available_weapons([0, 1, 2, 3] if mode == "ffa" else [1], 3 if mode == "ffa" else 1)
 
 func _create_bot(spawn: Vector3, team_id: String, role_id: String, bot_operator: String, bonus: float) -> void:
 	var bot := Bot.new()
@@ -388,14 +394,32 @@ func _update_spectator_camera() -> void:
 	spectator_camera.global_position = desired_position
 	spectator_camera.look_at(focus, Vector3.UP)
 
+## Un respawn nunca debe caer dentro de otro actor: al solaparse, la física
+## empujaba al que aparece y terminaba de pie sobre la cabeza del otro.
+## Se elige el punto libre más lejano de cualquier combatiente vivo.
+func _pick_free_spawn(spawns: Array[Vector3], actor: Node) -> Vector3:
+	if spawns.is_empty():
+		return Vector3.ZERO
+	var best: Vector3 = spawns[0]
+	var best_clearance := -1.0
+	for spawn: Vector3 in spawns:
+		var clearance := 999.0
+		for other: Node in get_combatants():
+			if other == actor or not is_instance_valid(other):
+				continue
+			clearance = minf(clearance, spawn.distance_to((other as Node3D).global_position))
+		if clearance > best_clearance:
+			best_clearance = clearance
+			best = spawn
+	return best
+
+
 func _schedule_respawn(actor: Node) -> void:
 	var delay := FfaRules.respawn_delay()
 	get_tree().create_timer(delay).timeout.connect(func() -> void:
 		if state != "COMBAT" or not is_instance_valid(actor):
 			return
-		var spawns := arena.get_spawns("ffa")
-		var index := int(abs(actor.get_instance_id())) % spawns.size()
-		actor.reset_at(spawns[index], 1.2)
+		actor.reset_at(_pick_free_spawn(arena.get_spawns("ffa"), actor), 1.2)
 		if actor == player:
 			player.camera.current = true
 			hud.hide_spectator()
