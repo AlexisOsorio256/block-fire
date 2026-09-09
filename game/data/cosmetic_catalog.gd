@@ -9,16 +9,20 @@ extends RefCounted
 ## Accesorios rígidos: headwear / eyewear / mask (malla dedicada anclada al
 ## hueso Head). skin tiñe los materiales "Skin" del pack.
 
-## Módulos disponibles por slot (nombres exactos dentro de avatar_rig.gltf).
+## Única fuente de verdad de los módulos del armario (nombres exactos dentro
+## de avatar_rig.gltf). Incluye también los módulos sin prenda publicada
+## (Beach, King, SpaceSuit): OperatorVisual los recorre para ocultar todo lo
+## que no es la prenda elegida, así que la tabla debe nombrar el rig entero.
+## Toda prenda de GARMENTS apunta a un módulo de esta tabla (lo vigila smoke).
 const SLOT_MODULES := {
-	"top": ["Casual2_Body", "Casual_Body", "Suit_Body", "Swat_Body", "Punk_Body", "Worker_Body",
-		"Farmer_Body", "Adventurer_Body"],
-	"bottom": ["Casual2_Legs", "Casual_Legs", "Suit_Legs", "Swat_Legs", "Punk_Legs", "Worker_Legs",
-		"Farmer_Pants", "Adventurer_Legs"],
-	"shoes": ["Casual2_Feet", "Casual_Feet", "Suit_Feet", "Swat_Feet", "Punk_Feet", "Worker_Feet",
-		"Farmer_Feet", "Adventurer_Feet"],
-	"head": ["Casual2_Head", "Suit_Head", "Punk_Head", "Swat_Head", "Worker_Head", "Farmer_Head",
-		"Adventurer_Head", "Casual_Head"],
+	"top": ["Adventurer_Body", "Beach_Body", "Casual2_Body", "Casual_Body", "Farmer_Body",
+		"King_Body", "Punk_Body", "SpaceSuit_Body", "Suit_Body", "Swat_Body", "Worker_Body"],
+	"bottom": ["Adventurer_Legs", "Beach_Legs", "Casual2_Legs", "Casual_Legs", "Farmer_Pants",
+		"King_Legs", "Punk_Legs", "SpaceSuit_Legs", "Suit_Legs", "Swat_Legs", "Worker_Legs"],
+	"shoes": ["Adventurer_Feet", "Beach_Feet", "Casual2_Feet", "Casual_Feet", "Farmer_Feet",
+		"King_Feet", "Punk_Feet", "SpaceSuit_Feet", "Suit_Feet", "Swat_Feet", "Worker_Feet"],
+	"head": ["Adventurer_Head", "Beach_Head", "Casual2_Head", "Casual_Head", "Farmer_Head",
+		"King_Head", "Punk_Head", "SpaceSuit_Head", "Suit_Head", "Swat_Head", "Worker_Head"],
 }
 
 ## (id, slot, etiqueta, módulo del rig). La etiqueta nombra la prenda real.

@@ -48,20 +48,6 @@ const EXTRA_CLIP_PATHS := [
 const LOOPING_CLIPS := ["WalkFwd", "SprintFwd", "StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk", "BackWalk", "CrouchLeft", "CrouchRight", "CrouchBack", "AirLoop"]
 const WEAPON_IDS := ["rifle", "pistol", "shotgun", "smg"]
 
-## Cada slot del armario es un conjunto de módulos del pack. Solo un módulo
-## por slot puede estar visible: eso es lo que hace que cambiar de prenda
-## cambie la silueta y no un tinte.
-const MODULE_SLOTS := {
-	"top": ["Adventurer_Body", "Beach_Body", "Casual2_Body", "Casual_Body", "Farmer_Body",
-		"King_Body", "Punk_Body", "SpaceSuit_Body", "Suit_Body", "Swat_Body", "Worker_Body"],
-	"bottom": ["Adventurer_Legs", "Beach_Legs", "Casual2_Legs", "Casual_Legs", "Farmer_Pants",
-		"King_Legs", "Punk_Legs", "SpaceSuit_Legs", "Suit_Legs", "Swat_Legs", "Worker_Legs"],
-	"shoes": ["Adventurer_Feet", "Beach_Feet", "Casual2_Feet", "Casual_Feet", "Farmer_Feet",
-		"King_Feet", "Punk_Feet", "SpaceSuit_Feet", "Suit_Feet", "Swat_Feet", "Worker_Feet"],
-	"head": ["Adventurer_Head", "Beach_Head", "Casual2_Head", "Casual_Head", "Farmer_Head",
-		"King_Head", "Punk_Head", "SpaceSuit_Head", "Suit_Head", "Swat_Head", "Worker_Head"],
-}
-
 ## La velocidad de suelo implícita de cada clip de locomoción vive en
 ## `locomotion_speeds.json`, escrito por tools/make_anim_clips.py y consumido
 ## por OperatorMotion. Aquí no se duplica: dos verdades divergen siempre.
@@ -809,9 +795,9 @@ func _remap_clip_tracks(animation: Animation) -> void:
 
 
 func _index_modules(character: Node) -> void:
-	for slot: String in MODULE_SLOTS:
+	for slot: String in CosmeticCatalog.SLOT_MODULES:
 		_modules[slot] = {}
-		for module_name: String in MODULE_SLOTS[slot]:
+		for module_name: String in CosmeticCatalog.SLOT_MODULES[slot]:
 			var mesh_instance := character.find_child(module_name, true, false) as MeshInstance3D
 			if mesh_instance != null:
 				_modules[slot][module_name] = mesh_instance
@@ -833,7 +819,7 @@ func _apply_wardrobe() -> void:
 			# vuelve a resolver en _ready() cuando SettingsStore es alcanzable.
 			_wardrobe_pending = true
 			loadout = CosmeticCatalog.default_loadout()
-	for slot: String in MODULE_SLOTS:
+	for slot: String in CosmeticCatalog.SLOT_MODULES:
 		var modules: Dictionary = _modules.get(slot, {})
 		if modules.is_empty():
 			continue

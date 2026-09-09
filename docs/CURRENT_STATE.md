@@ -5,8 +5,8 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 
 ## Instantánea
 
-- **HEAD**: `cd3dd11` (esta sesión añade el commit de animación + arquitectura).
-- **Modelo de la última sesión**: `deepseek-v4.1-flash-expires-on-0910`.
+- **HEAD**: `7f695d9` (unifica la tabla de módulos del armario).
+- **Modelo de la última sesión**: `GLM-5.3-Flash`.
 - **Tests verdes**: `tools/bf test` → smoke 210 checks PASS, animation_layers
   PASS. `tools/bf qa touch` → PASS (13 checks).
 - **Tests rojos**: ninguno.
@@ -30,18 +30,17 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 
 ## P0 técnico
 
-1. **`OperatorVisual` sigue siendo el archivo más grande** (1335 líneas).
+1. **`OperatorVisual` sigue siendo el archivo más grande** (1331 líneas).
    Candidatos de extracción ya identificados y ordenados en
    `docs/ARCHITECTURE.md` → no partirlo a lo bruto.
 2. **Audio sin dueño ni suite**: buses en `.tres`, volúmenes en SettingsStore y
    rutas de samples dispersas; cero tests.
-3. **Duplicaciones pendientes** (ver tabla de la auditoría en el commit): la
-   lista de módulos del armario existe en `CosmeticCatalog.SLOT_MODULES` y en
-   `OperatorVisual.MODULE_SLOTS`, y están divergentes.
+
+Resuelto: la tabla de módulos del armario vive solo en
+`CosmeticCatalog.SLOT_MODULES` (incluye los módulos sin prenda publicada,
+que `OperatorVisual` necesita poder ocultar).
 
 ## Siguiente tarea recomendada
 
 Dar brazos creíbles a `SprintFwd`/`StrafeLeft` en Blender (mismo método que la
-recarga: IK temporal + bake) para que el source se pueda juzgar sin runtime, y
-después unificar la tabla de módulos del armario (el único duplicado que puede
-producir un bug silencioso de contenido).
+recarga: IK temporal + bake) para que el source se pueda juzgar sin runtime.
