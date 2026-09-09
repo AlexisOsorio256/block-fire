@@ -1,0 +1,148 @@
+# BLOCKFIRE — the shared agent surface (BUILD owns this file).
+#
+# This is the ONE owner of the permanent tool/prompt surface both spaces mount.
+# `build/agent.cordis.yml` and `creator/agent.cordis.yml` each include it and add
+# only what their space needs, so a row is edited here exactly once.
+#
+# WHAT THIS FILE IS NOT
+#   It is not a fork of DSH. Every row names a package that ships with the
+#   installed DeepSeek Harness; nothing here is patched or vendored. Updating
+#   DSH means updating packages, never rewriting this file.
+#
+# THE RULE THAT DECIDES WHAT STAYS PERMANENT
+#   Every permanent row is paid for in every request, twice: its tool schema and
+#   whatever prompt section the plugin contributes. A row earns a permanent seat
+#   only when the evidence says a large share of sessions use it (see
+#   `harness/ARCHITECTURE.md` and `harness/bin/session-report.mjs`, which
+#   measures real sessions). Rarely used heavyweight capabilities belong behind
+#   `bf_capability`, never here.
+#
+# ROW RULES THAT MUST NOT BE BROKEN (DSH mount invariants)
+#   * A row that PUBLISHES a service needs an `isolate` realm inside a preset.
+#   * A row that only CONSUMES a host service must stay OUTSIDE any realm.
+#   * Host-plane services (tools, skills, jobs, goals, subagents, sandbox) are
+#     never re-provided here.
+
+# ── the project's durable baseline ──────────────────────────────────────────
+# AGENTS.md is the project's own operational card and the single owner of
+# project facts. The persona deliberately does NOT restate them.
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+# The general tool. Evidence: bash is used in 100% of measured sessions and
+# dominates every one of them; it must never be wrapped by a custom tool.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ─────────────────────────────────────────────────────────
+# Long Godot/Android builds are the reason this exists; the job REGISTRY stays
+# host-plane and these rows only expose the model-facing controls.
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills (progressive disclosure) ─────────────────────────────────────────
+# The catalog costs a line per skill; a skill body is paid only when the task
+# matches its description. The skill rows themselves live in each space's own
+# composition, because a space owns its catalog.
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+# `compaction-basic` reads `toolResultPruner` via ctx.get, so the pruner shares
+# this realm. `tokenMeter` stays host-plane and is resolved from there.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation ──────────────────────────────────────────────────────────────
+# The `subagents` registry and its spawn/fork backends are host-plane and are
+# consumed from there — this group deliberately has NO realm.
+#
+# Evidence for the trim: `subagent` and `send_message` were used in 27% of
+# measured sessions, `list_agents` in 13%, and `subagent_fork` in 0% across
+# 2468 tool calls. Only the pair that is actually used stays permanent; the
+# `subagent_fork` and `list_agents` rows are removed (≈2.8k schema chars) and
+# CREATOR re-adds them, where parallel harness work really happens.
+- id: delegation
+  name: cordis:group
+  group: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        modelSelectionSettings: true
+        backgroundMode: continuable
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+# `ask_user_question` is kept although it appears in few sessions: it is the
+# human-decision primitive of the product, not a convenience wrapper.
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# Search only: `web_fetch` is removable (curl covers fetching a known URL) and
+# measured 0 uses, while `web_search` is a capability bash cannot replace.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+# ── capability router (the only BLOCKFIRE-owned code in this composition) ───
+#
+# Blender MCP advertises 28 tools (~7.4k tokens of schema) of which BLOCKFIRE
+# craft work uses a handful, and most sessions never touch Blender. The router
+# registers ONE small tool and mounts the bridge only when a task asks for it.
+#
+# JIT PAYS ONLY FOR HEAVY CAPABILITIES. Activating one mid-session changes the
+# tool catalog and therefore invalidates KV-cache reuse from the schema
+# position onward. That is a good trade for a 7.4k-token bridge and a bad trade
+# for a 1.3k-char tool, which is why the router is not used to hide small tools.
+#
+# The shared `blender` capability is declared by the plugin as its default, so
+# BUILD and CREATOR cannot drift on it; a space adds capabilities (or overrides
+# the default) with `config.capabilities`, which merges over the defaults.
+- id: capabilities
+  name: './plugins/capabilities.js'

@@ -1,71 +1,89 @@
-# Casos de prueba de la capa BLOCKFIRE
+# Casos de aceptación de la capa BLOCKFIRE
 
-Estos cuatro casos se escriben **tal cual** en una sesión nueva del preset
-BLOCKFIRE. Lo que se comprueba no es que el agente acierte, sino que el harness
-le da lo necesario sin que el usuario lo explique.
+Se escriben **tal cual** en una sesión nueva del espacio correspondiente. Lo que
+se comprueba no es que el agente acierte, sino que el harness le da lo necesario
+sin que el usuario lo explique y sin cargar lo que no hace falta.
 
 Antes: `harness/install.sh` y `harness/test.sh`.
 Después de cada caso: `node harness/bin/session-report.mjs --last 1`.
+Al cerrar: `harness/test.sh --live` fija la superficie observada como contrato.
 
-## Caso A — descubrimiento de un P0 visual
-
-```
-Investiga el P0 visual actual de BLOCKFIRE y dime qué es, quién lo posee y qué
-haría falta para verificarlo. No cambies nada todavía.
-```
-
-Debe aparecer sin que el usuario lo pida:
-
-- `tools/bf doctor` como sonda de estado (HEAD, Godot, Blender, teléfono);
-- `docs/CURRENT_STATE.md` como fuente del P0 (no `docs/history/*`);
-- `docs/ARCHITECTURE.md` para el dueño y el test del área;
-- la skill `blockfire-orientation` cargada (y `blockfire-evidence` si ya plantea
-  el cierre).
-
-Falla si: inventa el P0, cita historia como estado, o pide al usuario que le
-diga dónde está cada cosa.
-
-## Caso B — bug pequeño, sin contaminación
+## A — tarea pequeña de código (BUILD) no carga Blender ni contexto visual
 
 ```
-Corrige este bug pequeño en WeaponController: <describe el síntoma>. Añade la
-prueba que lo demuestra y no toques nada más.
+Arregla el typo de docs/CURRENT_STATE.md y corre la comprobación más barata que
+lo pruebe. No abras Blender.
 ```
 
-Debe cargar solo lo necesario: el código dueño, el test del área, y como mucho
-`blockfire-evidence`. **No** debe cargar Blender, mundo, armario ni animación, y
-**no** debe activar ninguna capacidad opcional.
+Debe cumplirse: ningún tool `mcp__blender__*` en el catálogo; ninguna skill de
+animación cargada; `session-report` con ~18 tools y sin `bf_capability action=on`.
 
-Falla si: `bf_capability` aparece en `tools used`, si carga 3+ skills, o si
-abre subagents para un cambio de un archivo.
-
-## Caso C — craft de animación
+## B — tarea de animación descubre y activa Blender sin megaprompt
 
 ```
-Mejora la animación de pistola: el reload se ve blando y el arma flota en la
-mano. Déjala mejor y verificada.
+El clip ReloadPistol se ve rígido en la mano izquierda. Diagnostica y propone el
+ajuste, usando la fuente .blend como autoridad.
 ```
 
-Debe descubrir por sí mismo: la skill `blockfire-animation-craft`, que la
-autoridad es `assets/animation_sources/*.blend`, que se edita en Blender
-interactivo, y que Blender MCP se activa con `bf_capability` (solo en esa
-sesión). Debe mirar el clip antes de juzgarlo (`tools/bf qa motion`) y cerrar con
-fuente + export + runtime.
+Debe cumplirse: el agente carga `blockfire-animation-craft` y activa la capacidad
+`blender` con `bf_capability` (o explica por qué no está disponible si Blender no
+está abierto). `session-report` muestra `capabilities on:blender` y los tools
+`mcp__blender__*` a partir de ese paso.
 
-Falla si: intenta generar el clip por script, o si dice que no puede usar
-Blender.
-
-## Caso D — explicar un archivo
+## C — un modelo distinto de DeepSeek sigue funcionando (BUILD)
 
 ```
-Explícame qué hace game/weapons/weapon_controller.gd, sin cambiar nada.
+tools/bf doctor
 ```
 
-Debe leer el archivo y responder. **No** debe arrancar suites, ni builds, ni
-subagents, ni activar capacidades, ni cargar skills que no aporten.
+Cambia el modelo en el selector (p. ej. GLM) antes de enviar. Debe cumplirse: la
+sesión arranca con el preset BUILD, el catálogo de tools es el mismo y
+`session-report` reporta `model=` y `provider=` del modelo elegido. La capa no
+nombra proveedor ni modelo en ninguna fila.
 
-Falla si: `tools used` muestra `tools/bf` o `subagent`, o si el agente convierte
-una pregunta en una campaña de QA.
+## D — CREATOR puede inspeccionar y modificar la capa
+
+```
+Lee harness/ARCHITECTURE.md y añade una capacidad JIT nueva al espacio BUILD
+justificando el coste de esquema que ahorra.
+```
+
+Debe cumplirse: el agente carga `editing-cordis-compositions`, activa la
+capacidad `cordis` para inspeccionar el runtime, edita `harness/`, ejecuta
+`install.sh` + `test.sh` y deja el cambio listo para commit. Sin editar nunca la
+instalación de DSH.
+
+## E — incompatibilidad simulada produce FAIL claro
+
+```
+harness/test.sh --self-test
+```
+
+Debe fallar exactamente cuando la capa está rota. Los controles negativos
+comprueban: paquete ausente, include ausente, patch que no matchea nada y plugin
+relativo ausente. Si alguno no falla, la suite no sirve.
+
+## F — detección de updates contra la fuente real
+
+```
+harness/test.sh --network
+node harness/bin/update.mjs check
+```
+
+Debe cumplirse: se reportan los canales (`latest`, `next`, `alpha`), las
+versiones nuevas con fecha y enlace a release notes, sin instalar ni reemplazar
+nada. Un candidato solo se activa después de `stage` + `verify`.
+
+## G — cero approval loops en trabajo normal
+
+```
+tools/bf test && tools/bf build android
+```
+
+Debe cumplirse: ninguna pregunta de aprobación. La política se aplica por
+entorno (`harness/bin/blockfire` fija `danger-full-access` + `never`) y el límite
+real es el guard de operaciones destructivas. Si el agente pide permiso para
+leer, editar, testear, construir, capturar, commitear o pushear, la capa está mal.
 
 ## Qué mirar en el reporte
 
@@ -73,10 +91,13 @@ una pregunta en una campaña de QA.
 node harness/bin/session-report.mjs --last 1
 ```
 
-- `preset=blockfire` — la sesión se compuso con el preset correcto.
-- `first header` — número de tools y tamaño de esquema (referencia: ~25 tools,
-  ~22.6k chars; con Blender MCP activo, +28 tools y ~+26.7k chars).
-- `cache read` / `hit` — el prefijo se mantiene estable mientras no se active
-  una capacidad.
+- `preset=build|creator` — la sesión se compuso con el espacio correcto.
+- `policy` — `sandbox=danger-full-access approval=never` (sin prompts).
+- `first header` — tools y tamaño de esquema. Referencia medida: BUILD 18 tools /
+  ~16.5k chars; CREATOR 24 / ~21.8k; con `cordis` activo, +7 tools / ~+7.5k.
+- `schema cost` — qué fila permanente se está pagando más.
+- `cache read` / `hit` — el prefijo se mantiene estable mientras no se active una
+  capacidad.
 - `skills loaded` — solo las que el caso justifica.
+- `capabilities` — `on:blender` / `on:cordis` solo cuando la tarea lo pide.
 - `tools used` — el camino que eligió el agente, sin ritual.

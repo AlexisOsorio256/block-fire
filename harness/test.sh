@@ -1,182 +1,365 @@
 #!/bin/bash
-# BLOCKFIRE harness layer — smoke test.
+# BLOCKFIRE harness layer — compatibility suite.
 #
-# Cheap by default (no model calls): composition shape, row resolution, skill
-# frontmatter, plugin syntax, and drift between the repo and the installed copy.
+# This is the contract between our thin layer and DeepSeek Harness. It is cheap
+# by default (no model calls) and it FAILS LOUDLY rather than letting an upstream
+# change alter behavior silently.
 #
-#   harness/test.sh
+#   harness/test.sh                       the installed runtime
+#   harness/test.sh --network             also exercise update detection
+#   harness/test.sh --live                also verify the tool surface against the
+#                                         newest real session of each space
+#   harness/test.sh --self-test           negative controls: the suite must FAIL
+#                                         on a deliberately broken layer
+#   harness/test.sh --install <modules> --dsh-bin <bin>
+#                                         run against a STAGED candidate tree
+#                                         (this is what update.mjs verify calls)
 #
-# This does not prove the composition MOUNTS; see the live checks at the end of
-# this file and in README.md.
+# What it cannot prove: that the composition mounts in a live runtime. That check
+# is `agentPresets.standingKeyFor(<space>)` inside a session, and it is the first
+# thing a new session does; see harness/README.md.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
-PRESET="$HERE/presets/blockfire"
-COMPOSITION="$PRESET/agent.cordis.yml"
-SKILLS="$PRESET/skills"
+REPO="$(cd "$HERE/.." && pwd)"
+PRESETS="$HERE/presets"
+SPACES=(build creator)
+DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
+DEST_ROOT="$DSH_HOME_DIR/.agent-presets"
+PATCH="$DSH_HOME_DIR/profiles/web/blockfire.patch.yml"
+
+WANT_NETWORK=0
+WANT_LIVE=0
+WANT_SELF_TEST=0
+INSTALL_MODULES=""
+DSH_BIN=""
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--network) WANT_NETWORK=1 ;;
+		--live) WANT_LIVE=1 ;;
+		--self-test) WANT_SELF_TEST=1 ;;
+		--install) INSTALL_MODULES="${2:-}"; shift ;;
+		--dsh-bin) DSH_BIN="${2:-}"; shift ;;
+		-h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*) echo "test.sh: unknown option $1" >&2; exit 2 ;;
+	esac
+	shift
+done
 
 fail=0
 ok() { printf '  ok    %s\n' "$1"; }
 bad() { printf '  FAIL  %s\n' "$1"; fail=1; }
+warn() { printf '  warn  %s\n' "$1"; }
+skip() { printf '  skip  %s\n' "$1"; }
 
-echo "BLOCKFIRE harness layer — $(basename "$ROOT")/harness"
+if [ -z "$INSTALL_MODULES" ]; then
+	INSTALL_MODULES="$(readlink -f "$DEST_ROOT/build/node_modules" 2>/dev/null || true)"
+fi
+if [ -z "$DSH_BIN" ]; then
+	DSH_BIN="$(command -v dsh 2>/dev/null || true)"
+fi
+[ -n "$DSH_BIN" ] && DSH_BIN="$(readlink -f "$DSH_BIN")"
+
+echo "BLOCKFIRE harness layer — $(basename "$REPO")/harness"
+echo "  install modules: ${INSTALL_MODULES:-<not found>}"
+echo "  dsh binary:      ${DSH_BIN:-<not found>}"
 
 # ── structure ───────────────────────────────────────────────────────────────
 echo "structure"
-for f in "$COMPOSITION" "$PRESET/preset.yml" "$PRESET/plugins/capabilities.js" "$HERE/install.sh" "$HERE/bin/session-report.mjs"; do
-	if [ -f "$f" ]; then ok "${f#"$ROOT"/}"; else bad "missing ${f#"$ROOT"/}"; fi
+for file in \
+	"$PRESETS/build/agent.cordis.yml" \
+	"$PRESETS/build/surface.cordis.yml" \
+	"$PRESETS/build/preset.yml" \
+	"$PRESETS/build/plugins/capabilities.js" \
+	"$PRESETS/creator/agent.cordis.yml" \
+	"$PRESETS/creator/preset.yml" \
+	"$HERE/host/patch.cordis.yml" \
+	"$HERE/host/guard.js" \
+	"$HERE/web/package.json" \
+	"$HERE/web/lib/index.js" \
+	"$HERE/web/lib/client.js" \
+	"$HERE/contract/contract.json" \
+	"$HERE/bin/blockfire" \
+	"$HERE/bin/update.mjs" \
+	"$HERE/bin/session-report.mjs" \
+	"$HERE/install.sh" \
+	"$HERE/lib/check_composition.py" \
+	"$HERE/lib/contract_check.mjs" \
+	"$HERE/tests/plugins.test.mjs" \
+	"$HERE/ARCHITECTURE.md"; do
+	if [ -f "$file" ]; then ok "${file#"$REPO"/}"; else bad "missing ${file#"$REPO"/}"; fi
 done
-for d in "$SKILLS"/*/; do
-	[ -f "$d/SKILL.md" ] || bad "skill without SKILL.md: ${d#"$ROOT"/}"
+for space in "${SPACES[@]}"; do
+	[ -d "$PRESETS/$space" ] || bad "$space preset directory missing"
 done
-[ "$(ls -1 "$SKILLS" | wc -l)" -gt 0 ] || bad "no skills found"
+[ "$(ls -1 "$PRESETS/build/skills" 2>/dev/null | wc -l)" -gt 0 ] || bad "BUILD has no skills"
 
-# ── plugin syntax ───────────────────────────────────────────────────────────
-echo "plugin"
-if node --check "$PRESET/plugins/capabilities.js" 2>/dev/null; then ok "plugins/capabilities.js parses"; else bad "plugins/capabilities.js has a syntax error"; fi
+# ── our own code ────────────────────────────────────────────────────────────
+echo "plugins"
+for file in "$PRESETS/build/plugins/capabilities.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js"; do
+	if node --check "$file" 2>/dev/null; then ok "${file#"$REPO"/} parses"; else bad "${file#"$REPO"/} has a syntax error"; fi
+done
+if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; then
+	ok "plugin unit tests pass ($(grep -c '^ok ' /tmp/blockfire-plugin-tests.log) tests)"
+else
+	bad "plugin unit tests fail — see /tmp/blockfire-plugin-tests.log"
+	tail -20 /tmp/blockfire-plugin-tests.log | sed 's/^/        /'
+fi
 
-# ── composition + skills ────────────────────────────────────────────────────
-echo "composition"
-# Package rows resolve against the DSH install; the installed copy links it.
-BF_INSTALL_MODULES="$(readlink -f "${DSH_HOME:-$HOME/.dsh}/.agent-presets/blockfire/node_modules" 2>/dev/null || true)"
-export BF_INSTALL_MODULES
-python3 - "$COMPOSITION" "$SKILLS" <<'PY'
-import json, os, sys
-
-try:
-    import yaml
-except ImportError:
-    print("  SKIP  PyYAML not installed (composition check skipped)")
-    sys.exit(0)
-
-composition, skills_dir = sys.argv[1], sys.argv[2]
-
-class Loader(yaml.SafeLoader):
-    pass
-
-# `!!js <expr>` is evaluated by the harness at mount time; here it only has to
-# parse, so the tag becomes an opaque marker.
-Loader.add_multi_constructor('tag:yaml.org,2002:js', lambda loader, suffix, node: {'__js__': True})
-
-problems = []
-try:
-    rows = yaml.load(open(composition, encoding='utf-8'), Loader=Loader)
-except Exception as error:
-    print(f"  FAIL  composition does not parse: {error}")
-    sys.exit(1)
-
-if not isinstance(rows, list):
-    print("  FAIL  composition must be a top-level list of rows")
-    sys.exit(1)
-
-base = os.path.dirname(os.path.abspath(composition))
-install_modules = os.environ.get('BF_INSTALL_MODULES', '')
-ids, names = [], []
-
-def visit(row_list, path=''):
-    for row in row_list:
-        if not isinstance(row, dict):
-            problems.append(f'{path}: row is not a map')
-            continue
-        row_id = row.get('id') or '?'
-        if row.get('group') is True:
-            children = row.get('config')
-            if not isinstance(children, list):
-                problems.append(f'{path}{row_id}: group without a row list')
-                continue
-            visit(children, f'{path}{row_id}:')
-            continue
-        name = row.get('name')
-        if not isinstance(name, str):
-            problems.append(f'{path}{row_id}: no plugin name')
-            continue
-        ids.append(f'{path}{row_id}')
-        names.append(name)
-        if name.startswith('cordis:'):
-            continue
-        if name.startswith('.'):
-            target = os.path.normpath(os.path.join(base, name))
-            if not os.path.exists(target):
-                problems.append(f'{path}{row_id}: relative row target missing: {name}')
-            continue
-        if name.startswith('file:') or os.path.isabs(name):
-            continue
-        if install_modules:
-            # A row may name a package subpath export (`@scope/pkg/sub`); only
-            # the package root has to exist in the install.
-            parts = name.split('/')
-            package = '/'.join(parts[:2]) if name.startswith('@') else parts[0]
-            if not os.path.isdir(os.path.join(install_modules, package)):
-                problems.append(f'{path}{row_id}: package not installed: {package}')
-
-visit(rows)
-dupes = {i for i in ids if ids.count(i) > 1}
-for d in sorted(dupes):
-    problems.append(f'duplicate row id: {d}')
-
-if problems:
-    for p in problems:
-        print(f'  FAIL  {p}')
-else:
-    print(f'  ok    {len(ids)} rows resolve ({len(set(names))} distinct plugins)')
-
-# ── skill frontmatter ───────────────────────────────────────────────────────
-skill_problems = []
-count = 0
-for entry in sorted(os.listdir(skills_dir)):
-    path = os.path.join(skills_dir, entry, 'SKILL.md')
-    if not os.path.isfile(path):
-        continue
-    count += 1
-    text = open(path, encoding='utf-8').read()
-    if not text.startswith('---\n'):
-        skill_problems.append(f'{entry}: missing frontmatter')
-        continue
-    end = text.find('\n---', 4)
-    if end < 0:
-        skill_problems.append(f'{entry}: unterminated frontmatter')
-        continue
-    try:
-        meta = yaml.load(text[4:end], Loader=yaml.SafeLoader) or {}
-    except Exception as error:
-        skill_problems.append(f'{entry}: frontmatter does not parse: {error}')
-        continue
-    if meta.get('name') != entry:
-        skill_problems.append(f'{entry}: frontmatter name is {meta.get("name")!r}, must equal the directory name')
-    description = meta.get('description')
-    if not isinstance(description, str) or not description.strip():
-        skill_problems.append(f'{entry}: missing description')
-    elif len(description) > 400:
-        skill_problems.append(f'{entry}: description is {len(description)} chars; keep the catalog entry short')
-
-if skill_problems:
-    for p in skill_problems:
-        print(f'  FAIL  {p}')
-else:
-    print(f'  ok    {count} skills with valid frontmatter')
-
-sys.exit(1 if (problems or skill_problems) else 0)
+# ── compositions ────────────────────────────────────────────────────────────
+echo "compositions"
+if python3 -c 'import yaml' 2>/dev/null; then
+	composition_out="$(python3 "$HERE/lib/check_composition.py" --install-modules "$INSTALL_MODULES" \
+		"$PRESETS/build/agent.cordis.yml" "$PRESETS/creator/agent.cordis.yml" 2>&1)"
+	while IFS= read -r line; do
+		case "$line" in
+			OK*) ok "${line#OK }" ;;
+			NOTE*) warn "${line#NOTE }" ;;
+			FAIL*) bad "${line#FAIL }" ;;
+			*) [ -n "$line" ] && warn "$line" ;;
+		esac
+	done <<<"$composition_out"
+	# Row ids must stay unique across a resolved composition, or the loader
+	# silently keeps one of them.
+	for space in "${SPACES[@]}"; do
+		dupes="$(python3 - "$PRESETS/$space/agent.cordis.yml" <<'PY'
+import sys, yaml, os
+class L(yaml.SafeLoader): pass
+L.add_multi_constructor('tag:yaml.org,2002:js', lambda l, s, n: None)
+seen, dupes = set(), set()
+def walk(path, base):
+    rows = yaml.load(open(path, encoding='utf-8'), Loader=L) or []
+    for row in rows:
+        if not isinstance(row, dict): continue
+        if row.get('name') == 'cordis:include':
+            target = os.path.normpath(os.path.join(base, (row.get('config') or {}).get('path', '')))
+            walk(target, os.path.dirname(target)); continue
+        rid = row.get('id')
+        if rid in seen: dupes.add(rid)
+        if rid is not None: seen.add(rid)
+for arg in sys.argv[1:]:
+    walk(arg, os.path.dirname(os.path.abspath(arg)))
+print(','.join(sorted(dupes)))
 PY
-[ $? -eq 0 ] || fail=1
+)"
+		if [ -n "$dupes" ]; then bad "$space has duplicate row ids: $dupes"; else ok "$space row ids are unique across includes"; fi
+	done
+else
+	skip "PyYAML not installed (composition checks skipped)"
+fi
+
+# The shipped composition-authoring skills CREATOR reads from the install.
+if [ -n "$INSTALL_MODULES" ]; then
+	shipped="$(python3 -c "import json;print(json.load(open('$HERE/contract/contract.json'))['layout']['shippedCordisSkills'])" 2>/dev/null || echo '')"
+	if [ -n "$shipped" ] && [ -d "$INSTALL_MODULES/$shipped" ]; then
+		ok "shipped composition skills resolve ($shipped)"
+	else
+		bad "shipped composition skills missing under the install: $shipped"
+	fi
+	for package in $(python3 -c "import json;print(' '.join(json.load(open('$HERE/contract/contract.json'))['layout']['capabilityPackages'].values()))" 2>/dev/null); do
+		if [ -d "$INSTALL_MODULES/$package" ]; then ok "capability package present: $package"; else bad "capability package missing: $package"; continue; fi
+		# The router imports the package and mounts its `apply`; a renamed export
+		# would only surface when a user asked for the capability.
+		if (cd "$DEST_ROOT/build" && node --input-type=module -e "const m = await import('$package'); const p = m.default ?? m; if (typeof p.apply !== 'function') { console.error('no apply'); process.exit(1) }" 2>/dev/null); then
+			ok "capability package mounts as a Cordis plugin: $package"
+		else
+			bad "capability package is not a Cordis plugin (no apply): $package"
+		fi
+	done
+fi
+
+# Capability declarations are per space: leaking CREATOR's runtime toolset into
+# BUILD would hand project work the ability to rewrite the harness.
+if grep -q "dsh-tool-cordis" "$PRESETS/build/surface.cordis.yml" "$PRESETS/build/agent.cordis.yml" 2>/dev/null; then
+	bad "BUILD declares the CREATOR-only cordis capability"
+else
+	ok "BUILD does not declare the cordis capability"
+fi
+if grep -q "dsh-tool-cordis" "$PRESETS/creator/agent.cordis.yml" 2>/dev/null; then
+	ok "CREATOR declares the cordis capability (JIT)"
+else
+	bad "CREATOR does not declare the cordis capability"
+fi
+
+# ── host patch layer ────────────────────────────────────────────────────────
+echo "host plane"
+if [ -f "$PATCH" ]; then ok "installed host patch present: $PATCH"; else bad "host patch not installed — run harness/install.sh"; fi
+[ -f "$HERE/host/patch.cordis.yml" ] && cmp -s "$HERE/host/patch.cordis.yml" "$PATCH" && ok "installed host patch matches the repo" || bad "installed host patch differs from harness/host/patch.cordis.yml"
+if [ -n "$INSTALL_MODULES" ] && python3 -c 'import yaml' 2>/dev/null; then
+	patch_out="$(python3 "$HERE/lib/check_composition.py" --patch --base "$DSH_HOME_DIR/profiles/web" \
+		--install-modules "$INSTALL_MODULES" "$HERE/host/patch.cordis.yml" 2>&1)"
+	while IFS= read -r line; do
+		case "$line" in
+			OK*) ok "host patch: ${line#OK }" ;;
+			NOTE*) : ;;
+			FAIL*) bad "host patch: ${line#FAIL }" ;;
+		esac
+	done <<<"$patch_out"
+fi
+# The real composition check: DSH itself composes the tree, applies our patch,
+# and reports every patch row that matched nothing.
+if [ -n "$DSH_BIN" ] && [ -f "$PATCH" ]; then
+	if timeout 180 node "$DSH_BIN" --profile web --patch "$PATCH" --dump-config >/tmp/blockfire-dump.yml 2>/tmp/blockfire-dump.err; then
+		if [ -s /tmp/blockfire-dump.err ]; then
+			bad "dsh --dump-config warned: $(head -2 /tmp/blockfire-dump.err | tr '\n' ' ')"
+		else
+			ok "dsh --profile web --patch <installed> --dump-config composes cleanly"
+		fi
+		for row in blockfire-guard blockfire-update-center; do
+			grep -q "id: $row" /tmp/blockfire-dump.yml && ok "host row composed: $row" || bad "host row missing from the composed tree: $row"
+		done
+		grep -q "default: build" /tmp/blockfire-dump.yml && ok "roster default is BUILD" || bad "roster default is not BUILD"
+		grep -q "includeShippedRoot: false" /tmp/blockfire-dump.yml && ok "shipped preset roster is hidden" || bad "shipped presets still in the roster"
+	else
+		bad "dsh --profile web --patch <installed> --dump-config failed — the host patch does not compose"
+		head -5 /tmp/blockfire-dump.err | sed 's/^/        /'
+	fi
+else
+	skip "no dsh binary: host composition not composed"
+fi
+
+# ── upstream contract ───────────────────────────────────────────────────────
+echo "contract"
+if [ -n "$INSTALL_MODULES" ]; then
+	version="$(node -e 'try{process.stdout.write(require(process.argv[1] + "/@deepseek-ai/dsh/package.json").version)}catch{}' "$INSTALL_MODULES" 2>/dev/null)"
+	node "$HERE/lib/contract_check.mjs" dsh "$version" || fail=1
+else
+	skip "no install modules: DSH version unknown"
+fi
+
+newest_log() {
+	local space="$1"
+	node -e '
+const { readdirSync, statSync } = require("node:fs")
+const { join } = require("node:path")
+const root = join(process.env.DSH_HOME || join(process.env.HOME, ".dsh"), "sessions")
+const space = process.argv[1]
+const found = []
+for (const project of readdirSync(root)) {
+  let entries = []
+  try { entries = readdirSync(join(root, project)) } catch { continue }
+  for (const entry of entries) {
+    const dir = join(root, project, entry)
+    try {
+      const log = join(dir, "session.jsonl.zstd")
+      statSync(log)
+      found.push({ log, mtime: statSync(log).mtimeMs })
+    } catch {}
+  }
+}
+found.sort((a, b) => b.mtime - a.mtime)
+for (const entry of found) {
+  try {
+    const { execFileSync } = require("node:child_process")
+    const head = execFileSync("zstd", ["-dc", entry.log], { maxBuffer: 8 * 1024 * 1024 }).toString("utf8")
+    const first = JSON.parse(head.split("\n")[0])
+    const preset = first.agentPreset || ""
+    if (preset !== space) continue
+    process.stdout.write(entry.log)
+    process.exit(0)
+  } catch {}
+}
+' "$space" 2>/dev/null
+}
+
+for space in "${SPACES[@]}"; do
+	log="$(newest_log "$space")"
+	if [ -z "$log" ]; then
+		skip "$space has no real session yet: run one, then re-run with --live"
+		continue
+	fi
+	node "$HERE/lib/contract_check.mjs" log "$log" || fail=1
+	node "$HERE/lib/contract_check.mjs" surface "$log" "$space" || fail=1
+done
 
 # ── installed copy in sync ──────────────────────────────────────────────────
 echo "installation"
 if "$HERE/install.sh" --check >/dev/null 2>&1; then
-	ok "installed copy is in sync with the repo"
+	ok "installed copies are in sync with the repo"
 else
-	bad "installed copy differs — run harness/install.sh"
+	bad "installed copies differ — run harness/install.sh"
+	"$HERE/install.sh" --check 2>&1 | grep -E 'DRIFT|stale|missing' | head -5 | sed 's/^/        /'
 fi
 
-# ── what this test cannot prove ─────────────────────────────────────────────
-# The checks above are static. Whether the composition MOUNTS in a live runtime
-# is a separate check: only the Web surface composes agent presets in this DSH
-# version, so the two real checks are
-#   1. a mount validation inside a `cordis` session (agentPresets.standingKeyFor),
-#      procedure in README.md and in the `blockfire-harness` skill;
-#   2. a real BLOCKFIRE session in the Web GUI.
-echo "live mount: NOT covered here (see harness/README.md — mount validation + a real session)"
+# ── update detection (network) ──────────────────────────────────────────────
+echo "updates"
+if [ "$WANT_NETWORK" = 1 ]; then
+	if timeout 180 node "$HERE/bin/update.mjs" check --json >/tmp/blockfire-update.json 2>/tmp/blockfire-update.err; then
+		ok "update detection reached the package registry"
+		node -e '
+const report = require("/tmp/blockfire-update.json")
+if (typeof report.installed !== "string" || report.installed === "") throw new Error("no installed version")
+if (!Array.isArray(report.channels) || report.channels.length === 0) throw new Error("no channels")
+if (!Array.isArray(report.newer)) throw new Error("no newer list")
+process.stdout.write(`  ok    channels: ${report.channels.map((c) => `${c.channel}=${c.version}`).join(", ")}; newer: ${report.newer.length}\n`)
+' || bad "update report is malformed"
+	else
+		bad "update detection failed — see /tmp/blockfire-update.err"
+		head -3 /tmp/blockfire-update.err | sed 's/^/        /'
+	fi
+else
+	skip "network checks disabled (--network)"
+fi
 
+# ── negative controls ───────────────────────────────────────────────────────
+# A suite that only ever passes proves nothing. These fixtures MUST fail.
+if [ "$WANT_SELF_TEST" = 1 ]; then
+	echo "self-test (negative controls)"
+	tmp="$(mktemp -d)"
+	mkdir -p "$tmp/preset/plugins"
+	cat >"$tmp/preset/agent.cordis.yml" <<'YML'
+- id: missing-package
+  name: '@deepseek-ai/dsh-package-that-does-not-exist'
+YML
+	if python3 "$HERE/lib/check_composition.py" --install-modules "$INSTALL_MODULES" "$tmp/preset/agent.cordis.yml" >/dev/null 2>&1; then
+		bad "negative control 1: a missing package must FAIL"
+	else
+		ok "negative control 1: a missing package FAILS"
+	fi
+	cat >"$tmp/preset/agent.cordis.yml" <<'YML'
+- id: include
+  name: cordis:include
+  config:
+    path: nowhere.yml
+YML
+	if python3 "$HERE/lib/check_composition.py" --install-modules "$INSTALL_MODULES" "$tmp/preset/agent.cordis.yml" >/dev/null 2>&1; then
+		bad "negative control 2: a missing include must FAIL"
+	else
+		ok "negative control 2: a missing include FAILS"
+	fi
+	cat >"$tmp/preset/agent.cordis.yml" <<'YML'
+- id: surface
+  name: cordis:include
+  config:
+    path: included.yml
+    patches:
+      - id: a-row-that-does-not-exist
+        config: {}
+YML
+	cat >"$tmp/preset/included.yml" <<'YML'
+- id: real-row
+  name: '@deepseek-ai/dsh-tool-bash'
+YML
+	if python3 "$HERE/lib/check_composition.py" --install-modules "$INSTALL_MODULES" "$tmp/preset/agent.cordis.yml" >/dev/null 2>&1; then
+		bad "negative control 3: a patch that matches nothing must FAIL"
+	else
+		ok "negative control 3: a patch that matches nothing FAILS"
+	fi
+	cat >"$tmp/preset/agent.cordis.yml" <<'YML'
+- id: guarded
+  name: ./nonexistent/guard.js
+YML
+	if python3 "$HERE/lib/check_composition.py" --install-modules "$INSTALL_MODULES" "$tmp/preset/agent.cordis.yml" >/dev/null 2>&1; then
+		bad "negative control 4: a missing relative plugin must FAIL"
+	else
+		ok "negative control 4: a missing plugin file FAILS"
+	fi
+	rm -rf "$tmp"
+fi
+
+# ── what this suite cannot prove ────────────────────────────────────────────
+echo "live mount: not covered here — a new session mounts the space itself; see harness/README.md"
 echo
 if [ "$fail" = 0 ]; then
 	echo "PASS"

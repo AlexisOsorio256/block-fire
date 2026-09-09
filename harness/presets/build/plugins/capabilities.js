@@ -9,9 +9,14 @@
  * code, QA, docs and Android session.
  *
  * So the preset mounts this router instead: one small tool, and the heavy
- * bridge is mounted only when a task asks for it. Capabilities are declared in
- * the composition's `config.capabilities`, so adding another optional bridge is
- * a config change, not a code change.
+ * bridge is mounted only when a task asks for it.
+ *
+ * WHY THERE IS A DEFAULT CAPABILITY IN CODE
+ * `blender` is the one capability both spaces share, and a loader patch replaces
+ * a row's whole `config` instead of merging into it. Declaring it here once is
+ * what keeps BUILD and CREATOR from drifting; a space still extends or overrides
+ * it from its composition, because `config.capabilities` merges over these
+ * defaults.
  *
  * SCOPE AND LIFETIME
  * A capability is mounted into the CALLING SESSION's scope, not the preset's, so
@@ -20,10 +25,10 @@
  * tool stays in the preset scope and disappears with the preset.
  *
  * FAIL-SOFT AT THE BOUNDARY
- * The router imports nothing: the tool definition is built from the documented
- * `ctx.tools.register()` contract, so a missing optional dependency can never
- * stop the preset from mounting. Only `action: "on"` resolves the bridge, and
- * any failure comes back as an actionable message.
+ * The router imports nothing at load time: the tool definition is built from the
+ * documented `ctx.tools.register()` contract, so a missing optional dependency
+ * can never stop the preset from mounting. Only `action: "on"` resolves the
+ * capability, and any failure comes back as an actionable message.
  *
  * TRADE-OFF, STATED HONESTLY
  * Activating a capability mid-session changes that session's tool catalog,
@@ -34,6 +39,29 @@
 
 export const name = 'blockfire-capabilities'
 export const inject = ['tools']
+
+/**
+ * Capabilities every BLOCKFIRE space can activate. A composition overrides a key
+ * by declaring the same key and adds one by declaring a new key.
+ */
+const DEFAULT_CAPABILITIES = {
+  blender: {
+    package: '@deepseek-ai/dsh-mcp-client',
+    whenToUse:
+      'Blender GUI craft: animation clips, rigging, mesh and visual work on ' +
+      'assets/animation_sources/*.blend while Blender is open. Requires the ' +
+      'blender-mcp addon listening on 127.0.0.1:9876 (`tools/bf doctor` reports it).',
+    config: {
+      serverName: 'blender',
+      transport: 'stdio',
+      command:
+        process.env.BLOCKFIRE_BLENDER_MCP ??
+        `${process.env.HOME ?? ''}/.local/share/blockfire-tools/blender-mcp-venv/bin/blender-mcp`,
+      args: [],
+      toolCallTimeoutMs: 120000,
+    },
+  },
+}
 
 /** JSON-Schema parameters; `ctx.tools.register` consumes the definition as-is. */
 const PARAMETERS = {
@@ -60,7 +88,7 @@ const DESCRIPTION = [
 ].join(' ')
 
 export function apply(ctx, config) {
-  const specs = config?.capabilities ?? {}
+  const specs = { ...DEFAULT_CAPABILITIES, ...(config?.capabilities ?? {}) }
   /** @type {Map<string, Map<string, () => void>>} ownerKey -> capability -> disposer */
   const mounted = new Map()
 

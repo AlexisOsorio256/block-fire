@@ -49,6 +49,10 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
   en `tests/animation_layers.gd`.
 - **Skins de arma**: `game/data/weapon_skin.gd` (`TINTS`). El lobby deriva su
   lista con `WeaponSkin.skin_names()`; no la dupliques.
+- **Harness BLOCKFIRE** (espacios BUILD/CREATOR, tools, skills, capacidades JIT,
+  política de permisos, Update Center): `harness/`. Dueño de la frontera con
+  DeepSeek Harness: `harness/ARCHITECTURE.md`; uso: `harness/README.md`. Arranque
+  del producto: `harness/bin/blockfire`; verificación: `harness/test.sh`.
 
 ## Fuentes vs generado
 

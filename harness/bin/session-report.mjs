@@ -24,6 +24,11 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+// `... | head` closes the pipe early; that is not an error worth a stack trace.
+process.stdout.on('error', (error) => {
+  if (error?.code === 'EPIPE') process.exit(0)
+})
+
 const args = process.argv.slice(2)
 const asJson = args.includes('--json')
 const lastIndex = args.indexOf('--last')
@@ -102,8 +107,13 @@ function fold(file, events) {
     cwd: undefined,
     agentPreset: undefined,
     model: undefined,
+    provider: undefined,
+    permission: {},
     startedAt: undefined,
     requests: 0,
+    turns: 0,
+    retries: 0,
+    compactions: 0,
     inputTokens: 0,
     cacheReadTokens: 0,
     outputTokens: 0,
@@ -113,13 +123,17 @@ function fold(file, events) {
     systemChars: undefined,
     toolCount: undefined,
     toolSchemaChars: undefined,
+    toolSchemaTop: [],
     tools: {},
+    capabilities: [],
     skillsLoaded: [],
     subagents: [],
     userMessages: 0,
+    lastEventTime: undefined,
   }
 
   for (const event of events) {
+    if (typeof event.time === 'number') report.lastEventTime = event.time
     switch (event.type) {
       case 'session':
         report.sessionId = event.id
@@ -130,15 +144,45 @@ function fold(file, events) {
       case 'agent-preset/selected':
         report.agentPreset = event.data?.preset ?? event.data?.agentPreset ?? report.agentPreset
         break
+      case 'model/selection':
+        report.provider = event.data?.provider ?? report.provider
+        report.model = event.data?.model ?? report.model
+        break
+      case 'permission/preset':
+        report.permission.preset = event.data?.preset
+        break
+      case 'sandbox/mode':
+        report.permission.sandbox = event.data?.mode
+        break
+      case 'approval/policy':
+        report.permission.approval = event.data?.policy
+        break
+      case 'turn/start':
+        report.turns += 1
+        break
+      case 'llm/retry':
+        report.retries += 1
+        break
+      case 'compaction':
+      case 'manual-compaction':
+        report.compactions += 1
+        break
       case 'request/header': {
         const header = event.data?.header ?? {}
         report.model = header.config?.model ?? report.model
+        report.provider = header.config?.provider ?? report.provider
         if (report.systemChars === undefined && typeof header.system === 'string') {
           report.systemChars = header.system.length
           report.toolCount = Array.isArray(header.tools) ? header.tools.length : undefined
           report.toolSchemaChars = Array.isArray(header.tools)
             ? JSON.stringify(header.tools).length
             : undefined
+          report.toolSchemaTop = Array.isArray(header.tools)
+            ? header.tools
+                .map((tool) => [String(tool?.name ?? '?'), JSON.stringify(tool).length])
+                .sort((left, right) => right[1] - left[1])
+                .slice(0, 8)
+            : []
         }
         break
       }
@@ -168,6 +212,14 @@ function fold(file, events) {
               // Malformed historical arguments are not this report's problem.
             }
           }
+          if (block.name === 'bf_capability') {
+            try {
+              const parsed = JSON.parse(block.arguments)
+              report.capabilities.push(`${parsed?.action ?? 'list'}:${parsed?.capability ?? '*'}`)
+            } catch {
+              report.capabilities.push('unparsed')
+            }
+          }
           if (block.name === 'subagent' || block.name === 'subagent_fork') {
             try {
               const parsed = JSON.parse(block.arguments)
@@ -188,6 +240,9 @@ function fold(file, events) {
   report.cacheHitPercent = promptTokens > 0
     ? Math.round((report.cacheReadTokens / promptTokens) * 1000) / 10
     : undefined
+  report.wallMs = report.startedAt !== undefined && report.lastEventTime !== undefined
+    ? report.lastEventTime - report.startedAt
+    : undefined
   return report
 }
 
@@ -204,19 +259,29 @@ if (asJson) {
 
 for (const report of reports) {
   const lines = []
-  lines.push(`session ${report.sessionId ?? '?'}  preset=${report.agentPreset ?? '?'}  model=${report.model ?? '?'}`)
+  lines.push(`session ${report.sessionId ?? '?'}  preset=${report.agentPreset ?? '?'}  model=${report.model ?? '?'}  provider=${report.provider ?? '?'}`)
   lines.push(`  cwd            ${report.cwd ?? '?'}`)
-  lines.push(`  requests       ${report.requests}  (user messages: ${report.userMessages})`)
+  if (Object.keys(report.permission).length > 0) {
+    lines.push(`  policy         preset=${report.permission.preset ?? '?'}  sandbox=${report.permission.sandbox ?? '?'}  approval=${report.permission.approval ?? '?'}`)
+  }
+  lines.push(`  requests       ${report.requests}  (turns ${report.turns}, user messages ${report.userMessages}, llm retries ${report.retries}, compactions ${report.compactions})`)
+  if (report.wallMs !== undefined) {
+    lines.push(`  wall time      ${(report.wallMs / 1000).toFixed(1)}s`)
+  }
   lines.push(`  prompt tokens  ${report.inputTokens + report.cacheReadTokens} total  |  uncached ${report.inputTokens}  |  cache read ${report.cacheReadTokens}  |  hit ${pct(report.cacheHitPercent)}`)
   lines.push(`  output tokens  ${report.outputTokens} (reasoning ${report.reasoningTokens})`)
   if (report.systemChars !== undefined) {
     lines.push(`  first header   system ${report.systemChars} chars  |  ${report.toolCount} tools / ${report.toolSchemaChars} schema chars`)
+    if (report.toolSchemaTop.length > 0) {
+      lines.push(`  schema cost    ${report.toolSchemaTop.map(([name, chars]) => `${name} ${chars}`).join('  |  ')}`)
+    }
   }
   if (report.firstRequestInput !== undefined) {
     lines.push(`  first request  uncached ${report.firstRequestInput}  |  cached ${report.firstRequestCached}`)
   }
   const toolNames = Object.entries(report.tools).sort((left, right) => right[1] - left[1])
   lines.push(`  tools used     ${toolNames.length === 0 ? '(none)' : toolNames.map(([name, count]) => `${name}×${count}`).join(', ')}`)
+  if (report.capabilities.length > 0) lines.push(`  capabilities   ${report.capabilities.join(', ')}`)
   if (report.skillsLoaded.length > 0) lines.push(`  skills loaded  ${report.skillsLoaded.join(', ')}`)
   if (report.subagents.length > 0) lines.push(`  subagents      ${report.subagents.join(', ')}`)
   process.stdout.write(`${lines.join('\n')}\n\n`)

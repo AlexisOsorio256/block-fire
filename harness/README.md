@@ -1,164 +1,128 @@
 # Capa BLOCKFIRE del harness
 
 Esta carpeta es **todo** lo que BLOCKFIRE añade a DeepSeek Harness. No es un
-fork, no parchea paquetes y no vive dentro de DSH: solo compone capacidades que
-DSH ya ofrece y añade un plugin mínimo propio.
+fork: compone capacidades que DSH ya ofrece, añade dos plugins pequeños y una
+página Web propia. Actualizar DSH = actualizar paquetes.
+
+Las decisiones de arquitectura, la frontera con DSH y los riesgos están en
+**`ARCHITECTURE.md`**. Esto es solo el manual de uso.
 
 ```
-DSH upstream (paquetes en node_modules/@deepseek-ai/*)   ← nunca se edita
+DSH upstream (paquetes @deepseek-ai/*)          ← nunca se edita
         ↓
-preset `blockfire` (esta carpeta)                        ← capacidades de la sesión
+perfil Web + capa de parche host/               ← guard, Update Center, roster
         ↓
-skills on-demand (contexto progresivo)                   ← se cargan solo si encajan
+dos espacios: BUILD / CREATOR (presets/)        ← lo único que el usuario elige
         ↓
-proyecto BLOCKFIRE (AGENTS.md, docs/, tools/bf, game/)   ← hechos y verificación
+skills on-demand + capacidades JIT              ← se pagan solo cuando se usan
+        ↓
+proyecto BLOCKFIRE (AGENTS.md, docs/, tools/bf) ← hechos y verificación
 ```
 
-Actualizar DSH = actualizar paquetes. Nada de aquí se reconstruye.
-
-## Inicio de una sesión BLOCKFIRE
+## Arrancar
 
 ```
-harness/install.sh          # sincroniza repo -> $DSH_HOME/.agent-presets/blockfire
+harness/install.sh          # repo -> $DSH_HOME (presets + parche host + plugin web)
+harness/bin/blockfire       # arranca la superficie Web con la política y el parche
 ```
 
-- **Web GUI**: en la sesión nueva, elige **BLOCKFIRE** en el chip de preset. Para
-  que sea el preset por defecto: *Settings → Agent presets → BLOCKFIRE → make
-  default*.
-- Solo la superficie **Web** compone presets en esta versión de DSH
-  (0.1.2-rc.1): los perfiles `headless` y `tui` componen el agente a nivel de
-  proceso y no leen el roster. Una tarea puntual por CLI con este preset no es
-  posible sin cambiar el host, y eso está fuera del alcance de esta capa.
+`harness/bin/blockfire` es la forma normal de arrancar el producto: aplica la
+capa de parche, fija la política de permisos (sin prompts de aprobación, porque
+Godot/Blender/Gradle/adb escriben fuera del workspace) y arranca la versión que
+el Update Center tiene activa. `dsh web` a secas sigue siendo el despliegue
+upstream puro, sin filas BLOCKFIRE.
 
-Una sesión ya abierta conserva la composición con la que nació; un cambio en el
-preset aplica a la siguiente.
+Una sesión ya abierta conserva la composición con la que nació; un cambio en un
+preset aplica a la siguiente sesión.
 
-## Componentes y responsabilidad
+## Los dos espacios
 
-| Componente | Responsabilidad | Por qué existe |
+| Espacio | Para qué | Superficie permanente |
 |---|---|---|
-| `presets/blockfire/agent.cordis.yml` | Compone las filas que la sesión necesita | Una sola entrada obvia; sin cargar DSH entero |
-| `presets/blockfire/preset.yml` | Nombre y descripción en el selector | Aparece como "BLOCKFIRE", no como un id |
-| `presets/blockfire/plugins/capabilities.js` | Router de capacidades pesadas (`bf_capability`) | Blender MCP son 28 tools / ~7.4k tokens de esquema que la mayoría de sesiones no usa |
-| `presets/blockfire/skills/*/SKILL.md` | Contexto especializado bajo demanda | El catálogo cuesta ~100 tokens; el cuerpo se paga solo cuando se carga |
-| `install.sh` | Materializa la capa en `$DSH_HOME` y enlaza `node_modules` | La instalación es un artefacto; el repo es la fuente |
-| `test.sh` | Smoke de la capa (forma, resolución, skills, plugin, drift) | Un cambio sin prueba es una opinión |
-| `bin/session-report.mjs` | Lee el log de sesión y reporta tokens, cache, tools y skills | Cache y contexto medidos, no afirmados |
+| **BUILD** | Trabajo normal sobre el proyecto: código, animación, Android, QA | 18 tools, ~16.5k caracteres de esquema |
+| **CREATOR** | Trabajo sobre el harness: presets, plugins, runtime, compatibilidad | BUILD + delegación completa + goals + `web_fetch`; el toolset Cordis es una capacidad JIT |
 
-El preset monta: persona BLOCKFIRE, `AGENTS.md` como baseline durable, bash,
-fs + búsqueda, jobs, skills, goals, plan mode, compaction, delegación
-(`subagent`, `subagent_fork`, `list_agents`) y web. Deliberadamente **no**
-monta `tool-workflow` ni `tool-ralph`: cuestan esquema en cada request y
-BLOCKFIRE rara vez necesita fan-out masivo. Añadir sus filas (copiadas del
-preset shipped `standard`) es un cambio de configuración, no de arquitectura.
+Plan mode no está montado en ninguno: una máquina de estados de "planear antes
+de actuar" no aporta a un modelo que ya inspecciona, decide e itera, y medía 0
+usos en las sesiones reales.
 
-## Contexto: divulgación progresiva
+## Capacidades JIT
 
-En el prompt inicial solo entra:
+```
+bf_capability                 # lista lo declarado y su estado
+bf_capability action=on  capability=blender
+bf_capability action=on  capability=cordis
+bf_capability action=off capability=blender
+```
 
-1. la identidad y el contrato de trabajo (persona, ~500 tokens, sin hechos
-   volátiles);
-2. `AGENTS.md` como mensaje durable (la tarjeta operativa del proyecto);
-3. el catálogo de skills: una línea por skill.
+- `blender` (BUILD y CREATOR): puente MCP a Blender GUI. Apagado por defecto.
+- `cordis` (solo CREATOR): inspección y modificación del runtime. Apagado por
+  defecto.
 
-No entra `PROJECT_RULES.md`, ni `docs/ARCHITECTURE.md`, ni `CURRENT_STATE.md`,
-ni README, ni CREDITS, ni el historial de git, ni capturas, ni logs. Todo eso se
-lee **cuando la tarea lo pide**, desde el archivo que lo posee.
+Activar una capacidad cambia el catálogo de tools y por eso invalida la cache
+desde la posición del esquema. Compensa solo para capacidades pesadas; una tool
+pequeña que casi no se usa se elimina, no se esconde aquí.
 
-Según la tarea:
+## Contexto
 
-| Tarea | Se carga |
+En el prompt permanente solo entran: la persona del espacio (identidad +
+contrato del harness), `AGENTS.md` como mensaje durable y el catálogo de skills
+(una línea por skill). Los hechos del proyecto — HEAD, P0, estado, assets,
+teléfono, últimos tests — viven en el repo y se leen cuando la tarea los pide.
+Un hecho tiene un dueño: los hechos del proyecto los posee `AGENTS.md` y
+`docs/`, y la persona no los repite.
+
+| Tarea | Skill |
 |---|---|
 | Orientación / cambio de área | `blockfire-orientation` |
 | Cierre de cualquier tarea | `blockfire-evidence` |
-| Animación, rig, pose | `blockfire-animation-craft` (+ activa Blender MCP) |
+| Animación, rig, pose | `blockfire-animation-craft` (+ capacidad `blender`) |
 | Input táctil, APK, rendimiento | `blockfire-android-qa` |
 | Cambiar esta capa | `blockfire-harness` |
-| Nada de lo anterior | ninguna: solo `tools/bf` y el código dueño |
+| Escribir una composición / un plugin (CREATOR) | `editing-cordis-compositions`, `cordis-plugin-development` |
 
-## Cache: prefijo estable por diseño
+## Update Center
 
-La métrica que protege el diseño es la tasa de acierto de KV-cache. Reglas:
+```
+node harness/bin/update.mjs status      # qué corre, qué está staged, qué pasó la suite
+node harness/bin/update.mjs check       # canales, versiones nuevas, release notes
+node harness/bin/update.mjs stage <v>   # instala el candidato en un árbol aislado
+node harness/bin/update.mjs verify <v>  # corre harness/test.sh contra ese árbol
+node harness/bin/update.mjs activate <v># solo si pasó; guarda la anterior
+node harness/bin/update.mjs rollback
+```
 
-- **Nada volátil en el prompt.** HEAD, P0, estado, capturas y logs viven en el
-  repo y llegan como resultado de tool, nunca al principio de la conversación.
-- **Catálogo de tools estable durante la sesión.** Por eso Blender MCP está
-  apagado por defecto: activarlo a mitad de sesión invalida el prefijo desde el
-  esquema de tools. Una sesión que nunca pide Blender mantiene el prefijo
-  byte a byte durante toda su vida.
-- **Skills no rompen el prefijo.** El catálogo se emite como mensaje durable al
-  inicio; cargar un cuerpo añade contenido al final.
-- **Medición disponible**: `node harness/bin/session-report.mjs` reporta por
-  sesión tokens de prompt, no cacheados, cacheados, % de acierto, tamaño del
-  system prompt, número de tools y esquema total.
+Nada se reemplaza solo y el proceso en marcha nunca se toca: el cambio aplica al
+siguiente arranque. Estado en `$DSH_HOME/.blockfire-harness/state.json`.
 
-## Portabilidad de modelo
-
-El preset no nombra proveedor ni modelo en ninguna fila. Cambiar de modelo es
-cambiar la selección (`/model`, o `agent-default-model` en `settings.yaml`); la
-capa BLOCKFIRE no cambia. El tuning por modelo (cuántas skills cargar de golpe,
-cuánto contexto por turno) se ajusta aquí y se documenta como tuning, nunca como
-dependencia estructural.
-
-## Auto-mejora
-
-El agente puede modificar esta capa cuando el trabajo real demuestre que algo
-estorba: una skill inútil, una tool ausente, contexto redundante, un gate
-incorrecto, una capacidad difícil de descubrir. El procedimiento está en la
-skill `blockfire-harness`: editar aquí → `install.sh` → `test.sh` → sesión
-nueva → commit. **Nunca** se edita la instalación de DSH ni un preset shipped.
+En la Web, **Settings → BLOCKFIRE** muestra el estado (instalado, pin, staged,
+verificado) y ofrece el botón de comprobación. No instala nada desde la UI.
 
 ## Pruebas
 
-Tres niveles, de más barato a más real:
+```
+harness/test.sh                 # suite de compatibilidad (sin llamadas al modelo)
+harness/test.sh --network       # además comprueba detección de updates real
+harness/test.sh --live          # además compara la superficie con sesiones reales
+harness/test.sh --self-test     # controles negativos: la suite DEBE fallar
+node harness/tests/plugins.test.mjs
+node harness/bin/session-report.mjs --last 5
+```
 
-1. **Estático** — `harness/test.sh`: forma de la composición, resolución de cada
-   fila contra la instalación de DSH, frontmatter de las skills, sintaxis del
-   plugin y drift entre repo y copia instalada. Sin llamadas al modelo.
-2. **Montaje real** — en una sesión con el preset `cordis`, un plugin temporal
-   llama a `agentPresets.standingKeyFor('blockfire')` (la comprobación que hace
-   el propio DSH al abrir sesión) y, con el `scope` devuelto, lista el catálogo
-   de skills. Es la prueba de que la composición se monta y de que las skills
-   resuelven:
+`test.sh` comprueba: estructura, sintaxis y tests unitarios de los plugins,
+resolución de cada fila (paquete instalado, archivo relativo, include, patch sin
+target), composición real del árbol con `dsh --profile web --patch ... --dump-config`,
+contrato del log de sesión, contrato de superficie por espacio, sincronía de las
+copias instaladas y (con `--network`) el Update Center.
 
-   ```js
-   return {
-     name: 'preset-probe',
-     inject: ['agentPresets', 'skills'],
-     apply(ctx) {
-       harness.registerTool(ctx, harness.defineTool({
-         name: 'preset_probe',
-         description: 'Mount-validate a preset and list its skill catalog.',
-         parameters: { id: { type: 'string', required: true } },
-         output: { schema: { type: 'string' }, render(_a, v) { return [{ type: 'text', text: v }] } },
-         async execute(args) {
-           const scope = await ctx.agentPresets.standingKeyFor(args.id)
-           const skills = await ctx.skills.list({ scope })
-           return 'MOUNT OK ' + args.id + '\n' + skills.map((s) => `${s.name} [${s.source}]`).join('\n')
-         },
-       }))
-     },
-   }
-   ```
+Lo que no puede probar: que la composición **monte** en un runtime vivo. Eso lo
+hace la propia sesión nueva (`agentPresets.standingKeyFor`), y es la primera
+comprobación que corre al abrir un espacio.
 
-   Se define con `cordis_define` + `cordis_run`, se llama una vez y se retira con
-   `cordis_undefine`.
-3. **Sesión real** — una sesión BLOCKFIRE en la GUI. Es la única prueba de
-   comportamiento del agente, y la que cierra la aceptación. Después:
-   `node harness/bin/session-report.mjs --last 1` reporta tokens, cache, tools y
-   skills de esa sesión. Los cuatro casos de aceptación, listos para copiar y
-   pegar, están en `test-cases.md`.
+## Auto-mejora
 
-## Riesgos conocidos
-
-1. La copia instalada puede desincronizarse del repo; `test.sh` y
-   `install.sh --check` lo detectan, pero hay que ejecutarlos.
-2. El enlace `node_modules` de la copia instalada apunta a la instalación de
-   DSH activa; si cambia la ruta de instalación, hay que re-ejecutar
-   `install.sh`.
-3. Activar una capacidad pesada invalida el prefijo de cache desde el esquema de
-   tools de esa sesión (compensado por tenerla apagada por defecto).
-4. Un preset solo se monta al crear la sesión: cambiar la composición no afecta
-   a sesiones vivas.
-5. Las skills envejecen: si una regla del proyecto cambia y la skill no, la
-   skill miente. Por eso cada skill enlaza al archivo dueño en vez de copiarlo.
+El agente puede modificar esta capa cuando el trabajo real demuestra que algo
+estorba: una skill inútil, contexto duplicado, una capacidad difícil de
+descubrir, cache degradado, una incompatibilidad upstream. Procedimiento:
+editar aquí → `install.sh` → `test.sh` → sesión nueva → commit. **Nunca** se
+edita la instalación de DSH ni un preset shipped.

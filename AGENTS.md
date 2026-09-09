@@ -1,8 +1,9 @@
 # BLOCKFIRE — tarjeta operativa
 
 Constitución: `PROJECT_RULES.md`. Hechos del producto: `README.md`.
-Atribuciones: `CREDITS.md`. No se hacen commits ni pushes salvo petición
-explícita.
+Atribuciones: `CREDITS.md`. Commits y pushes: autorizados al cerrar una sesión
+verificada (contrato del harness BLOCKFIRE, `harness/ARCHITECTURE.md`); no se
+pide permiso para eso.
 
 ## Arranque (en este orden, son 5 minutos)
 

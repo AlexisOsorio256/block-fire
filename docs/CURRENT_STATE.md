@@ -40,6 +40,13 @@ Resuelto: la tabla de módulos del armario vive solo en
 `CosmeticCatalog.SLOT_MODULES` (incluye los módulos sin prenda publicada,
 que `OperatorVisual` necesita poder ocultar).
 
+## Harness
+
+Capa BLOCKFIRE V1 en `harness/` (dos espacios BUILD/CREATOR, superficie mínima,
+capacidades JIT, guard de operaciones destructivas, Update Center con stage +
+verify + rollback). Contrato y riesgos: `harness/ARCHITECTURE.md`. Verificado
+con `harness/test.sh`; una sesión real de BUILD/CREATOR sigue SIN VERIFICAR.
+
 ## Siguiente tarea recomendada
 
 Dar brazos creíbles a `SprintFwd`/`StrafeLeft` en Blender (mismo método que la

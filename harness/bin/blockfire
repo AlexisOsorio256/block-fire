@@ -1,0 +1,65 @@
+#!/bin/bash
+# BLOCKFIRE Harness — the launcher.
+#
+# One command to start the product. It does three things the bare `dsh web` does
+# not, and nothing else:
+#
+#   1. Applies the BLOCKFIRE host patch layer (guard + Update Center + the two
+#      spaces), without editing the user's own profile patch file.
+#   2. Sets the permission policy BLOCKFIRE needs: no approval prompts, because
+#      Godot, Blender, Gradle and adb legitimately write outside the workspace
+#      and a confined sandbox would break the product's own toolchain. The
+#      destructive boundary is the guard plugin, not a question.
+#   3. Boots the version the Update Center has ACTIVE — the staged, verified
+#      candidate after an update, or the installed one before any update. The
+#      switch is a state file, so this is the only place that reads it.
+#
+#   harness/bin/blockfire                 launch the Web surface
+#   harness/bin/blockfire --help          pass launcher flags through to dsh web
+#   DSH_PERMISSION_MODE=workspace-write harness/bin/blockfire   confine this run
+#
+# Anything after the launcher's own flags reaches `dsh web` verbatim.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+HARNESS="$(cd "$HERE/.." && pwd)"
+DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
+# The installed copy is the one the profile resolves relative row names against;
+# install.sh keeps it byte-identical to the repo's file.
+PATCH="$DSH_HOME_DIR/profiles/web/blockfire.patch.yml"
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+	sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+	exit 0
+fi
+
+[ -f "$PATCH" ] || { echo "blockfire: missing $PATCH" >&2; exit 1; }
+
+# The toolchain writes ~/.config/godot, ~/.config/blender, ~/.gradle and the adb
+# socket. An operator may still confine a run explicitly.
+export DSH_PERMISSION_MODE="${DSH_PERMISSION_MODE:-danger-full-access}"
+
+# Resolve the active runtime: the Update Center's pin when it has one, else the
+# `dsh` this machine already resolves.
+DshBin="$(node "$HARNESS/bin/update.mjs" status --json 2>/dev/null | node -e '
+let text = ""
+process.stdin.on("data", (chunk) => { text += chunk })
+process.stdin.on("end", () => {
+  try {
+    const state = JSON.parse(text)
+    const bin = state?.active?.bin
+    if (typeof bin === "string" && bin !== "") process.stdout.write(bin)
+  } catch {}
+})
+' || true)"
+
+if [ -z "$DshBin" ] || [ ! -e "$DshBin" ]; then
+	DshBin="$(command -v dsh || true)"
+fi
+[ -n "$DshBin" ] || {
+	echo "blockfire: no dsh runtime found. Install it (npm i -g @deepseek-ai/dsh) or run harness/install.sh." >&2
+	exit 1
+}
+
+echo "BLOCKFIRE Harness — runtime $(basename "$(dirname "$(dirname "$DshBin")")") policy $DSH_PERMISSION_MODE"
+exec node "$DshBin" --profile web --patch "$PATCH" "$@"

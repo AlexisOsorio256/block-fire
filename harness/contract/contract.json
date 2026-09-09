@@ -1,0 +1,96 @@
+{
+  "_comment": "The upstream surfaces BLOCKFIRE depends on. Updated only after harness/test.sh passes against the running installation; see harness/ARCHITECTURE.md.",
+  "validatedAgainst": {
+    "dsh": "0.1.2-rc.1",
+    "at": "2026-09-09",
+    "model": "deepseek-v4.1-flash-expires-on-0910"
+  },
+  "spaces": {
+    "build": {
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "bf_capability",
+        "edit",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "todo_write",
+        "web_search",
+        "write"
+      ],
+      "schemaChars": 16557,
+      "schemaTolerance": 2500
+    },
+    "creator": {
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "bf_capability",
+        "create_goal",
+        "edit",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "write"
+      ],
+      "schemaChars": 21794,
+      "schemaTolerance": 2500
+    }
+  },
+  "sessionLog": {
+    "events": [
+      "session",
+      "agent-preset/selected",
+      "request/header",
+      "user/message",
+      "assistant/message",
+      "tool/call",
+      "tool/result",
+      "step/end"
+    ],
+    "fields": {
+      "request/header": [
+        "header.system",
+        "header.tools",
+        "header.config.model"
+      ],
+      "assistant/message": [
+        "usage.inputTokens",
+        "usage.cacheReadTokens",
+        "usage.outputTokens",
+        "usage.reasoningTokens"
+      ]
+    }
+  },
+  "layout": {
+    "shippedCordisSkills": "@deepseek-ai/dsh-agent-presets/presets/cordis/skills",
+    "capabilityPackages": {
+      "blender": "@deepseek-ai/dsh-mcp-client",
+      "cordis": "@deepseek-ai/dsh-tool-cordis"
+    }
+  }
+}

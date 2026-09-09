@@ -1,0 +1,6 @@
+name: CREATOR
+description: >-
+  Trabajo sobre el propio harness BLOCKFIRE: capa harness/, presets,
+  plugins, compatibilidad y runtime. Incluye inspección del runtime Cordis y
+  delegación completa.
+order: 2

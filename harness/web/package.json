@@ -1,0 +1,22 @@
+{
+  "name": "@blockfire/harness-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BLOCKFIRE Harness Web surface: the Update Center status page (host route + settings section).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  }
+}

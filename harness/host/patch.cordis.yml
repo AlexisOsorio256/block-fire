@@ -1,0 +1,34 @@
+# BLOCKFIRE host-plane patch layer for the Web profile.
+#
+# Applied by `harness/bin/blockfire` as `dsh --profile web --patch <this file>`,
+# so it never touches the user's own `cordis.patch.yml` and is trivially
+# reversible: launch `dsh web` directly and the deployment is exactly upstream.
+#
+# HOST PLANE, deliberately. Approval/sandbox policy and process-wide registries
+# cannot live in a preset: a preset is exactly as privileged as the plugins it
+# names, so a preset must never be able to relax its own confinement, and a
+# service the browser reads cannot be per-session.
+#
+# Row names resolve against the profile directory; `harness/install.sh` links
+# `./blockfire/` to this repository's `harness/host/` and
+# `node_modules/@blockfire/harness-web` to `harness/web/`.
+
+- insert:
+    # The destructive-operation boundary that replaces approval prompts. See
+    # harness/host/guard.js for what it does and does not protect.
+    - id: blockfire-guard
+      name: './blockfire/guard.js'
+
+    # The Update Center's read-only status endpoint + Settings → BLOCKFIRE page.
+    - id: blockfire-update-center
+      name: '@blockfire/harness-web'
+
+# ── the only two spaces ─────────────────────────────────────────────────────
+# BUILD and CREATOR are the entire user-facing choice. The shipped presets stay
+# installed on disk (CREATOR reads the composition-authoring skills from that
+# package) but leave the roster, so the user never administers standard /
+# minimal / ptc / cordis as if they were product decisions.
+- id: agent-presets
+  config:
+    default: build
+    includeShippedRoot: false
