@@ -89,7 +89,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	var input_vector := _movement_input()
-	var wish_direction := (transform.basis * Vector3(input_vector.x, 0, input_vector.y)).normalized()
+	var wish_direction := _camera_relative_direction(input_vector)
 	var sprinting := Input.is_action_pressed("sprint")
 	if mobile_controls != null and mobile_controls.has_method("is_sprinting"):
 		sprinting = sprinting or mobile_controls.is_sprinting()
@@ -114,12 +114,14 @@ func _physics_process(delta: float) -> void:
 			weapon.next_weapon()
 		if Input.is_action_just_pressed("switch_weapon"):
 			weapon.switch_to(0)
+	_update_body_rotation(delta, wish_direction)
 	move_and_slide()
 	_update_footsteps(delta)
 	if visual != null:
-		visual.set_combat_state(Vector2(velocity.x, velocity.z).length() > 0.15, weapon != null and weapon.fire_held)
+		var horizontal_speed := Vector2(velocity.x, velocity.z).length()
+		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed / maxf(walk_speed, 0.1))
 	if camera != null:
-		var target_fov := 58.0 if (weapon != null and weapon.aim_held) else 76.0
+		var target_fov := 54.0 if (weapon != null and weapon.aim_held) else 70.0
 		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -188,6 +190,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	collision_mask = 1 | 2
 	health_changed.emit(health, max_health)
 	look_pitch = 0.0
+	look_yaw = rotation_degrees.y
 	if camera_pivot != null:
 		camera_pivot.position.y = 1.58
 	assist_target = null
@@ -232,6 +235,11 @@ func get_team() -> String:
 func get_target_point() -> Vector3:
 	return global_position + Vector3.UP * (1.35 if crouched else 1.7)
 
+## Punto de asistencia independiente del hitbox de cabeza: la ayuda móvil
+## acompaña el torso visible, conserva línea de visión y nunca decide disparar.
+func get_assist_point() -> Vector3:
+	return global_position + Vector3.UP * (0.96 if crouched else 1.22)
+
 func get_aim_origin() -> Vector3:
 	return camera.global_position if camera != null else global_position + Vector3.UP * 1.6
 
@@ -244,11 +252,11 @@ func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) ->
 		assist_target = null
 		return base_direction
 	assist_target = chosen
-	var assisted_point: Vector3 = chosen.get_target_point()
+	var assisted_point: Vector3 = chosen.get_assist_point() if chosen.has_method("get_assist_point") else chosen.get_target_point()
 	var assisted_direction := origin.direction_to(assisted_point)
 	var angle_to_target := rad_to_deg(acos(clampf(base_direction.normalized().dot(assisted_direction), -1.0, 1.0)))
-	var follow_strength := 0.54 if weapon != null and weapon.aim_held else 0.38
-	follow_strength *= 1.0 - clampf(angle_to_target / 19.0, 0.0, 1.0) * 0.35
+	var follow_strength := 0.70 if weapon != null and weapon.aim_held else 0.54
+	follow_strength *= 1.0 - clampf(angle_to_target / 27.0, 0.0, 1.0) * 0.24
 	return base_direction.normalized().lerp(assisted_direction, follow_strength).normalized()
 
 func _select_assist_target(base_direction: Vector3, max_range: float, origin: Vector3) -> Node:
@@ -265,11 +273,11 @@ func _select_assist_target(base_direction: Vector3, max_range: float, origin: Ve
 			continue
 		if not candidate.has_method("get_team") or candidate.get_team() == team:
 			continue
-		var target_point: Vector3 = candidate.get_target_point() if candidate.has_method("get_target_point") else candidate.global_position + Vector3.UP * 1.4
+		var target_point: Vector3 = candidate.get_assist_point() if candidate.has_method("get_assist_point") else candidate.global_position + Vector3.UP * 1.22
 		var to_target := origin.direction_to(target_point)
 		var dot := clampf(direction.dot(to_target), -1.0, 1.0)
 		var angle := acos(dot)
-		var cone := deg_to_rad(19.0) if candidate == assist_target else deg_to_rad(13.0)
+		var cone := deg_to_rad(31.0) if candidate == assist_target else deg_to_rad(22.0)
 		if angle > cone or origin.distance_to(target_point) > max_range:
 			continue
 		if not _assist_has_line_of_sight(origin, target_point):
@@ -307,15 +315,41 @@ func _update_look(delta: float) -> void:
 	look_yaw -= look.x * sensitivity
 	look_pitch = clampf(look_pitch - look.y * sensitivity, -78.0, 78.0)
 	_apply_rotational_assist(delta, look)
-	rotation_degrees.y = look_yaw
 	if camera_pivot != null:
+		# look_yaw is an absolute world heading; the pivot is a child of the
+		# actor, so convert it to a local orbit. Looking around no longer rotates
+		# the whole body; the body turns only while moving/aiming below.
+		camera_pivot.rotation_degrees.y = look_yaw - rotation_degrees.y
 		camera_pivot.rotation_degrees.x = look_pitch
+
+func _camera_relative_direction(input_vector: Vector2) -> Vector3:
+	if input_vector.length_squared() < 0.001:
+		return Vector3.ZERO
+	var direction := Vector3(input_vector.x, 0.0, input_vector.y)
+	if camera_pivot != null:
+		direction = camera_pivot.global_transform.basis * direction
+	direction.y = 0.0
+	return direction.normalized()
+
+func _update_body_rotation(delta: float, movement_direction: Vector3) -> void:
+	var target_yaw := rotation.y
+	var should_face_camera := weapon != null and (weapon.aim_held or weapon.fire_held)
+	if should_face_camera:
+		target_yaw = deg_to_rad(look_yaw)
+	elif movement_direction.length_squared() > 0.01:
+		target_yaw = atan2(-movement_direction.x, -movement_direction.z)
+	else:
+		return
+	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 11.0, 0.0, 1.0))
 
 func _apply_rotational_assist(delta: float, look_input: Vector2) -> void:
 	if not can_use_combat() or mobile_controls == null or match_context == null or camera == null:
 		return
-	var engaged: bool = (mobile_controls.has_method("is_looking") and mobile_controls.is_looking()) \
-			or _mobile_fire() or _mobile_aim()
+	# Rotational assist is an ADS/fire aid, never a free-look magnet. The old
+	# is_looking branch pulled the camera toward every candidate while the thumb
+	# merely panned, which read as wall/cover lock-on on a phone.
+	var engaged: bool = _mobile_fire() or _mobile_aim() \
+		or Input.is_action_pressed("aim") or Input.is_action_pressed("fire")
 	if not engaged:
 		assist_target = null
 		return
@@ -329,12 +363,13 @@ func _apply_rotational_assist(delta: float, look_input: Vector2) -> void:
 		assist_target = null
 		return
 	assist_target = target
-	var target_direction := origin.direction_to(target.get_target_point())
+	var target_point: Vector3 = target.get_assist_point() if target.has_method("get_assist_point") else target.get_target_point()
+	var target_direction := origin.direction_to(target_point)
 	var desired_yaw := rad_to_deg(atan2(-target_direction.x, -target_direction.z))
 	var desired_pitch := rad_to_deg(asin(clampf(target_direction.y, -1.0, 1.0)))
 	var yaw_error := wrapf(desired_yaw - look_yaw, -180.0, 180.0)
 	var pitch_error := desired_pitch - look_pitch
-	var follow_rate := 8.0 if _uses_ads() else 5.5
+	var follow_rate := 15.0 if _uses_ads() else 10.0
 	var blend := clampf(delta * follow_rate, 0.0, 0.28)
 	look_yaw = wrapf(look_yaw + yaw_error * blend, -360.0, 360.0)
 	look_pitch = clampf(look_pitch + pitch_error * blend, -78.0, 78.0)
@@ -409,23 +444,26 @@ func _create_visual() -> void:
 	# viene del loadout persistido en SettingsStore (claves cosmetic_*).
 	# is_human=true: único que puede leer el loadout persistido.
 	visual.configure(operator_id, team, _team_color(), {}, true)
-	visual.visible = false
+	visual.visible = true
 	add_child(visual)
 
 func _create_camera() -> void:
 	camera_pivot = Node3D.new()
 	camera_pivot.name = "CameraPivot"
-	camera_pivot.position = Vector3(0, 1.58, 0)
+	camera_pivot.position = Vector3(0, 1.52, 0)
 	add_child(camera_pivot)
 	camera = Camera3D.new()
 	camera.name = "PlayerCamera"
 	camera.current = true
-	camera.fov = 76.0
-	camera.near = 0.03
+	camera.fov = 70.0
+	camera.near = 0.10
+	# Cámara sobre el hombro: el avatar, la mochila y el arma permanecen en
+	# cuadro. El raycast sigue saliendo de esta cámara, no del modelo.
+	camera.position = Vector3(0.62, 0.22, 3.85)
 	camera_pivot.add_child(camera)
 	weapon = WeaponController.new()
 	weapon.name = "WeaponController"
-	camera.add_child(weapon)
+	add_child(weapon)
 	weapon.setup(self, camera, mobile_controls)
 
 func _update_crouch_visual() -> void:

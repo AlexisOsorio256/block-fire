@@ -52,7 +52,7 @@ func _test_weapon_definitions() -> void:
 		_check(definition.range > definition.falloff_start, definition.id + " range/falloff ordering")
 	_check(ids.has("rifle") and ids.has("pistol") and ids.has("shotgun") and ids.has("smg"), "weapon roster ids")
 	_check(WeaponController.DEFINITIONS[0].automatic, "rifle is automatic")
-	_check(not WeaponController.DEFINITIONS[1].automatic, "pistol is semi automatic")
+	_check(WeaponController.DEFINITIONS[1].automatic, "pistol supports held fire")
 	_check(WeaponController.DEFINITIONS[2].pellets > 1, "shotgun uses pellets")
 	_check(BotRole.make("entry").preferred_weapon_id == "smg", "entry role selects SMG")
 	_check(BotRole.make("support").preferred_weapon_id == "rifle", "support role selects rifle")
@@ -79,6 +79,7 @@ func _test_player_and_operator_contracts() -> void:
 	_check(player.max_health == 200.0, "player starts at 200 HP")
 	_check(player.has_method("get_mobile_assisted_direction"), "player exposes mobile aim assist")
 	player.free()
+	_test_ual_animation_library()
 	_test_cosmetic_catalog()
 	await _test_visual_in_tree()
 	var victim := BlockfireBot.new()
@@ -88,57 +89,30 @@ func _test_player_and_operator_contracts() -> void:
 	victim.free()
 
 func _test_visual_in_tree() -> void:
-	## El rig modular necesita el árbol para resolver SettingsStore y animar.
+	## El avatar de tercera persona debe ser la malla skinned descargada y
+	## conservar el contrato de montaje/aim mientras el arma PBR final llega.
 	var visual := OperatorVisual.new()
 	get_root().add_child(visual)
 	await process_frame
 	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Idle"), "avatar rig exposes idle animation")
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Run_Gun"), "avatar rig exposes locomotion animation")
-	_check(visual.animation_player != null and visual.animation_player.has_animation(&"Death"), "avatar rig exposes death animation")
 	_check(visual.model_root != null, "avatar visual builds a model root")
-	_check(visual.skeleton != null, "avatar keeps a shared Skeleton3D")
-	var avatar_parts := 0
-	if visual.model_root != null:
-		# Solo piezas del avatar: el arma de escaparate vive bajo el mount de
-		# la muñeca y no debe contar como prenda (su número de meshes varía por
-		# arma y no forma parte del contrato de ropa).
-		for part_name: String in ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R"]:
-			var part := visual.model_root.find_child(part_name, true, false) as MeshInstance3D
-			if part != null and part.visible:
-				avatar_parts += 1
-		var band_found := false
-		for node: Node in visual.model_root.find_children("*", "MeshInstance3D", true, false):
-			var mesh_instance := node as MeshInstance3D
-			if mesh_instance != null and mesh_instance.visible and String(mesh_instance.name) == "TeamBand":
-				band_found = true
-		_check(avatar_parts == 4 and band_found, "avatar shows head+top+bottom+shoes plus the team band")
-	var attachments := 0
-	if visual.skeleton != null:
-		for node: Node in visual.skeleton.get_children():
-			if node is BoneAttachment3D:
-				attachments += 1
-	_check(attachments >= 1, "team band rides a BoneAttachment3D")
-	# Regresión P0: el rig UMC llegó con alfa 0 (invisible). Todo material
-	# visible debe quedar opaco por instancia, salvo la piel de tops ocultada
-	# como mitigación temporal de pesos corruptos (manos en T-pose).
-	var opaque_ok := true
-	if visual.skeleton != null:
-		for node: Node in visual.skeleton.get_children():
-			var mesh_instance := node as MeshInstance3D
-			if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
-				continue
-			var is_top := String(mesh_instance.name).ends_with("_Body")
-			for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-				var material := mesh_instance.get_active_material(surface_index)
-				if material is StandardMaterial3D:
-					var source_mat := material as StandardMaterial3D
-					var is_hidden_top_skin := is_top and source_mat.resource_name == "Skin" and source_mat.albedo_color.a < 0.01
-					if is_hidden_top_skin:
-						continue
-					if source_mat.albedo_color.a < 0.99 or source_mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
-						opaque_ok = false
-	_check(opaque_ok, "avatar materials are opaque after repair")
+	_check(visual.model_root != null and visual.model_root.find_child("CharacterModel", true, false) != null,
+		"avatar instantiates the downloaded rigged skin")
+	_check(visual.skeleton != null and visual.skeleton.get_bone_count() >= 400,
+		"avatar keeps the source deformation skeleton")
+	_check(visual.animation_player != null and visual.retarget_ready,
+		"avatar installs the UAL retarget library")
+	if visual.animation_player != null:
+		_check(visual.animation_player.has_animation("ual/Idle"), "retargeted idle clip is addressable")
+		_check(visual.animation_player.has_animation("ual/Pistol_Shoot"), "retargeted pistol shoot clip is addressable")
+	visual.set_combat_state(false, false)
+	await process_frame
+	_check(visual.animation_player != null and visual.animation_player.current_animation == "ual/Idle",
+		"avatar starts in retargeted idle")
+	_check(visual.model_root != null and visual.model_root.find_child("TeamRing", true, false) != null,
+		"avatar keeps the team marker outside the skinned mesh")
+	_check(visual.weapon_mount != null and visual.muzzle_marker != null,
+		"avatar exposes a bone-attached weapon muzzle")
 	# Regresión P0: ownership humano/bot no depende del string de team.
 	# Un bot aliado nunca debe heredar el loadout persistido del jugador.
 	var settings: Node = get_root().get_node("SettingsStore")
@@ -155,12 +129,18 @@ func _test_visual_in_tree() -> void:
 	settings.set_cosmetic_slot("bottom", "bottom_swat")
 	# El escaparate debe sobrevivir al rebuild que provoca cambiar una prenda:
 	# el rifle es parte del lifecycle del visual y no del lobby por frame.
-	visual.set_showcase_mode(true, "res://assets/models/weapons/rifle.glb", "Estándar")
-	_check(visual.get_node_or_null("TeamRing") == null, "showcase hides combat ring")
-	_check(visual.get_node_or_null("ShowcaseWeaponAttachment") != null, "showcase attaches display weapon")
+	visual.set_showcase_mode(true, "", "Estándar")
+	var showcase_ring := visual.model_root.get_node_or_null("TeamRing") as Node3D
+	var showcase_rifle := visual.model_root.find_child("MountedWeapon", true, false) as Node3D
+	_check(showcase_ring != null and not showcase_ring.visible, "showcase hides combat ring")
+	_check(showcase_rifle != null and showcase_rifle.visible, "showcase keeps the equipped weapon visible")
+	var real_weapon_meshes := showcase_rifle.find_children("*", "MeshInstance3D", true, false) if showcase_rifle != null else []
+	_check(real_weapon_meshes.size() > 0, "showcase mounts a real imported weapon mesh")
 	visual.configure("BRAVO", "ally", Color("#ff9d50"), {}, true)
-	_check(visual.get_node_or_null("TeamRing") == null and visual.get_node_or_null("ShowcaseWeaponAttachment") != null,
-		"showcase weapon survives avatar rebuild")
+	showcase_ring = visual.model_root.get_node_or_null("TeamRing") as Node3D
+	showcase_rifle = visual.model_root.find_child("MountedWeapon", true, false) as Node3D
+	_check(showcase_ring != null and not showcase_ring.visible and showcase_rifle != null,
+		"showcase survives avatar rebuild")
 	ally_bot_visual.queue_free()
 	visual.queue_free()
 	var bot := BlockfireBot.new()
@@ -169,14 +149,8 @@ func _test_visual_in_tree() -> void:
 	get_root().add_child(bot)
 	await process_frame
 	_check(bot.visual != null and bot.visual.model_root != null, "bot builds its own visual")
-	var bot_meshes := 0
-	if bot.visual != null and bot.visual.skeleton != null:
-		# El bando enemigo viste el rig Enemy: cuerpo + cabeza como meshes
-		# directos del esqueleto (sin hombreras), sin contar arma ni banda.
-		for node: Node in bot.visual.skeleton.get_children():
-			if node is MeshInstance3D and (node as MeshInstance3D).visible:
-				bot_meshes += 1
-	_check(bot_meshes == 2, "bot avatar resolves a deterministic loadout")
+	_check(bot.visual != null and bot.visual.skeleton != null and bot.visual.skeleton.get_bone_count() >= 400,
+		"bot keeps the same rigged third-person avatar")
 	_check((bot.collision_mask & 2) != 0, "bot body blocks combatant overlap")
 	var collision_player := BlockfirePlayer.new()
 	get_root().add_child(collision_player)
@@ -186,6 +160,37 @@ func _test_visual_in_tree() -> void:
 	collision_player.free()
 	bot.get_parent().remove_child(bot)
 	bot.free()
+
+func _test_ual_animation_library() -> void:
+	## La UAL se valida como fuente técnica de rig/animación, no como skin
+	## visible: el maniquí desnudo no debe volver a entrar por accidente al
+	## lobby o a la partida mientras esperamos la ropa compatible.
+	var sources := [
+		{"path": "res://assets/models/animation_library/UAL1_Standard.glb", "clips": ["Idle", "Jog_Fwd", "Sprint", "Pistol_Shoot", "Pistol_Reload", "Death01"]},
+		{"path": "res://assets/models/animation_library/UAL2_Standard.glb", "clips": ["Idle_FoldArms", "Melee_Hook", "Slide"]}
+	]
+	for source_data: Dictionary in sources:
+		var scene := load(str(source_data["path"])) as PackedScene
+		_check(scene != null, "UAL source imports: " + str(source_data["path"]))
+		if scene == null:
+			continue
+		var instance := scene.instantiate()
+		var skeleton := instance.find_child("Skeleton3D", true, false) as Skeleton3D
+		_check(skeleton != null and skeleton.get_bone_count() >= 65, "UAL source exposes the shared 65-bone rig")
+		var animation_player := instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		_check(animation_player != null, "UAL source exposes AnimationPlayer")
+		if animation_player != null:
+			var libraries := animation_player.get_animation_library_list()
+			_check(not libraries.is_empty(), "UAL source exposes an animation library")
+			for clip: String in source_data["clips"]:
+				var clip_found := false
+				for library_name: String in libraries:
+					var library := animation_player.get_animation_library(library_name)
+					if library != null and library.has_animation(clip):
+						clip_found = true
+						break
+				_check(clip_found, "UAL clip available: " + clip)
+		instance.free()
 
 func _test_cosmetic_catalog() -> void:
 	var items := CosmeticCatalog.items()
@@ -214,6 +219,7 @@ func _slot_count(items: Dictionary, slot: String) -> int:
 func _test_touch_contracts() -> void:
 	var controls := BlockfireMobileControls.new()
 	controls.configure(true)
+	controls.size = Vector2(1280.0, 720.0)
 	controls.qa_set_move(Vector2(0.7, -0.8))
 	_check(controls.get_move_vector().length() <= 1.001, "joystick is clamped")
 	controls.qa_press_fire()
@@ -231,11 +237,15 @@ func _test_touch_contracts() -> void:
 	_check(not controls.consume_jump(), "jump is not sticky")
 	controls.qa_press_aim()
 	controls.qa_press_jump()
+	var sprint_center: Vector2 = controls.call("_button_center", "sprint")
+	controls.call("_handle_touch", 7, sprint_center, true)
+	controls.call("_handle_touch", 7, sprint_center, false)
+	_check(controls.is_sprinting(), "sprint tap latches after finger-up")
 	controls.crouch_request = true
 	controls.reload_request = true
 	controls.switch_request = true
 	controls.release_all()
-	_check(not controls.is_firing() and not controls.is_aiming() and controls.get_move_vector() == Vector2.ZERO, "touch release clears held state")
+	_check(not controls.is_firing() and not controls.is_aiming() and not controls.is_sprinting() and controls.get_move_vector() == Vector2.ZERO, "touch release clears held state")
 	_check(not controls.jump_request and not controls.crouch_request and not controls.reload_request and not controls.switch_request, "touch release clears one-shots")
 	controls.free()
 
@@ -268,7 +278,7 @@ func _test_consolidation_contracts() -> void:
 	data_weapon.setup(null)
 	_check(data_weapon.ammo[0] == WeaponController.DEFINITIONS[0].magazine_size, "ammo magazine comes from weapon definition")
 	_check(data_weapon.reserve[3] == WeaponController.DEFINITIONS[3].reserve_ammo, "reserve ammo comes from weapon definition")
-	_check(data_weapon.muzzle_anchor != null and data_weapon.muzzle_anchor.get_parent() == data_weapon.viewmodel, "muzzle flash anchor follows the viewmodel")
+	_check(data_weapon.muzzle_anchor == null, "weapon without actor does not allocate a visual anchor")
 	data_weapon.free()
 	var bot := BlockfireBot.new()
 	game_match.kills[bot.get_instance_id()] = 0

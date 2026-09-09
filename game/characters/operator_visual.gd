@@ -1,109 +1,124 @@
 class_name OperatorVisual
 extends Node3D
 
-## Apariencia del avatar (jugador y bots). El jugador ya no tiene héroes:
-## BRAVO/VULTURE/TALON/DUNE/HAVOC quedan deprecados y el id solo decide la
-## variación determinista de los bots. La identidad visible vive en la ROPA
-## (CosmeticCatalog sobre el rig modular compartido) y en un pequeño accesorio
-## de equipo (banda en el brazo), nunca en un aro gigante ni un tinte global.
-## Rig base: Quaternius Toon Shooter (CC0): Character_Soldier para el bando
-## aliado/jugador y Character_Enemy para el rival. Son rigs de un solo
-## personaje con pesos de manos/dedos limpios y animaciones de sujetar arma
-## (Idle_Shoot/Run_Shoot/Run_Gun); el arma montada solo tiene que posarse
-## entre ambas manos. El rig modular fusionado UMC queda como fallback si un
-## Toon no carga. Un Skeleton3D humanoide comparte las animaciones y las
-## prendas urbanas; el arsenal visual se monta en el antebrazo para acompañar
-## Idle/Run/Shoot/Death sin un objeto flotante.
+## Third-person character visual. The skin is a real skinned GLB and the
+## locomotion/combat clips come from the shared UAL rig through runtime
+## retargeting. No primitive or Toon fallback is created when an asset is
+## missing: gameplay keeps its mount/muzzle contract until a licensed weapon
+## mesh is supplied.
+const CHARACTER_SCENE_PATH := "res://assets/models/skins/rigged_anime_japanese_high_school_boy.glb"
+const ANIMATION_SOURCE_PATHS := [
+	"res://assets/models/animation_library/UAL1_Standard.glb",
+	"res://assets/models/animation_library/UAL2_Standard.glb"
+]
+const WEAPON_IDS := ["rifle", "pistol", "shotgun", "smg"]
+const WEAPON_ASSETS := {
+	"rifle": "res://assets/models/weapons/real/type64_smg.glb",
+	"pistol": "res://assets/models/weapons/real/desert_eagle.glb",
+	"smg": "res://assets/models/weapons/real/mpx_smg.glb"
+}
+const WEAPON_ASSET_SCALES := {
+	"rifle": 0.0012,
+	"pistol": 0.0030,
+	"smg": 0.0100
+}
+const WEAPON_ASSET_ROTATIONS := {
+	"rifle": Vector3(0.0, 90.0, 0.0),
+	"pistol": Vector3(0.0, 90.0, 0.0),
+	"smg": Vector3(0.0, 90.0, 0.0)
+}
 
-const AVATAR_SOLDIER := "res://assets/models/quaternius_toon_shooter/Character_Soldier.gltf"
-const AVATAR_ENEMY := "res://assets/models/quaternius_toon_shooter/Character_Enemy.gltf"
-const AVATAR_FALLBACK := "res://assets/models/quaternius_modular/avatar_rig.gltf"
-const AVATAR_SCENE := AVATAR_SOLDIER
-const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
+# The downloaded skin uses Blender control/deformation names. These are the
+# deformation bones that correspond to the canonical UAL 65-bone skeleton.
+# Keeping the map here makes the retarget explicit and reviewable instead of
+# hiding it in an importer or a second runtime manager.
+const TARGET_BONE_MAP := {
+	"root": "GLTF_created_0_rootJoint",
+	"pelvis": "hips_81",
+	"spine_01": "DEF-spine_75",
+	"spine_02": "DEF-spine.001_74",
+	"spine_03": "DEF-spine.002_73",
+	"neck_01": "neck_175",
+	"Head": "head_169",
+	"clavicle_l": "DEF-shoulder.L_189",
+	"upperarm_l": "DEF-upper_arm.L_299",
+	"lowerarm_l": "DEF-forearm.L_297",
+	"hand_l": "DEF-hand.L_295",
+	"thigh_l": "DEF-thigh.L_133",
+	"calf_l": "DEF-shin.L_131",
+	"foot_l": "DEF-foot.L_129",
+	"ball_l": "DEF-toe.L_128",
+	"clavicle_r": "DEF-shoulder.R_313",
+	"upperarm_r": "DEF-upper_arm.R_423",
+	"lowerarm_r": "DEF-forearm.R_421",
+	"hand_r": "DEF-hand.R_419",
+	"thigh_r": "DEF-thigh.R_152",
+	"calf_r": "DEF-shin.R_150",
+	"foot_r": "DEF-foot.R_148",
+	"ball_r": "DEF-toe.R_147",
+	"index_01_l": "DEF-f_index.01.L_209",
+	"index_02_l": "DEF-f_index.02.L_208",
+	"index_03_l": "DEF-f_index.03.L_207",
+	"middle_01_l": "DEF-f_middle.01.L_242",
+	"middle_02_l": "DEF-f_middle.02.L_241",
+	"middle_03_l": "DEF-f_middle.03.L_240",
+	"ring_01_l": "DEF-f_ring.01.L_261",
+	"ring_02_l": "DEF-f_ring.02.L_260",
+	"ring_03_l": "DEF-f_ring.03.L_259",
+	"pinky_01_l": "DEF-f_pinky.01.L_280",
+	"pinky_02_l": "DEF-f_pinky.02.L_279",
+	"pinky_03_l": "DEF-f_pinky.03.L_278",
+	"thumb_01_l": "DEF-thumb.01.L_213",
+	"thumb_02_l": "DEF-thumb.02.L_212",
+	"thumb_03_l": "DEF-thumb.03.L_211",
+	"index_01_r": "DEF-f_index.01.R_333",
+	"index_02_r": "DEF-f_index.02.R_332",
+	"index_03_r": "DEF-f_index.03.R_331",
+	"middle_01_r": "DEF-f_middle.01.R_366",
+	"middle_02_r": "DEF-f_middle.02.R_365",
+	"middle_03_r": "DEF-f_middle.03.R_364",
+	"ring_01_r": "DEF-f_ring.01.R_385",
+	"ring_02_r": "DEF-f_ring.02.R_384",
+	"ring_03_r": "DEF-f_ring.03.R_383",
+	"pinky_01_r": "DEF-f_pinky.01.R_404",
+	"pinky_02_r": "DEF-f_pinky.02.R_403",
+	"pinky_03_r": "DEF-f_pinky.03.R_402",
+	"thumb_01_r": "DEF-thumb.01.R_337",
+	"thumb_02_r": "DEF-thumb.02.R_336",
+	"thumb_03_r": "DEF-thumb.03.R_335"
+}
 
-## Los Toon se authoran a ~2.3 unidades de altura: esta escala los deja a la
-## altura de la cápsula (1.8), puertas y coberturas, sin enemigos de juguete.
-const MODEL_SCALE := 0.8
-const MODEL_Y_OFFSET := 0.0
-## Factor de escala de la malla de cabeza sobre su centro (1.0 = stock del pack).
-## A 0.55 el casco seguía siendo tan ancho como el torso: 0.45 lo deja en
-## lectura heroica-estilizada (~20% de la altura visual de 1.87).
-const HEAD_SCALE := 0.45
-## Altura del asiento de la cabeza sobre su attachment (Soldier): a 0.45 de
-## escala, el asiento 0.35 de Muse levantaba la cara dentro de la sombra del
-## ala del casco y el personaje leía sin cara de frente.
-const HEAD_SEAT := 0.22
-
-const BAND_COLOR_ALLY := Color("#4fd6e9")
-const BAND_COLOR_ENEMY := Color("#da4f68")
-
-var operator_id: String = "BRAVO"
-var team: String = "ally"
-## True solo para el humano local. Los bots nunca heredan el loadout persistido
-## aunque compartan team "ally": usan variación determinista propia.
-var is_human: bool = false
-var accent: Color = BAND_COLOR_ALLY
+var operator_id := "BRAVO"
+var team := "ally"
+var is_human := false
+var accent := Color("#4fd6e9")
+var loadout: Dictionary = {}
 var model_root: Node3D
+var weapon_mount: Node3D
+var muzzle_marker: Marker3D
 var skeleton: Skeleton3D
 var animation_player: AnimationPlayer
-var animation_state: StringName = &""
-## Cosméticos activos: slot -> CosmeticItem (los bots usan su variación;
-## el jugador recibe su loadout desde SettingsStore via player.gd).
-var loadout: Dictionary = {}
-## Color de equipo para la banda/aro pequeño.
-var team_band_color: Color = BAND_COLOR_ALLY
-## El escaparate del lobby es un estado del visual, no un parche externo: al
-## reconstruir el rig conserva el rifle y omite los marcadores de combate.
-var showcase_mode: bool = false
-var showcase_weapon_scene: String = ""
-var showcase_weapon_skin: String = "Estándar"
-var _weapon_mount: BoneAttachment3D
-
-## Índice de skin del skeleton (una sola copia compartida por instancias del
-## mismo PackedScene: Godot instancia Skeleton3D por escena, sin coste extra).
-var _attachments: Array[BoneAttachment3D] = []
+var showcase_mode := false
+var showcase_weapon_skin := "Estándar"
+var equipped_weapon_id := "rifle"
+var moving := false
+var firing := false
+var aiming := false
+var dead := false
+var locomotion_speed_scale := 1.0
+var retarget_ready := false
+var _last_locomotion_clip := ""
 
 
 func configure(id: String, team_id: String, color: Color, cosmetic_loadout: Dictionary = {}, human: bool = false) -> void:
 	operator_id = id
 	team = team_id
 	accent = color
-	team_band_color = color
 	loadout = cosmetic_loadout
 	is_human = human
 	_build()
 
 
-func set_showcase_mode(enabled: bool, weapon_scene: String = "", weapon_skin: String = "") -> void:
-	showcase_mode = enabled
-	if not weapon_scene.is_empty():
-		showcase_weapon_scene = weapon_scene
-	if not weapon_skin.is_empty():
-		showcase_weapon_skin = weapon_skin
-	if skeleton == null or not is_instance_valid(skeleton):
-		return
-	if showcase_mode:
-		_remove_team_markers()
-		_remove_mounted_weapon()
-		_add_showcase_weapon()
-		_apply_showcase_pose()
-	else:
-		_remove_mounted_weapon()
-		_add_team_marker()
-
-
-func set_showcase_weapon_skin(weapon_skin: String) -> void:
-	showcase_weapon_skin = weapon_skin
-	if not showcase_mode or skeleton == null or not is_instance_valid(skeleton):
-		return
-	_remove_mounted_weapon()
-	_add_showcase_weapon()
-	_apply_showcase_pose()
-
-
-## Compatibilidad: firma antigua configure(id, team, color) sigue válida.
-## El humano usa su loadout persistido; los bots usan variación determinista
-## propia por operator_id/role. No se usa el string de team para decidir.
 func resolve_default_loadout(role_seed: int = 0) -> Dictionary:
 	if not loadout.is_empty():
 		return loadout
@@ -114,655 +129,384 @@ func resolve_default_loadout(role_seed: int = 0) -> Dictionary:
 	return CosmeticCatalog.bot_loadout_for(operator_id, "entry", role_seed)
 
 
-func set_combat_state(moving: bool, firing: bool) -> void:
-	if animation_player == null or not is_instance_valid(animation_player):
-		return
-	var desired: StringName = &"Idle"
-	if firing and moving:
-		desired = &"Run_Shoot"
-	elif firing:
-		desired = &"Idle_Shoot"
-	elif moving:
-		desired = &"Run_Gun"
-	_play_animation(desired)
+func set_showcase_mode(enabled: bool, weapon_scene: String = "", weapon_skin: String = "") -> void:
+	showcase_mode = enabled
+	if model_root != null:
+		model_root.rotation_degrees.y = 0.0 if enabled else 180.0
+	# The lobby is a third-person loadout preview, not a neutral bind pose:
+	# hold the weapon in the same chest-level stance used by ADS so the mount
+	# and the downloaded weapon can be inspected together.
+	aiming = enabled
+	if not weapon_scene.is_empty():
+		equipped_weapon_id = _weapon_id_from_scene(weapon_scene)
+	if not weapon_skin.is_empty():
+		showcase_weapon_skin = weapon_skin
+	if model_root != null:
+		_set_team_marker_visible(not showcase_mode)
+		_refresh_weapon()
+		_refresh_animation_state()
+
+
+func set_showcase_weapon_skin(weapon_skin: String) -> void:
+	showcase_weapon_skin = weapon_skin
+	if showcase_mode:
+		_refresh_weapon()
+
+
+func set_equipped_weapon(weapon_id: String, weapon_skin: String = "Estándar") -> void:
+	equipped_weapon_id = weapon_id if WEAPON_IDS.has(weapon_id) else "rifle"
+	if not weapon_skin.is_empty():
+		showcase_weapon_skin = weapon_skin
+	_refresh_weapon()
+
+
+func set_combat_state(is_moving: bool, is_firing: bool, is_aiming: bool = false, locomotion_speed: float = 1.0) -> void:
+	moving = is_moving
+	firing = is_firing
+	aiming = is_aiming
+	locomotion_speed_scale = clampf(locomotion_speed, 0.85, 1.55)
+	_refresh_animation_state()
 
 
 func play_death() -> void:
-	_play_animation(&"Death")
+	dead = true
+	if animation_player != null and retarget_ready:
+		_play_clip("Death01", false)
+
+
+func get_muzzle_global_position() -> Vector3:
+	return muzzle_marker.global_position if muzzle_marker != null else global_position + Vector3(0.0, 1.35, -0.8)
+
+
+func _process(_delta: float) -> void:
+	if animation_player == null or not retarget_ready or dead:
+		return
+	_refresh_animation_state()
 
 
 func _build() -> void:
 	for child: Node in get_children():
+		remove_child(child)
 		child.free()
-	model_root = null
+	model_root = Node3D.new()
+	model_root.name = "RiggedOperator"
+	model_root.scale = Vector3.ONE * 1.05
+	# The downloaded GLB is authored facing +Z while Blockfire's actor/camera
+	# contract uses -Z as forward. Rotate the imported visual once so gameplay
+	# shows the character's back to the shoulder camera and the face toward the
+	# aim/enemy direction. The lobby overrides this to face its presentation cam.
+	model_root.rotation_degrees.y = 180.0
+	add_child(model_root)
 	skeleton = null
 	animation_player = null
-	animation_state = &""
-	_attachments.clear()
-	var effective := loadout if not loadout.is_empty() else resolve_default_loadout(hash(operator_id) + hash(name))
-	for scene_path: String in [_avatar_scene_for_team(), AVATAR_FALLBACK]:
-		var packed := load(scene_path) as PackedScene
-		if packed == null:
-			continue
-		model_root = packed.instantiate() as Node3D
-		if model_root == null:
-			continue
-		break
-	if model_root != null:
-		add_child(model_root)
-		model_root.scale = Vector3.ONE * MODEL_SCALE
-		model_root.position.y = MODEL_Y_OFFSET
-		skeleton = _find_skeleton(model_root)
-		_find_animation_player()
-		_configure_animation_loops()
-		_apply_loadout(effective)
-		_play_animation(&"Idle")
-		if showcase_mode:
-			_add_showcase_weapon()
-			_apply_showcase_pose()
-		else:
-			_add_team_marker()
+	retarget_ready = false
+	dead = false
+	_last_locomotion_clip = ""
+
+	var packed := load(CHARACTER_SCENE_PATH) as PackedScene if ResourceLoader.exists(CHARACTER_SCENE_PATH) else null
+	if packed != null:
+		var character := packed.instantiate()
+		character.name = "CharacterModel"
+		model_root.add_child(character)
+		_setup_target_rig(character)
+
+	_add_team_marker()
+	if weapon_mount == null:
+		weapon_mount = Node3D.new()
+		weapon_mount.name = "WeaponMount"
+		model_root.add_child(weapon_mount)
+		muzzle_marker = Marker3D.new()
+		muzzle_marker.name = "MuzzleMarker"
+		weapon_mount.add_child(muzzle_marker)
+	_refresh_weapon()
+	_set_team_marker_visible(not showcase_mode)
+	_refresh_animation_state()
+
+
+func _setup_target_rig(character: Node) -> void:
+	skeleton = character.find_child("Skeleton3D", true, false) as Skeleton3D
+	animation_player = character.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	var target_mesh := _find_skinned_mesh(character)
+	if skeleton == null or animation_player == null:
 		return
-	_build_fallback()
+	_remap_skin_bind_names(target_mesh)
+	_rename_target_bones()
+	# The downloaded skin ships with a Walk clip authored for this exact
+	# control/deformation rig. Preserve it for locomotion; applying UAL Jog_Fwd
+	# directly to this 413-bone hierarchy makes the limbs shear while moving.
+	_retarget_target_animations()
+	skeleton.force_update_all_bone_transforms()
+	_install_ual_animations()
+
+	var hand_index := skeleton.find_bone("hand_r")
+	if hand_index >= 0:
+		var attachment := BoneAttachment3D.new()
+		attachment.name = "WeaponMount"
+		attachment.bone_name = "hand_r"
+		attachment.position = Vector3(0.02, -0.015, -0.03)
+		# BoneAttachment3D must live below the Skeleton3D; placing it beside the
+		# imported scene leaves the weapon at the character origin (the old
+		# ground-level screenshot exposed exactly that failure).
+		skeleton.add_child(attachment)
+		weapon_mount = attachment
+	else:
+		weapon_mount = Node3D.new()
+		weapon_mount.name = "WeaponMount"
+		model_root.add_child(weapon_mount)
+	muzzle_marker = Marker3D.new()
+	muzzle_marker.name = "MuzzleMarker"
+	weapon_mount.add_child(muzzle_marker)
 
 
-## El aliado/jugador viste Soldier y el rival Enemy: variación de silueta por
-## bando sin teñir el cuerpo entero (la lectura de equipo sigue en la banda).
-func _avatar_scene_for_team() -> String:
-	if team == "enemy":
-		return AVATAR_ENEMY
-	return AVATAR_SOLDIER
-
-
-func _find_skeleton(node: Node) -> Skeleton3D:
-	if node is Skeleton3D:
-		return node
-	for child: Node in node.get_children():
-		var found := _find_skeleton(child)
-		if found != null:
-			return found
+func _find_skinned_mesh(parent: Node) -> MeshInstance3D:
+	for candidate: Node in parent.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := candidate as MeshInstance3D
+		if mesh_instance != null and mesh_instance.skin != null:
+			return mesh_instance
 	return null
 
 
-func _find_animation_player() -> void:
-	for candidate: Node in model_root.find_children("*", "AnimationPlayer", true, false):
-		animation_player = candidate as AnimationPlayer
-		if animation_player != null:
+func _remap_skin_bind_names(target_mesh: MeshInstance3D) -> void:
+	if target_mesh == null or not target_mesh.skin is Skin:
+		return
+	var canonical_by_original: Dictionary = {}
+	for canonical_name: String in TARGET_BONE_MAP:
+		canonical_by_original[TARGET_BONE_MAP[canonical_name]] = canonical_name
+	var remapped_skin := (target_mesh.skin as Skin).duplicate(true) as Skin
+	if remapped_skin == null:
+		return
+	for bind_index: int in range(remapped_skin.get_bind_count()):
+		var original_name := String(remapped_skin.get_bind_name(bind_index))
+		if canonical_by_original.has(original_name):
+			remapped_skin.set_bind_name(bind_index, canonical_by_original[original_name])
+	target_mesh.skin = remapped_skin
+
+
+func _rename_target_bones() -> void:
+	for canonical_name: String in TARGET_BONE_MAP:
+		var original_name: String = TARGET_BONE_MAP[canonical_name]
+		var bone_index := skeleton.find_bone(original_name)
+		if bone_index >= 0:
+			skeleton.set_bone_name(bone_index, canonical_name)
+
+
+func _install_ual_animations() -> void:
+	if animation_player == null or skeleton == null:
+		return
+	var library := AnimationLibrary.new()
+	for source_path: String in ANIMATION_SOURCE_PATHS:
+		var source_packed := load(source_path) as PackedScene if ResourceLoader.exists(source_path) else null
+		if source_packed == null:
+			continue
+		var source_instance := source_packed.instantiate()
+		var source_player := source_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if source_player != null:
+			for library_name: StringName in source_player.get_animation_library_list():
+				var source_library := source_player.get_animation_library(library_name)
+				if source_library == null:
+					continue
+				for clip_name: StringName in source_library.get_animation_list():
+					if library.has_animation(clip_name):
+						continue
+					var source_animation := source_library.get_animation(clip_name)
+					var copied := source_animation.duplicate(true) as Animation
+					if copied == null:
+						continue
+					_retarget_animation(copied)
+					library.add_animation(clip_name, copied)
+		source_instance.free()
+	if library.get_animation_list().is_empty():
+		return
+	if animation_player.get_animation_library_list().has(&"ual"):
+		animation_player.remove_animation_library(&"ual")
+	retarget_ready = animation_player.add_animation_library(&"ual", library) == OK
+
+
+func _retarget_target_animations() -> void:
+	if animation_player == null or skeleton == null:
+		return
+	if not animation_player.get_animation_library_list().has(&""):
+		return
+	var target_library := animation_player.get_animation_library(&"")
+	if target_library == null:
+		return
+	for clip_name: StringName in target_library.get_animation_list():
+		var animation := target_library.get_animation(clip_name)
+		if animation != null:
+			_remap_target_animation(animation)
+
+
+func _remap_target_animation(animation: Animation) -> void:
+	var relative_skeleton_path := animation_player.get_parent().get_path_to(skeleton)
+	for track_index: int in range(animation.get_track_count()):
+		var old_path := animation.track_get_path(track_index)
+		var old_text := String(old_path)
+		var colon := old_text.find(":")
+		if colon < 0:
+			continue
+		var original_name := old_text.substr(colon + 1)
+		var bone_name := original_name
+		for canonical_name: String in TARGET_BONE_MAP:
+			if TARGET_BONE_MAP[canonical_name] == original_name:
+				bone_name = canonical_name
+				break
+		if skeleton.find_bone(bone_name) < 0:
+			animation.track_set_enabled(track_index, false)
+			continue
+		animation.track_set_path(track_index, NodePath(String(relative_skeleton_path) + ":" + bone_name))
+
+
+func _retarget_animation(animation: Animation) -> void:
+	var relative_skeleton_path := animation_player.get_parent().get_path_to(skeleton)
+	for track_index: int in range(animation.get_track_count()):
+		var old_path := animation.track_get_path(track_index)
+		var old_text := String(old_path)
+		var colon := old_text.find(":")
+		if colon < 0:
+			continue
+		var bone_name := old_text.substr(colon + 1)
+		if skeleton.find_bone(bone_name) < 0:
+			animation.track_set_enabled(track_index, false)
+			continue
+		animation.track_set_path(track_index, NodePath(String(relative_skeleton_path) + ":" + bone_name))
+
+
+func _refresh_animation_state() -> void:
+	if animation_player == null or not retarget_ready or dead:
+		return
+	if firing:
+		animation_player.speed_scale = 1.0
+		# The UAL shoot keyframe is authored for its own rest pose and visibly
+		# over-rotates this downloaded skin. While ADS, keep the stable chest
+		# stance and let WeaponController own the actual shot/recoil events.
+		if aiming and animation_player.get_animation("ual/Pistol_Aim_Neutral") != null:
+			if animation_player.current_animation != "ual/Pistol_Aim_Neutral":
+				_play_clip("Pistol_Aim_Neutral", true)
 			return
-
-
-## El pack Toon Shooter trae Idle_Shoot/Run_Shoot/Walk_Shoot como one-shot: al
-## terminar, el rig se congela en la pose final de reposo (brazos abajo) y el
-## arma calibrada para pose alzada queda flotando a la altura de las piernas.
-## Los ciclos de locomoción y de sostener arma deben repetir en bucle; la
-## muerte y los gestos puntuales siguen siendo one-shot.
-func _configure_animation_loops() -> void:
-	if animation_player == null or not is_instance_valid(animation_player):
+		var current := animation_player.current_animation
+		var shooting := animation_player.get_animation("ual/Pistol_Shoot")
+		if current != "ual/Pistol_Shoot" or shooting == null or animation_player.current_animation_position >= shooting.length - 0.02:
+			_play_clip("Pistol_Shoot", false)
 		return
-	for animation_name: StringName in [&"Idle", &"Idle_Shoot", &"Run", &"Run_Gun", &"Walk", &"Walk_Shoot", &"Jump_Idle", &"Duck"]:
-		if animation_player.has_animation(animation_name):
-			animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
-
-
-func _play_animation(animation_name: StringName) -> void:
-	if animation_player == null or not is_instance_valid(animation_player):
-		if OS.get_environment("BF_DEBUG_ANIM") != "":
-			print("[ANIM-DEBUG] play %s rejected: animation_player null (name=%s)" % [animation_name, name])
+	if aiming and animation_player.get_animation("ual/Pistol_Aim_Neutral") != null:
+		animation_player.speed_scale = 1.0
+		if animation_player.current_animation != "ual/Pistol_Aim_Neutral":
+			_play_clip("Pistol_Aim_Neutral", true)
 		return
-	if not animation_player.has_animation(animation_name):
+	var clip := "Walk" if moving and animation_player.get_animation("Walk") != null else "Idle"
+	var library_prefix := "" if clip == "Walk" else "ual/"
+	if clip != _last_locomotion_clip or animation_player.current_animation != library_prefix + clip:
+		animation_player.speed_scale = 1.65 * locomotion_speed_scale if clip == "Walk" else 1.0
+		if library_prefix.is_empty():
+			_play_target_clip(clip, true)
+		else:
+			_play_clip(clip, true)
+		_last_locomotion_clip = clip
+
+
+func _play_clip(clip_name: String, loop: bool) -> void:
+	if animation_player == null or animation_player.get_animation("ual/" + clip_name) == null:
 		return
-	if animation_state == animation_name and animation_player.is_playing():
+	var animation := animation_player.get_animation("ual/" + clip_name)
+	animation.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
+	animation_player.play("ual/" + clip_name, 0.12)
+
+
+func _play_target_clip(clip_name: String, loop: bool) -> void:
+	if animation_player == null or animation_player.get_animation(clip_name) == null:
 		return
-	animation_state = animation_name
-	animation_player.play(animation_name, 0.12)
-	animation_player.speed_scale = 1.0
-	if OS.get_environment("BF_DEBUG_ANIM") != "":
-		print("[ANIM-DEBUG] play %s on %s (is_playing=%s)" % [animation_name, name, animation_player.is_playing()])
+	var animation := animation_player.get_animation(clip_name)
+	animation.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
+	animation_player.play(clip_name, 0.12)
 
 
-## Activa una prenda deformable del rig modular y desactiva las demás de su slot.
-func _apply_loadout(effective: Dictionary) -> void:
-	if skeleton == null:
+func _refresh_weapon() -> void:
+	if weapon_mount == null:
 		return
-	if _is_toon_rig():
-		_apply_toon_shooter_loadout(effective)
-		return
-	# 1) Todo oculto salvo lo pedido: primero apagamos TODAS las prendas.
-	for child: Node in skeleton.get_children():
-		if child is MeshInstance3D:
-			(child as MeshInstance3D).visible = false
-	# 2) Slots deformables: head/top/bottom/shoes. Un solo mesh por slot.
-	for slot: String in ["head", "top", "bottom", "shoes"]:
-		var item := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
-		if item == null or item.mesh_node.is_empty():
-			# Fallback: el cuerpo necesita top/bottom/shoes siempre.
-			item = CosmeticCatalog.item_for(slot, _fallback_for(slot))
-		if item == null:
-			continue
-		var mesh_instance := skeleton.get_node_or_null(NodePath(item.mesh_node)) as MeshInstance3D
-		if mesh_instance != null:
-			mesh_instance.visible = true
-	# 3) Tinte de piel en los materiales Skin de la cabeza.
-	var skin_item := CosmeticCatalog.item_for("skin", String(effective.get("skin", "")))
-	if skin_item != null:
-		_tint_skin(skin_item.color)
-	# 3b) Reparación causal: el rig UMC llegó con baseColorFactor alfa 0 en los
-	# 37 materiales (invisibles con alpha scissor). Se fuerza opaco por instancia
-	# sin tocar el material importado compartido.
-	_repair_avatar_materials()
-	# 4) Accesorios rígidos.
-	for slot: String in ["headwear", "eyewear", "mask"]:
-		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
-		if accessory != null:
-			_add_accessory(accessory)
+	for child: Node in weapon_mount.get_children():
+		if child != muzzle_marker:
+			# Let the renderer finish the current frame before releasing imported
+			# GLB materials. Immediate free() causes Android's renderer to report
+			# null-material dependency errors when a loadout switches weapon.
+			child.queue_free()
+	var weapon := _new_weapon(equipped_weapon_id)
+	weapon.name = "MountedWeapon"
+	weapon_mount.add_child(weapon)
+	var visual_scale := 0.54
+	match equipped_weapon_id:
+		"pistol": visual_scale = 0.52
+		"shotgun": visual_scale = 0.48
+		"smg": visual_scale = 0.50
+	var asset_scale := float(WEAPON_ASSET_SCALES.get(equipped_weapon_id, 0.01))
+	weapon.scale = Vector3.ONE * visual_scale * asset_scale
+	weapon.position = Vector3(0.0, -0.14, -0.10)
+	var weapon_rotation: Vector3 = WEAPON_ASSET_ROTATIONS.get(equipped_weapon_id, Vector3.ZERO)
+	weapon_rotation.z = -42.0
+	weapon.rotation_degrees = weapon_rotation
+	WeaponSkin.apply(weapon, showcase_weapon_skin)
+	if muzzle_marker != null:
+		# The downloaded Sketchfab meshes expose their barrel on local +Y (the
+		# major AABB axis). The old fixed -Z marker was nowhere near the muzzle,
+		# so third-person flashes appeared detached or invisible while firing.
+		var muzzle_offset := weapon.transform * Vector3(0.0, _weapon_length(equipped_weapon_id) * visual_scale, 0.0)
+		muzzle_marker.position = muzzle_offset
+		muzzle_marker.rotation = weapon.rotation
 
 
-## Soldier trae nodos Body/Head; Enemy trae Character_Enemy(_Head). El UMC
-## trae Swat_Body/Casual_Body/etc. y nunca estos nombres exactos.
-func _is_toon_rig() -> bool:
-	if model_root == null:
-		return false
-	if model_root.find_child("Character_Enemy", true, false) != null:
-		return true
-	return model_root.find_child("Body", true, false) != null \
-		and model_root.find_child("Head", true, false) != null
+func _new_weapon(_weapon_id: String) -> Node3D:
+	var asset_path := str(WEAPON_ASSETS.get(_weapon_id, ""))
+	var packed := load(asset_path) as PackedScene if not asset_path.is_empty() and ResourceLoader.exists(asset_path) else null
+	if packed != null:
+		var asset := packed.instantiate() as Node3D
+		if asset != null:
+			return asset
+	# Deliberately no primitive replacement: a missing real weapon must be
+	# visible as an empty mount until a licensed asset is provided.
+	return Node3D.new()
 
 
-func _apply_toon_shooter_loadout(effective: Dictionary) -> void:
-	# El pack Toon Shooter trae varias armas de ejemplo colgadas del dedo. Se
-	# ocultan para que WeaponController/attach_weapon_to_hand sea el único dueño
-	# del arma visible y no haya dos representaciones compitiendo.
-	var weapon_meshes := [
-		"AK", "GrenadeLauncher", "Knife_1", "Knife_2", "Pistol", "Revolver",
-		"Revolver_Small", "RocketLauncher", "ShortCannon", "Shotgun", "Shovel",
-		"SMG", "Sniper", "Sniper_2"
-	]
-	# El Soldier nombra sus huesos Head_2/Body_2 en el esqueleto importado (el
-	# Enemy usa Head/Body): todo lo que cuelgue de la cabeza debe resolver el
-	# nombre real. El attachment fuente Head_2 ya apunta al hueso correcto.
-	var keep := ["Head", "Body", "ShoulderPad_L", "ShoulderPad_R", "Character_Enemy", "Character_Enemy_Head"]
-	for node: Node in model_root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := node as MeshInstance3D
-		mesh_instance.visible = node.name in keep
-	for weapon_name: String in weapon_meshes:
-		var weapon_node := model_root.find_child(weapon_name, true, false)
-		if weapon_node is MeshInstance3D:
-			(weapon_node as MeshInstance3D).visible = false
-
-	# La ropa es una decisión visible por SUPERFICIE del rig integrado: el
-	# nombre del cosmético promete el color de esa prenda y cada slot tiñe
-	# exactamente su superficie (Character_Main=camisa/casco, Pants=pantalón,
-	# Black=botas, DarkGrey=chaleco, Grey=cara). Sin tintes globales que
-	# mezclen prendas.
-	var top_item := CosmeticCatalog.item_for("top", String(effective.get("top", "top_swat")))
-	var bottom_item := CosmeticCatalog.item_for("bottom", String(effective.get("bottom", "bottom_swat")))
-	var shoes_item := CosmeticCatalog.item_for("shoes", String(effective.get("shoes", "shoes_swat")))
-	var head_item := CosmeticCatalog.item_for("head", String(effective.get("head", "head_swat")))
-	var skin_item := CosmeticCatalog.item_for("skin", String(effective.get("skin", "skin_light")))
-	var top_color := top_item.color if top_item != null else Color("#667a3d")
-	var bottom_color := bottom_item.color if bottom_item != null else top_color
-	var shoes_color := shoes_item.color if shoes_item != null else Color("#20262d")
-	var head_color := head_item.color if head_item != null else Color("#4b7588")
-	var skin_color := skin_item.color if skin_item != null else Color("#e0ad82")
-	# Los dos rigs nombran sus superficies distinto: Soldier tiñe camisa en
-	# Character_Main y cara en Grey; Enemy usa Enemy_Red y Skin.
-	var enemy_body := model_root.find_child("Character_Enemy", true, false) as MeshInstance3D
-	var body := enemy_body if enemy_body != null else model_root.find_child("Body", true, false) as MeshInstance3D
-	var shirt_surface := "Enemy_Red" if enemy_body != null else "Character_Main"
-	var pants_surface := "DarkGrey" if enemy_body != null else "Pants"
-	var face_surface := "Skin" if enemy_body != null else "Grey"
-	if body != null:
-		_tint_toon_surface(body, shirt_surface, top_color)
-		if not enemy_body:
-			_tint_toon_surface(body, "DarkGrey", top_color.darkened(0.25))
-		_tint_toon_surface(body, pants_surface, bottom_color)
-		_tint_toon_surface(body, "Black", shoes_color)
-		_tint_toon_surface(body, "Skin", skin_color)
-	for pad_name: String in ["ShoulderPad_L", "ShoulderPad_R"]:
-		var pad := model_root.find_child(pad_name, true, false) as MeshInstance3D
-		if pad != null:
-			_tint_toon_all_surfaces(pad, top_color, 0.5)
-	for head_name: String in ["Head", "Character_Enemy_Head"]:
-		var head := model_root.find_child(head_name, true, false) as MeshInstance3D
-		if head == null:
-			continue
-		# La cabeza del pack tiene una silueta heroica muy grande (AABB ~1.0 de
-		# alto sobre un cuerpo de ~2.2): a 0.70 el personaje seguía leyendo
-		# cabezón/chibi. Reducirla en la capa visual recupera proporción humana
-		# sin tocar cápsula ni hitboxes. Se escala sobre su propio centro para
-		# no hundirla en el torso.
-		_scale_head_in_place(head, HEAD_SCALE)
-		_tint_toon_surface(head, shirt_surface, head_color)
-		_tint_toon_surface(head, face_surface, skin_color)
-	# Accesorios rígidos: sin este bucle GORRA/LENTES/MÁSCARA no aparecerían.
-	for slot: String in ["headwear", "eyewear", "mask"]:
-		var accessory := CosmeticCatalog.item_for(slot, String(effective.get(slot, "")))
-		if accessory != null:
-			_add_accessory(accessory)
+func _weapon_length(weapon_id: String) -> float:
+	match weapon_id:
+		"pistol": return 0.42
+		"shotgun": return 1.20
+		"smg": return 0.78
+	return 0.86
 
 
-## Tiñe una superficie por nombre de material sin tocar las demás.
-func _tint_toon_surface(mesh_instance: MeshInstance3D, surface_name: String, target: Color) -> void:
-	if mesh_instance.mesh == null:
-		return
-	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-		var source := mesh_instance.get_active_material(surface_index)
-		if not source is StandardMaterial3D:
-			continue
-		if String((source as StandardMaterial3D).resource_name) != surface_name:
-			continue
-		var material := source.duplicate() as StandardMaterial3D
-		material.albedo_color = target
-		mesh_instance.set_surface_override_material(surface_index, material)
-
-
-## Tiñe todas las superficies hacia un color (hombreras/pad del kit).
-func _tint_toon_all_surfaces(mesh_instance: MeshInstance3D, target: Color, strength: float) -> void:
-	if mesh_instance.mesh == null:
-		return
-	for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-		var source := mesh_instance.get_active_material(surface_index)
-		if not source is StandardMaterial3D:
-			continue
-		var material := source.duplicate() as StandardMaterial3D
-		material.albedo_color = material.albedo_color.lerp(target, strength)
-		mesh_instance.set_surface_override_material(surface_index, material)
-
-
-## Hueso real de la cabeza según rig: Soldier lo importa como Head_2.
-func _head_bone() -> String:
-	if skeleton != null and skeleton.find_bone("Head") >= 0:
-		return "Head"
-	return "Head_2"
-
-
-## Encoge la cabeza conservando su posición visual.
-## - Hija directa del esqueleto (Enemy): el asset la trae sentada; se conserva
-##   su centro.
-## - Bajo attachment (Soldier): la geometría queda +1.83 sobre el hueso y
-##   flotaría; se reasienta a +0.35 sobre el origen del attachment (el
-##   attachment fuente está sobre el hueso con rotación ~identidad).
-func _scale_head_in_place(head: MeshInstance3D, factor: float) -> void:
-	if head.mesh == null:
-		head.scale = Vector3.ONE * factor
-		return
-	var center := head.mesh.get_aabb().get_center()
-	if head.get_parent() is BoneAttachment3D:
-		head.position = Vector3(head.position.x, HEAD_SEAT - center.y * factor, head.position.z)
-	else:
-		head.position += center * (1.0 - factor)
-	head.scale = Vector3.ONE * factor
-
-
-
-
-
-
-func _fallback_for(slot: String) -> String:
-	match slot:
-		"head": return "head_swat"
-		"top": return "top_swat"
-		"bottom": return "bottom_swat"
-		"shoes": return "shoes_swat"
-	return ""
-
-
-func _tint_skin(tone: Color) -> void:
-	for child: Node in skeleton.get_children():
-		var mesh_instance := child as MeshInstance3D
-		if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
-			continue
-		if not String(mesh_instance.name).ends_with("_Head"):
-			continue
-		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-			var source := mesh_instance.get_active_material(surface_index)
-			if source is not StandardMaterial3D:
-				continue
-			if String(source.resource_name) != "Skin":
-				continue
-			var material := source.duplicate() as StandardMaterial3D
-			tone.a = 1.0
-			material.albedo_color = tone
-			material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-			mesh_instance.set_surface_override_material(surface_index, material)
-
-
-## Fuerza opaco en todas las prendas visibles del rig modular.
-func _repair_avatar_materials() -> void:
-	if skeleton == null:
-		return
-	for child: Node in skeleton.get_children():
-		var mesh_instance := child as MeshInstance3D
-		if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
-			continue
-		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-			var source := mesh_instance.get_active_material(surface_index)
-			if not (source is StandardMaterial3D):
-				continue
-			var source_mat := source as StandardMaterial3D
-			if source_mat.albedo_color.a >= 0.99 and source_mat.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
-				continue
-			var fixed := source_mat.duplicate() as StandardMaterial3D
-			var fixed_color := fixed.albedo_color
-			fixed_color.a = 1.0
-			fixed.albedo_color = fixed_color
-			fixed.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-			mesh_instance.set_surface_override_material(surface_index, fixed)
-
-
-## Banda fina en el brazo + aro corto en el suelo: lectura de equipo mínima.
 func _add_team_marker() -> void:
-	var band := MeshInstance3D.new()
-	band.name = "TeamBand"
-	var band_mesh := TorusMesh.new()
-	band_mesh.inner_radius = 0.075
-	band_mesh.outer_radius = 0.105
-	band.mesh = band_mesh
-	band.rotation_degrees = Vector3(90.0, 0.0, 0.0)
-	band.material_override = _material(team_band_color, 0.25)
-	var upper_arm := "UpperArm.L" if team in ["ally", "player"] else "UpperArm.R"
-	var attachment := BoneAttachment3D.new()
-	attachment.name = "TeamBandAttachment"
-	if skeleton != null and skeleton.find_bone(upper_arm) >= 0:
-		attachment.bone_name = upper_arm
-		skeleton.add_child(attachment)
-		attachment.add_child(band)
-		band.position = Vector3(0.0, -0.12, 0.0)
-	else:
-		add_child(band)
-		band.position = Vector3(0.0, 1.32, -0.09)
-	# Aro corto en el suelo (visible desde arriba, no domina la silueta).
 	var ring := MeshInstance3D.new()
 	ring.name = "TeamRing"
-	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 0.30
-	ring_mesh.outer_radius = 0.35
-	ring.mesh = ring_mesh
-	ring.position = Vector3(0.0, 0.045, 0.0)
-	ring.material_override = _material(team_band_color, 0.4)
-	add_child(ring)
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.32
+	mesh.outer_radius = 0.36
+	ring.mesh = mesh
+	ring.position.y = 0.035
+	ring.material_override = _ring_material(accent)
+	model_root.add_child(ring)
 
 
-func _remove_team_markers() -> void:
-	var ring := get_node_or_null("TeamRing")
+func _set_team_marker_visible(value: bool) -> void:
+	var ring := model_root.get_node_or_null("TeamRing") as Node3D if model_root != null else null
 	if ring != null:
-		ring.free()
-	if skeleton == null or not is_instance_valid(skeleton):
-		return
-	var band_attachment := skeleton.get_node_or_null("TeamBandAttachment")
-	if band_attachment != null:
-		band_attachment.free()
+		ring.visible = value
 
 
-func _remove_showcase_weapon() -> void:
-	_remove_mounted_weapon()
-
-
-func _add_showcase_weapon() -> void:
-	if showcase_weapon_scene.is_empty():
-		return
-	var gun := _new_weapon_visual(showcase_weapon_scene)
-	if gun == null:
-		return
-	attach_weapon_to_hand(gun, _weapon_id_from_scene(showcase_weapon_scene), showcase_weapon_skin, true)
-
-
-## Monta el arma del gameplay en la muñeca del rig. WeaponController conserva
-## toda la lógica de daño/cadencia; este método solo posee el transform visual.
-## BoneAttachment3D hace que el arma siga Idle_Gun, Run_Gun y Death sin un
-## parche por frame ni una copia de la pose del actor.
-func attach_weapon_to_hand(weapon: Node3D, weapon_id: String, weapon_skin: String = "Estándar", showcase: bool = false) -> Node3D:
-	if weapon == null or skeleton == null or not is_instance_valid(skeleton):
-		return weapon
-	_remove_mounted_weapon()
-	var marker := Node3D.new()
-	marker.name = "ShowcaseWeaponAttachment" if showcase else "ThirdPersonWeaponAttachment"
-	add_child(marker)
-	var mount := _ensure_weapon_mount()
-	mount.add_child(weapon)
-	weapon.name = "MountedWeapon"
-	var pose := _weapon_mount_pose(weapon_id, showcase)
-	weapon.position = pose["position"]
-	weapon.rotation_degrees = pose["rotation"]
-	weapon.scale = Vector3.ONE * float(pose["scale"])
-	WeaponSkin.apply(weapon, weapon_skin)
-	if showcase:
-		_apply_showcase_pose()
-	return weapon
-
-
-func _ensure_weapon_mount() -> BoneAttachment3D:
-	if _weapon_mount != null and is_instance_valid(_weapon_mount):
-		return _weapon_mount
-	_weapon_mount = BoneAttachment3D.new()
-	_weapon_mount.name = "WeaponHandMount"
-	# UMC conserva su muñeca; el Toon no tiene hueso de muñeca (su cadena es
-	# LowerArm -> dedos) y monta en el antebrazo, estable ante el curl de dedos.
-	for bone_name: String in ["Wrist.R", "LowerArm.R", "Index1.R"]:
-		if skeleton.find_bone(bone_name) >= 0:
-			_weapon_mount.bone_name = bone_name
-			break
-	skeleton.add_child(_weapon_mount)
-	return _weapon_mount
-
-
-func _remove_mounted_weapon() -> void:
-	for marker_name: String in ["ShowcaseWeaponAttachment", "ThirdPersonWeaponAttachment"]:
-		var marker := get_node_or_null(marker_name)
-		if marker != null:
-			marker.free()
-	if _weapon_mount != null and is_instance_valid(_weapon_mount):
-		for child: Node in _weapon_mount.get_children():
-			child.free()
-
-
-func _apply_showcase_pose() -> void:
-	if not showcase_mode:
-		return
-	if animation_player == null or not is_instance_valid(animation_player):
-		return
-	var pose: StringName = &"Idle_Shoot" if animation_player.has_animation(&"Idle_Shoot") else &"Idle_Gun"
-	_play_animation(pose)
-
-
-func _new_weapon_visual(scene_path: String) -> Node3D:
-	var weapon := WeaponVisualScript.new()
-	weapon.configure(_weapon_id_from_scene(scene_path))
-	return weapon
+func _ring_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.emission_enabled = true
+	material.emission = color
+	material.emission_energy_multiplier = 0.7
+	material.roughness = 0.55
+	return material
 
 
 func _weapon_id_from_scene(scene_path: String) -> String:
 	var path := scene_path.to_lower()
-	if path.contains("shotgun"):
-		return "shotgun"
-	if path.contains("pistol"):
-		return "pistol"
-	if path.contains("smg"):
-		return "smg"
+	if path.contains("pistol"): return "pistol"
+	if path.contains("shotgun"): return "shotgun"
+	if path.contains("smg"): return "smg"
 	return "rifle"
-
-
-func _weapon_mount_pose(weapon_id: String, showcase: bool) -> Dictionary:
-	# Calibrado por sonda en pose Idle_Shoot (ambos rigs idénticos): el +Z del
-	# esqueleto (hacia dónde mira) es casi el +Y del antebrazo, y el nudillo
-	# queda 0.44 sobre el mount. Este euler lleva el cañón (+Z) al frente y el
-	# lomo (+Y) arriba; la empuñadura cae sobre los dedos. La posición Y crece
-	# con la escala para que la empuñadura (offset local -0.18) siga en la mano:
-	# 0.44 + 0.18 * escala. A escala 0.45 el rifle medía 0.52 unidades en mundo
-	# (28% del personaje) y leía como pistola de juguete a distancia.
-	var pose := {
-		"position": Vector3(-0.05, 0.58, 0.02),
-		"rotation": Vector3(-88.0, 137.0, -27.0),
-		"scale": 0.80
-	}
-	match weapon_id:
-		"pistol":
-			pose["position"] = Vector3(-0.04, 0.54, 0.02)
-			pose["scale"] = 0.70
-		"shotgun":
-			pose["position"] = Vector3(-0.05, 0.58, 0.02)
-			pose["scale"] = 0.80
-		"smg":
-			pose["position"] = Vector3(-0.05, 0.57, 0.02)
-			pose["scale"] = 0.78
-	if showcase:
-		pose["scale"] = float(pose["scale"]) * 1.08
-	return pose
-
-
-func _add_accessory(item: CosmeticItem) -> void:
-	if skeleton == null:
-		return
-	var bone := item.attachment_bone
-	if bone == "Head":
-		bone = _head_bone()
-	if skeleton.find_bone(bone) < 0:
-		return
-	var attachment := BoneAttachment3D.new()
-	attachment.bone_name = bone
-	skeleton.add_child(attachment)
-	_attachments.append(attachment)
-	var accessory := MeshInstance3D.new()
-	match item.slot:
-		"eyewear":
-			accessory.mesh = _eyewear_mesh()
-			accessory.material_override = _material(item.color, 0.0)
-			accessory.scale = Vector3.ONE * 0.92
-		"mask":
-			accessory.mesh = _mask_mesh()
-			accessory.material_override = _material(item.color, 0.0)
-		"headwear":
-			accessory.mesh = _cap_mesh()
-			accessory.material_override = _material(item.color, 0.0)
-			accessory.scale = Vector3.ONE * 0.98
-	attachment.add_child(accessory)
-	accessory.position = item.attachment_offset
-	accessory.rotation_degrees = item.attachment_rotation_deg
-	accessory.scale *= item.attachment_scale
-
-
-func _eyewear_mesh() -> Mesh:
-	var tool := SurfaceTool.new()
-	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_append_rounded_prism(tool, Vector3(-0.062, 0.0, 0.0), Vector3(0.09, 0.045, 0.025), 0.012)
-	_append_rounded_prism(tool, Vector3(0.062, 0.0, 0.0), Vector3(0.09, 0.045, 0.025), 0.012)
-	_append_rounded_prism(tool, Vector3(0.0, 0.0, 0.0), Vector3(0.042, 0.016, 0.022), 0.006)
-	_append_rounded_prism(tool, Vector3(-0.125, 0.0, 0.006), Vector3(0.045, 0.012, 0.018), 0.004)
-	_append_rounded_prism(tool, Vector3(0.125, 0.0, 0.006), Vector3(0.045, 0.012, 0.018), 0.004)
-	tool.generate_normals()
-	return tool.commit()
-
-
-func _mask_mesh() -> Mesh:
-	var tool := SurfaceTool.new()
-	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_append_profile(tool, PackedVector2Array([
-		Vector2(-0.105, 0.065), Vector2(0.105, 0.065), Vector2(0.12, 0.015),
-		Vector2(0.09, -0.075), Vector2(-0.09, -0.075), Vector2(-0.12, 0.015)
-	]), 0.055, 0.0)
-	# Una costura fina da lectura de tela sin añadir otro nodo ni una textura
-	# compartida que pueda contaminar los materiales del rig.
-	_append_rounded_prism(tool, Vector3(0.0, 0.018, -0.031), Vector3(0.19, 0.012, 0.008), 0.003)
-	tool.generate_normals()
-	return tool.commit()
-
-
-func _cap_mesh() -> Mesh:
-	var tool := SurfaceTool.new()
-	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var sides := 12
-	var rings := 4
-	var center_y := 0.0
-	var radius := 0.12
-	for ring_index: int in range(rings):
-		var y0 := float(ring_index) * 0.026
-		var y1 := float(ring_index + 1) * 0.026
-		var r0 := radius * (1.0 - float(ring_index) * 0.12)
-		var r1 := radius * (1.0 - float(ring_index + 1) * 0.12)
-		for side: int in sides:
-			var next := (side + 1) % sides
-			var a0 := TAU * float(side) / float(sides)
-			var a1 := TAU * float(next) / float(sides)
-			var p00 := Vector3(cos(a0) * r0, center_y + y0, sin(a0) * r0)
-			var p01 := Vector3(cos(a1) * r0, center_y + y0, sin(a1) * r0)
-			var p10 := Vector3(cos(a0) * r1, center_y + y1, sin(a0) * r1)
-			var p11 := Vector3(cos(a1) * r1, center_y + y1, sin(a1) * r1)
-			_add_triangle(tool, p00, p10, p11)
-			_add_triangle(tool, p00, p11, p01)
-	var brim := PackedVector2Array([
-		Vector2(-0.15, -0.045), Vector2(0.15, -0.045), Vector2(0.13, 0.025),
-		Vector2(-0.13, 0.025)
-	])
-	_append_profile(tool, brim, 0.025, -0.10)
-	tool.generate_normals()
-	return tool.commit()
-
-
-func _append_rounded_prism(tool: SurfaceTool, center: Vector3, dimensions: Vector3, bevel: float) -> void:
-	var half := Vector2(dimensions.x * 0.5, dimensions.y * 0.5)
-	var b := clampf(bevel, 0.0, minf(half.x, half.y) * 0.8)
-	var points := PackedVector2Array([
-		Vector2(-half.x + b, -half.y), Vector2(half.x - b, -half.y),
-		Vector2(half.x, -half.y + b), Vector2(half.x, half.y - b),
-		Vector2(half.x - b, half.y), Vector2(-half.x + b, half.y),
-		Vector2(-half.x, half.y - b), Vector2(-half.x, -half.y + b)
-	])
-	_append_profile(tool, points, dimensions.z, center.z, Vector2(center.x, center.y))
-
-
-func _append_profile(tool: SurfaceTool, points: PackedVector2Array, depth: float, z_center: float, offset: Vector2 = Vector2.ZERO) -> void:
-	if points.size() < 3:
-		return
-	var front := z_center - depth * 0.5
-	var back := z_center + depth * 0.5
-	for index: int in range(1, points.size() - 1):
-		_add_triangle(tool, _accessory_point(points[0], front, offset), _accessory_point(points[index + 1], front, offset), _accessory_point(points[index], front, offset))
-		_add_triangle(tool, _accessory_point(points[0], back, offset), _accessory_point(points[index], back, offset), _accessory_point(points[index + 1], back, offset))
-	for index: int in points.size():
-		var next := (index + 1) % points.size()
-		_add_triangle(tool, _accessory_point(points[index], front, offset), _accessory_point(points[index], back, offset), _accessory_point(points[next], back, offset))
-		_add_triangle(tool, _accessory_point(points[index], front, offset), _accessory_point(points[next], back, offset), _accessory_point(points[next], front, offset))
-
-
-func _accessory_point(point: Vector2, z: float, offset: Vector2) -> Vector3:
-	return Vector3(point.x + offset.x, point.y + offset.y, z)
-
-
-func _add_triangle(tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
-	tool.add_vertex(a)
-	tool.add_vertex(b)
-	tool.add_vertex(c)
-
-
-func _build_fallback() -> void:
-	var body := MeshInstance3D.new()
-	var capsule := CapsuleMesh.new()
-	capsule.height = 1.45
-	capsule.radius = 0.30
-	body.mesh = capsule
-	body.position.y = 1.0
-	body.material_override = _material(Color("#4a5568"), 0.0)
-	add_child(body)
-	var head := MeshInstance3D.new()
-	var head_mesh := SphereMesh.new()
-	head_mesh.height = 0.42
-	head_mesh.radius = 0.21
-	head.mesh = head_mesh
-	head.position.y = 1.9
-	head.material_override = _material(Color("#d4a27f"), 0.0)
-	add_child(head)
-	_add_team_marker()
-
-
-func _material(color: Color, emission_energy: float) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.72
-	if emission_energy > 0.0:
-		material.emission_enabled = true
-		material.emission = color
-		material.emission_energy_multiplier = emission_energy
-	return material
 
 
 func _settings() -> Node:

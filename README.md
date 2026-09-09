@@ -33,6 +33,57 @@ El único autoload actual es `SettingsStore`, que persiste ajustes locales y
 aplica volumen. La navegación de código está resumida en
 [`docs/CODEMAP.md`](docs/CODEMAP.md).
 
+## Objetivo visual vinculante
+
+BLOCKFIRE se dirige como un shooter móvil **en tercera persona sobre el
+hombro**. La referencia de producto fija estas decisiones, que prevalecen
+sobre cualquier placeholder anterior:
+
+- Personaje principal: humano adulto original, proporción semi-realista,
+  streetwear táctico, máscara/capucha o gorra y ropa modular con diferencias
+  reales de silueta. No personajes voxel, chibi, Toon Shooter, ni variantes
+  que solamente cambian RGB.
+- Cámara: el cuerpo, mochila/ropa y arma deben leerse durante la partida; la
+  mira y la asistencia móvil se dirigen al torso con línea de visión, sin
+  autofuego ni disparos a través de obstáculos.
+- Mundo: exterior habitable con terreno, vegetación, roca, construcciones y
+  cobertura reconocible. Quedan descartadas las arenas de cajas/bloques como
+  dirección final.
+- HUD: limpio y periférico; movimiento abajo a la izquierda y disparo/mira a
+  la derecha, sin tapar al personaje ni el objetivo.
+- Armas: silueta plausible y orientación correcta en manos; no generación
+  procedural visible como arte final.
+
+Las imágenes de referencia proporcionadas por el usuario quedan archivadas
+como guía interna de dirección —no son assets del runtime ni se copian sus
+personajes, armas, UI, marcas o trade dress—. La implementación debe crear una
+identidad original y usar únicamente assets con licencia compatible y
+atribución en [`CREDITS.md`](CREDITS.md).
+
+| Referencia de personaje | Referencia de partida TPS |
+|---|---|
+| ![Referencia de personaje](docs/reference/character-visual-reference.png) | ![Referencia de partida en tercera persona](docs/reference/tps-gameplay-reference.png) |
+
+El objetivo visual que se revisa contra estas capturas es: cuerpo completo
+legible, cámara sobre el hombro, arma en manos y un exterior jugable con
+profundidad. No se acepta volver a bloques, Minecraft, Toon o packs low-poly
+como dirección final.
+
+### Rig y animación en integración
+
+La base técnica que ya está dentro del proyecto es
+[`assets/models/animation_library/`](assets/models/animation_library/):
+Universal Animation Library 1/2 (CC0), con un esqueleto humano de 65 huesos y
+clips de locomoción, apuntado, disparo, recarga, salto y muerte. Se usa la
+variante sin root motion porque el movimiento lo gobierna el jugador. El
+rigged de [`assets/models/skins/`](assets/models/skins/) ya está conectado como
+skin técnica temporal: conserva su `Skeleton3D`, remapea los huesos de
+deformación al convenio UAL y copia los clips a su `AnimationPlayer` en
+runtime. Su estética anime sólo valida la tubería; no reemplaza el objetivo
+semi-realista ni autoriza volver a Toon/voxel. Godot importa los nombres sin el
+sufijo `_Loop` del archivo original (`Idle`, `Jog_Fwd`, `Sprint`, etc.). La
+atribución del modelo está en [`CREDITS.md`](CREDITS.md).
+
 ## Comandos
 
 Los scripts encuentran Godot en PATH o mediante `BLOCKFIRE_GODOT`:

@@ -1,17 +1,26 @@
-; BLOCKFIRE — Godot 4.7.2 canonical project
-; Android landscape product, Linux is the autonomous development lab.
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
 
 config/name="BLOCKFIRE"
-config/icon="res://game/ui/blockfire_mark.svg"
 run/main_scene="res://game/app.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 boot_splash/bg_color=Color(0.027451, 0.0431373, 0.0745098, 1)
 boot_splash/image="res://game/ui/boot_splash.png"
+config/icon="res://game/ui/blockfire_mark.svg"
 boot_splash/minimum_display_time=1
-boot_splash/show_image=true
+
+[audio]
+
+default_bus_layout="res://game/audio/default_bus_layout.tres"
 
 [autoload]
 
@@ -23,29 +32,68 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/size/window_width_override=1280
 window/size/window_height_override=720
-window/size/resizable=true
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-; 4 = sensor landscape. BLOCKFIRE is landscape-first on Android and must
-; rotate between both landscape directions when the device sensor allows it.
 window/handheld/orientation=4
 
 [input]
 
-move_left={"deadzone": 0.5, "events": []}
-move_right={"deadzone": 0.5, "events": []}
-move_forward={"deadzone": 0.5, "events": []}
-move_back={"deadzone": 0.5, "events": []}
-jump={"deadzone": 0.5, "events": []}
-crouch={"deadzone": 0.5, "events": []}
-sprint={"deadzone": 0.5, "events": []}
-fire={"deadzone": 0.5, "events": []}
-aim={"deadzone": 0.5, "events": []}
-reload={"deadzone": 0.5, "events": []}
-switch_weapon={"deadzone": 0.5, "events": []}
-previous_weapon={"deadzone": 0.5, "events": []}
-next_weapon={"deadzone": 0.5, "events": []}
-pause={"deadzone": 0.5, "events": []}
+move_left={
+"deadzone": 0.5,
+"events": []
+}
+move_right={
+"deadzone": 0.5,
+"events": []
+}
+move_forward={
+"deadzone": 0.5,
+"events": []
+}
+move_back={
+"deadzone": 0.5,
+"events": []
+}
+jump={
+"deadzone": 0.5,
+"events": []
+}
+crouch={
+"deadzone": 0.5,
+"events": []
+}
+sprint={
+"deadzone": 0.5,
+"events": []
+}
+fire={
+"deadzone": 0.5,
+"events": []
+}
+aim={
+"deadzone": 0.5,
+"events": []
+}
+reload={
+"deadzone": 0.5,
+"events": []
+}
+switch_weapon={
+"deadzone": 0.5,
+"events": []
+}
+previous_weapon={
+"deadzone": 0.5,
+"events": []
+}
+next_weapon={
+"deadzone": 0.5,
+"events": []
+}
+pause={
+"deadzone": 0.5,
+"events": []
+}
 
 [layer_names]
 
@@ -57,13 +105,7 @@ pause={"deadzone": 0.5, "events": []}
 [rendering]
 
 renderer/rendering_method="mobile"
-renderer/rendering_method.mobile="mobile"
-textures/default_filters/use_nearest_mipmap_filter=false
 textures/vram_compression/import_etc2_astc=true
-environment/defaults/default_clear_color=Color(0.027451, 0.0588235, 0.109804, 1)
 lights_and_shadows/directional_shadow/size=2048
+environment/defaults/default_clear_color=Color(0.027451, 0.0588235, 0.109804, 1)
 lights_and_shadows/directional_shadow/max_distance=55.0
-
-[audio]
-
-default_bus_layout="res://game/audio/default_bus_layout.tres"

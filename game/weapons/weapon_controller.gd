@@ -1,8 +1,6 @@
 class_name WeaponController
 extends Node3D
 
-const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
-
 signal weapon_fired(definition: WeaponDefinition)
 signal weapon_changed(definition: WeaponDefinition)
 signal ammo_changed(current: int, reserve: int, definition: WeaponDefinition)
@@ -30,7 +28,6 @@ var aim_held: bool = false
 var ai_target: Node
 var ai_can_see: bool = false
 var previous_fire: bool = false
-var viewmodel: Node3D
 var muzzle_flash: MeshInstance3D
 var muzzle_anchor: Node3D
 var shot_audio: AudioStreamPlayer3D
@@ -40,36 +37,15 @@ var empty_audio: AudioStreamPlayer3D
 var impact_audio: AudioStreamPlayer3D
 var shot_streams: Dictionary = {}
 var rng := RandomNumberGenerator.new()
-var arms_root: Node3D
-var viewmodel_base_position := Vector3(0.28, -0.22, -0.46)
-var viewmodel_base_rotation := Vector3(0.0, 180.0, 0.0)
-var ads_base_position := Vector3(0.12, -0.16, -0.56)
-var ads_base_rotation := Vector3(0.0, 180.0, 0.0)
-var viewmodel_scale := 0.36
-var muzzle_local := Vector3(0.0, 0.05, 0.4)
 var muzzle_flash_scale := 1.0
-var ads_weight: float = 0.0
 var recoil_amount: float = 0.0
-var viewmodel_time: float = 0.0
-var third_person: bool = false
 var impact_played_this_shot: bool = false
 
 func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = null) -> void:
 	actor = owner_actor
 	camera = owner_camera
 	mobile_controls = controls
-	third_person = camera == null
-	if third_person:
-		viewmodel_base_position = Vector3(0.32, 1.28, -0.34)
-		viewmodel_base_rotation = Vector3(-8.0, 180.0, 0.0)
-		viewmodel_scale = 0.46
-	else:
-		viewmodel_base_position = Vector3(0.28, -0.22, -0.46)
-		viewmodel_base_rotation = Vector3(0.0, 180.0, 0.0)
-		# La geometría procedural ocupa mucha pantalla a 0.26: 0.20 le da
-		# presencia sin tapar crosshair, controles ni bloque de munición.
-		viewmodel_scale = 0.20
-	_apply_definition_pose()
+	muzzle_flash_scale = current_definition().muzzle_flash_scale
 	rng.randomize()
 	shot_audio = AudioStreamPlayer3D.new()
 	shot_audio.name = "WeaponSfx"
@@ -100,15 +76,12 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	available_indices.clear()
 	for index: int in range(DEFINITIONS.size()):
 		available_indices.append(index)
-	_refresh_viewmodel()
-	if not third_person:
-		_create_arms()
+	_refresh_presentation()
 	_emit_ammo()
 
 func _physics_process(delta: float) -> void:
-	viewmodel_time += delta
 	recoil_amount = move_toward(recoil_amount, 0.0, delta * (2.2 + current_definition().recoil * 4.0))
-	_animate_viewmodel(delta)
+	_update_muzzle_anchor()
 	cooldown = maxf(0.0, cooldown - delta)
 	if switching_timer > 0.0:
 		switching_timer = maxf(0.0, switching_timer - delta)
@@ -147,7 +120,7 @@ func set_available_weapons(indices: Array, preferred_index: int = -1) -> void:
 		active_index = desired
 		reload_timer = 0.0
 		switching_timer = 0.0
-		_refresh_viewmodel()
+		_refresh_presentation()
 		_emit_ammo()
 		weapon_changed.emit(current_definition())
 
@@ -191,7 +164,7 @@ func switch_to(index: int) -> bool:
 		reload_timer = 0.0
 	active_index = index
 	switching_timer = 0.34
-	_refresh_viewmodel()
+	_refresh_presentation()
 	_emit_ammo()
 	weapon_changed.emit(current_definition())
 	_play_switch()
@@ -352,270 +325,46 @@ func _emit_ammo() -> void:
 		return
 	ammo_changed.emit(ammo[active_index], reserve[active_index], current_definition())
 
-func _refresh_viewmodel() -> void:
-	if is_instance_valid(viewmodel):
-		viewmodel.queue_free()
-	viewmodel = null
-	muzzle_anchor = null
-	var definition := current_definition()
-	_apply_definition_pose()
-	# Las mallas antiguas siguen en el repositorio como referencia/licencia, pero
-	# la representación activa usa un asset visual ligero con silueta propia.
-	# En third-person el dueño es el visual del actor, no este controller.
-	viewmodel = WeaponVisualScript.new()
-	viewmodel.configure(definition.id)
-	var mounted := false
-	if third_person and actor != null:
-		var actor_visual := actor.get("visual") as Node
-		if actor_visual != null and actor_visual.has_method("attach_weapon_to_hand"):
-			var attached := actor_visual.call("attach_weapon_to_hand", viewmodel, definition.id, _current_weapon_skin(), false) as Node3D
-			if attached != null:
-				viewmodel = attached
-				mounted = true
-	if not mounted:
-		add_child(viewmodel)
-	if not third_person:
-		viewmodel.position = viewmodel_base_position
-		viewmodel.rotation_degrees = viewmodel_base_rotation
-		viewmodel.scale = Vector3.ONE * viewmodel_scale
-	_create_muzzle_anchor()
-	_apply_weapon_skin()
-
-func _apply_definition_pose() -> void:
-	# Per-weapon first-person calibration from the WeaponDefinition resource;
-	# third-person keeps its own fixed rig pose.
-	var definition := current_definition()
-	if third_person:
+func _refresh_presentation() -> void:
+	muzzle_flash_scale = current_definition().muzzle_flash_scale
+	if actor == null:
 		return
-	viewmodel_base_position = definition.hip_position
-	viewmodel_base_rotation = definition.hip_rotation
-	ads_base_position = definition.ads_position
-	ads_base_rotation = definition.ads_rotation
-	muzzle_local = definition.muzzle_offset
-	muzzle_flash_scale = definition.muzzle_flash_scale
+	var actor_visual := actor.get("visual") as Node
+	if actor_visual != null and actor_visual.has_method("set_equipped_weapon"):
+		actor_visual.call("set_equipped_weapon", current_definition().id, _current_weapon_skin())
+	if muzzle_anchor == null or not is_instance_valid(muzzle_anchor):
+		_create_muzzle_anchor()
+	_update_muzzle_anchor()
+
 
 func _create_muzzle_anchor() -> void:
-	if viewmodel == null or not is_instance_valid(viewmodel):
-		return
+	if muzzle_anchor != null and is_instance_valid(muzzle_anchor):
+		muzzle_anchor.queue_free()
 	muzzle_anchor = Node3D.new()
 	muzzle_anchor.name = "MuzzleAnchor"
-	# All active visual meshes share +Z toward the muzzle. Keep a distinct
-	# third-person calibration because the hand mount rotates the whole weapon.
-	muzzle_anchor.position = _third_person_muzzle_offset(current_definition().id) if third_person else muzzle_local
-	viewmodel.add_child(muzzle_anchor)
+	muzzle_anchor.top_level = true
+	add_child(muzzle_anchor)
 
 
-func _third_person_muzzle_offset(weapon_id: String) -> Vector3:
-	match weapon_id:
-		"pistol": return Vector3(0.0, 0.10, 0.46)
-		"shotgun": return Vector3(0.0, 0.10, 1.28)
-		"smg": return Vector3(0.0, 0.08, 0.78)
-	return Vector3(0.0, 0.09, 0.86)
+func _update_muzzle_anchor() -> void:
+	if muzzle_anchor == null or actor == null or not is_inside_tree() or not actor.is_inside_tree():
+		return
+	var actor_visual := actor.get("visual") as Node
+	if actor_visual != null and actor_visual.has_method("get_muzzle_global_position"):
+		var muzzle_marker_position: Vector3 = actor_visual.call("get_muzzle_global_position")
+		muzzle_anchor.global_position = muzzle_marker_position
+		var marker: Node3D = actor_visual.get("muzzle_marker") as Node3D
+		if marker != null and is_instance_valid(marker):
+			muzzle_anchor.global_transform = marker.global_transform
+		else:
+			muzzle_anchor.global_rotation = actor.global_rotation
+	else:
+		muzzle_anchor.global_position = actor.global_position + Vector3(0.0, 1.35, -0.75)
 
 
 func _current_weapon_skin() -> String:
 	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 	return str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
-
-func _create_arms() -> void:
-	if is_instance_valid(arms_root):
-		arms_root.queue_free()
-	arms_root = Node3D.new()
-	arms_root.name = "ArmsAndHands"
-	# Real operator arms: CC0 PSX First Person Arms rig (see CREDITS.md). The rig
-	# is authored at human scale with the camera bone near y=1.74, so we anchor
-	# the camera bone at the viewmodel pose and scale down to weapon proportions.
-	arms_root.position = viewmodel_base_position + Vector3(0.0, 0.0, 0.08)
-	arms_root.rotation_degrees = viewmodel_base_rotation
-	# Rig units are ~6.6x weapon GLB units (rig span 1.68 vs gun 0.80 at their
-	# respective scales); 0.17 * 0.026 maps rig meters onto weapon proportions.
-	arms_root.scale = Vector3.ONE * 0.17
-	add_child(arms_root)
-	var packed := load(ARMS_SCENE) as PackedScene
-	var arms_model: Node3D = packed.instantiate() as Node3D if packed != null else null
-	if arms_model == null:
-		push_warning("WeaponController: arms rig not available, falling back to minimal sleeves")
-		_arms_skeleton = null
-		return
-	arms_model.name = "ArmsRig"
-	arms_root.add_child(arms_model)
-	# The rig's camera bone sits at y=1.743; place the root so that point lands
-	# on the arms_root origin (slightly behind/below the weapon).
-	arms_model.position = Vector3(0.0, -1.743, 0.10)
-	_arms_animation = null
-	for candidate: Node in arms_model.find_children("*", "AnimationPlayer", true, false):
-		_arms_animation = candidate as AnimationPlayer
-		break
-	_arms_skeleton = null
-	for candidate: Node in arms_model.find_children("*", "Skeleton3D", true, false):
-		_arms_skeleton = candidate as Skeleton3D
-		break
-	_pose_arms_for_weapon()
-
-const ARMS_SCENE := "res://assets/models/arms/arms_rig.glb"
-var _arms_skeleton: Skeleton3D
-var _arms_animation: AnimationPlayer
-
-## Poses both hands on the weapon via skeleton global pose overrides: trigger
-## hand at the grip, support hand under the foregrip. Elbows are pulled toward
-## natural lowered positions so forearms read correctly from the camera.
-func _pose_arms_for_weapon() -> void:
-	if _arms_skeleton == null or not is_instance_valid(_arms_skeleton):
-		return
-	# Rig-local grip targets. The rig hands rest at x=+-0.66, y=1.31, z=-0.05;
-	# arm bone lengths are ~0.20 (upper) + ~0.32 (forearm). The hand bones bind
-	# only the wrist ring (fingers bind to finger bones), so the whole chain
-	# upper_arm -> forearm -> hand must move together: we rotate the upper arm
-	# forward (pitch toward the gun) and translate the forearm + hand.
-	# Rig -Z faces the same screen direction as the gun muzzle (controller +Z).
-	var pitch := deg_to_rad(-78.0)  # arms swing forward-up toward the weapon
-	# Rig-local grip targets (rig space, meters; rig -Z = screen into the gun).
-	# X grows toward screen-left. Calibrado por medición de mundos (qa_shot
-	# vuelca hand.R/L vs grip/foregrip): el plano de agarre del rifle queda en
-	# rig z +0.37/+0.85 sobre el origen del rig; x=0 es la línea central del arma.
-	var grip_rig := Vector3(0.0, 1.53, 0.37)
-	var foregrip_rig := Vector3(0.0, 1.59, 0.85)
-	var elbow_r_rig := Vector3(0.26, 1.52, 0.50)
-	var elbow_l_rig := Vector3(0.34, 1.50, 0.80)
-	_pose_arm("R", grip_rig, elbow_r_rig, pitch, deg_to_rad(10.0))
-	_pose_arm("L", foregrip_rig, elbow_l_rig, pitch, deg_to_rad(-8.0))
-	if _arms_animation != null and is_instance_valid(_arms_animation):
-		# A neutral in-between pose: keep the base layer quiet, overrides do the work.
-		if _arms_animation.has_animation("relax"):
-			_arms_animation.play("relax")
-			_arms_animation.seek(0.0, true)
-			_arms_animation.pause()
-
-## Places one arm onto the weapon: rotates the upper arm forward (pitch), then
-## overrides forearm and hand global poses so the whole chain reaches the grip.
-## Fingers keep their rest curl; the wrist ring lands on the gun.
-func _pose_arm(side: String, hand_rig: Vector3, elbow_rig: Vector3, pitch: float, roll: float) -> void:
-	if _arms_skeleton == null or not is_instance_valid(_arms_skeleton):
-		return
-	# 1) Upper arm: swing forward around local X so the elbow rises toward the gun.
-	var upper := _arms_skeleton.find_bone("upper_arm." + side)
-	if upper >= 0:
-		var upper_pose := _arms_skeleton.get_bone_global_pose(upper)
-		upper_pose.basis = upper_pose.basis * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.UP, roll)
-		_arms_skeleton.set_bone_global_pose_override(upper, upper_pose, 1.0, true)
-	# 2) Forearm: global pose aligned from its (moved) shoulder toward the elbow target.
-	var forearm := _arms_skeleton.find_bone("forearm." + side)
-	if forearm >= 0 and upper >= 0:
-		var shoulder := _arms_skeleton.get_bone_global_pose(upper).origin
-		var dir := (elbow_rig - shoulder)
-		var length := clampf(dir.length(), 0.15, 0.34)
-		var forearm_pose := Transform3D(Basis(), shoulder + dir.normalized() * length)
-		_arms_skeleton.set_bone_global_pose_override(forearm, forearm_pose, 1.0, true)
-	# 3) Hand: global pose at the grip with a slight tilt so the wrist follows.
-	var index := _arms_skeleton.find_bone("hand." + side)
-	if index >= 0:
-		var pose := _arms_skeleton.get_bone_global_pose(index)
-		var basis := Basis()
-		if side == "R":
-			basis = Basis(Vector3.RIGHT, deg_to_rad(-24.0)) * Basis(Vector3.UP, deg_to_rad(12.0))
-		else:
-			basis = Basis(Vector3.RIGHT, deg_to_rad(-18.0)) * Basis(Vector3.UP, deg_to_rad(-14.0))
-		pose.basis = basis
-		pose.origin = hand_rig
-		_arms_skeleton.set_bone_global_pose_override(index, pose, 1.0, true)
-
-func _arm_material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.86
-	return material
-
-func _animate_viewmodel(delta: float) -> void:
-	if third_person:
-		# Third-person weapons are owned by OperatorVisual's BoneAttachment3D.
-		# Moving them here would detach them from the animated wrist again.
-		return
-	if not is_instance_valid(viewmodel):
-		return
-	var aiming_now := 1.0 if aim_held else 0.0
-	ads_weight = lerpf(ads_weight, aiming_now, clampf(delta * 14.0, 0.0, 1.0))
-	var movement := Vector3.ZERO
-	if actor is CharacterBody3D:
-		var actor_velocity := (actor as CharacterBody3D).velocity
-		movement = Vector3(actor_velocity.x, 0.0, actor_velocity.z)
-	var move_amount := clampf(movement.length() / 8.0, 0.0, 1.0)
-	var bob := Vector3(
-		cos(viewmodel_time * 8.0) * 0.012 * move_amount,
-		sin(viewmodel_time * 16.0) * 0.009 * move_amount,
-		0.0
-	)
-	var sway := Vector3(sin(viewmodel_time * 1.35) * 0.006, cos(viewmodel_time * 1.7) * 0.005, 0.0)
-	var target_position := viewmodel_base_position.lerp(ads_base_position, ads_weight) + bob + sway
-	var target_rotation := viewmodel_base_rotation.lerp(ads_base_rotation, ads_weight)
-	target_rotation.x -= recoil_amount * 54.0
-	target_rotation.z += sin(viewmodel_time * 8.0) * 1.5 * move_amount
-	if reload_timer > 0.0:
-		# Two-phase reload: drop and roll the gun out (first 45%), then bring it
-		# back up to seated (rest). Keeps hands near grip/foregrip the whole time.
-		var definition := current_definition()
-		var phase := clampf(1.0 - reload_timer / definition.reload_time, 0.0, 1.0)
-		var pull := sin(clampf(phase / 0.45, 0.0, 1.0) * PI) if phase < 0.45 else sin(clampf((phase - 0.45) / 0.55, 0.0, 1.0) * PI) * 0.35
-		target_position += Vector3(-0.04 * pull, (-0.16 + 0.03 * sin(phase * PI)) * pull + 0.02 * pull, 0.10 * pull)
-		target_rotation.x += 14.0 * pull
-		target_rotation.z += (26.0 - 10.0 * sin(phase * PI)) * pull
-	if switching_timer > 0.0:
-		var switch_weight := clampf(switching_timer / 0.34, 0.0, 1.0)
-		target_position += Vector3(0.03, -sin(switch_weight * PI) * 0.20, switch_weight * 0.12)
-		target_rotation.z += sin(switch_weight * PI) * 28.0
-	viewmodel.position = viewmodel.position.lerp(target_position, clampf(delta * 18.0, 0.0, 1.0))
-	viewmodel.rotation_degrees = viewmodel.rotation_degrees.lerp(target_rotation, clampf(delta * 18.0, 0.0, 1.0))
-	if is_instance_valid(arms_root):
-		# Hands stay glued to the grip: arms follow the gun transform every frame.
-		# El ancla al 35% dejaba las manos despegadas del arma en ADS (el grip
-		# está calibrado en espacio del rig: si el root no acompaña al arma, la
-		# mano flota). Con seguimiento completo los codos planteaban un riesgo de
-		# entrar en cuadro: se vigila en la captura de ADS.
-		var arms_pos := viewmodel_base_position.lerp(ads_base_position, ads_weight) + Vector3(0.0, 0.0, 0.08)
-		arms_pos += viewmodel.position - (viewmodel_base_position.lerp(ads_base_position, ads_weight))
-		arms_root.position = arms_pos
-		arms_root.rotation_degrees = viewmodel.rotation_degrees
-		if reload_timer > 0.0:
-			# The gun drops into the reload pose while the hands stay close to
-			# the grip; this avoids a forearm clipping through the screen edge.
-			arms_root.position.y += 0.10
-			arms_root.rotation_degrees.x = lerpf(viewmodel_base_rotation.x, viewmodel.rotation_degrees.x, 0.18)
-			arms_root.rotation_degrees.z = lerpf(viewmodel_base_rotation.z, viewmodel.rotation_degrees.z, 0.18)
-
-func _apply_weapon_skin() -> void:
-	if viewmodel == null or not is_instance_valid(viewmodel):
-		return
-	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
-	var skin := str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
-	WeaponSkin.apply(viewmodel, skin)
-
-func _fallback_weapon(id: String) -> Node3D:
-	var root := Node3D.new()
-	var mesh_instance := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.18, 0.16, 0.8 if id != "shotgun" else 0.95)
-	mesh_instance.mesh = mesh
-	mesh_instance.material_override = _weapon_material(id)
-	root.add_child(mesh_instance)
-	var barrel := MeshInstance3D.new()
-	var barrel_mesh := CylinderMesh.new()
-	barrel_mesh.top_radius = 0.035
-	barrel_mesh.bottom_radius = 0.035
-	barrel_mesh.height = 0.45
-	barrel.mesh = barrel_mesh
-	barrel.rotation_degrees.x = 90
-	barrel.position.z = -0.52
-	barrel.material_override = _weapon_material("barrel")
-	root.add_child(barrel)
-	return root
-
-func _weapon_material(id: String) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = {
-		"rifle": Color("#6c83d8"), "pistol": Color("#d75b43"), "shotgun": Color("#d99b3d"), "smg": Color("#b84a58"), "barrel": Color("#252d43")
-	}.get(id, Color("#7788a8"))
-	material.metallic = 0.2
-	material.roughness = 0.45
-	return material
 
 func _show_muzzle_flash() -> void:
 	if muzzle_anchor == null or not is_instance_valid(muzzle_anchor):
@@ -641,7 +390,9 @@ func _show_muzzle_flash() -> void:
 	muzzle_flash.visible = true
 	muzzle_flash.transparency = 0.0
 	var tween := create_tween()
-	tween.tween_property(muzzle_flash, "transparency", 0.85, 0.045)
+	# 45 ms was effectively invisible in a 60 fps Android capture. Keep the
+	# burst attached to the imported muzzle but give it two rendered frames.
+	tween.tween_property(muzzle_flash, "transparency", 0.85, 0.085)
 	tween.tween_callback(func() -> void:
 		if is_instance_valid(muzzle_flash):
 			muzzle_flash.visible = false

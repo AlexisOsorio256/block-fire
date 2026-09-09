@@ -62,10 +62,12 @@ procesos duplicados, emulador ni comandos destructivos de amplio alcance.
 ## 5. Assets y legal
 
 No incorporar assets sin licencia y atribución. Los samples
-`assets/sfx/gshot_*.ogg` son CC-BY 3.0 de Jesús Lastra. Los modelos Kenney
-usados por el runtime tienen su licencia junto a los assets. La atribución
-canónica está en `CREDITS.md` y la mención de audio permanece accesible en
-el lobby y Ajustes → Legal.
+`assets/sfx/gshot_*.ogg` son CC-BY 3.0 de Jesús Lastra. La biblioteca UAL de
+rig/animaciones bajo CC0 conserva su licencia junto a los GLB. La skin técnica
+y las armas de integración de Sketchfab son CC-BY 4.0 y deben mantener sus
+fuentes. Los modelos Kenney heredados también conservan su licencia mientras
+se retiran. La atribución canónica está en `CREDITS.md` y la mención de audio
+permanece accesible en el lobby y Ajustes → Legal.
 
 ## 6. Evidencia y Git
 

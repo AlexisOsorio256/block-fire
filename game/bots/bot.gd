@@ -141,7 +141,7 @@ func _physics_process(delta: float) -> void:
 		_stop_navigation()
 		desired_velocity = separation_velocity
 	_move_with_velocity(desired_velocity, delta)
-	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held)
+	visual.set_combat_state(desired_velocity.length() > 0.1, weapon.fire_held, weapon.fire_held and can_see, desired_velocity.length() / 4.4)
 	if desired_velocity.length_squared() > 0.1 or (target_alive and can_see):
 		var facing := desired_velocity.normalized()
 		if target_alive and can_see:
@@ -320,6 +320,9 @@ func get_team() -> String:
 
 func get_target_point() -> Vector3:
 	return global_position + Vector3.UP * 1.62
+
+func get_assist_point() -> Vector3:
+	return global_position + Vector3.UP * 1.18
 
 func get_aim_origin() -> Vector3:
 	return global_position + Vector3.UP * 1.55

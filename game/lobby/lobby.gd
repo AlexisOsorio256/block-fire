@@ -1,7 +1,6 @@
 class_name BlockfireLobby
 extends Node3D
 
-const WeaponVisualScript := preload("res://game/weapons/weapon_visual.gd")
 
 signal start_requested(mode: String, operator_id: String, weapon_skin: String)
 
@@ -28,13 +27,13 @@ var _time: float = 0.0
 const SKINS: Array[String] = ["Estándar", "Oro", "Bosque", "Hielo", "Carbón"]
 ## Categoría UI -> slot de CosmeticCatalog.
 const WARDROBE_CATEGORIES: Array = [
-	["CABEZA", "head"],
+	["COLOR CASCO", "head"],
 	["GORRA", "headwear"],
 	["LENTES", "eyewear"],
 	["MÁSCARA", "mask"],
-	["CAMISA", "top"],
-	["PANTALÓN", "bottom"],
-	["CALZADO", "shoes"],
+	["COLOR SUP.", "top"],
+	["COLOR INF.", "bottom"],
+	["COLOR CALZ.", "shoes"],
 	["PIEL", "skin"],
 ]
 
@@ -122,11 +121,6 @@ func _build_world() -> void:
 		dash.material_override = _material(Color("#37cfe0").darkened(0.3))
 		add_child(dash)
 
-	# Utilería del patio con el mismo lenguaje del mapa (contenedores/barreras).
-	_add_prop("Container_Long.gltf", Vector3(-4.6, 0.0, -3.4), -12.0, Color("#b0574a"))
-	_add_prop("Container_Long.gltf", Vector3(6.8, 0.0, -3.8), 9.0, Color("#4a7fa0"))
-	_add_prop("Barrier_Large.gltf", Vector3(-2.4, 0.0, -2.2), 78.0, Color("#7f93a8"))
-	_add_prop("Barrier_Large.gltf", Vector3(5.2, 0.0, -2.0), 102.0, Color("#8a7462"))
 	_add_lamp(Vector3(-3.2, 0.0, 2.2))
 	_add_lamp(Vector3(5.8, 0.0, 2.4))
 
@@ -138,40 +132,9 @@ func _build_world() -> void:
 	hero.rotation_degrees.y = 14.0
 	hero.configure(selected_operator, "ally", Color("#f0a064"), {}, true)
 	add_child(hero)
-	# Pose de escaparate frontal: reduce la lectura de pesos de manos del rig
-	# modular y mantiene la silueta preparada para mostrar un arma.
-	hero.set_combat_state(false, true)
-	hero.set_showcase_mode(true, "res://assets/models/weapons/rifle.glb", selected_skin)
-	_create_weapon_display()
-
-func _add_prop(file_name: String, position: Vector3, yaw: float, tint: Color) -> void:
-	var packed := load("res://assets/models/quaternius_toon_shooter/" + file_name) as PackedScene
-	if packed == null:
-		return
-	var prop := packed.instantiate() as Node3D
-	prop.position = position
-	prop.rotation_degrees.y = yaw
-	add_child(prop)
-	_tint_prop(prop, tint, 0.45)
-
-func _tint_prop(root: Node3D, color: Color, strength: float) -> void:
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var node: Node = stack.pop_back()
-		for child: Node in node.get_children():
-			stack.append(child)
-		if node is not MeshInstance3D:
-			continue
-		var mesh_instance := node as MeshInstance3D
-		if mesh_instance.mesh == null:
-			continue
-		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):
-			var source := mesh_instance.get_active_material(surface_index)
-			if source is not StandardMaterial3D:
-				continue
-			var material := source.duplicate() as StandardMaterial3D
-			material.albedo_color = material.albedo_color.lerp(color, strength)
-			mesh_instance.set_surface_override_material(surface_index, material)
+	# El lobby presenta al personaje, no una pose de combate que le tape la cara.
+	hero.set_combat_state(false, false)
+	hero.set_showcase_mode(true, "", selected_skin)
 
 func _add_lamp(position: Vector3) -> void:
 	var root := Node3D.new()
@@ -194,40 +157,6 @@ func _add_lamp(position: Vector3) -> void:
 	head.position = Vector3(0, 2.75, 0)
 	head.material_override = _emissive(Color("#ffe9b0"), 0.8)
 	root.add_child(head)
-
-func _create_weapon_display() -> void:
-	# Sin peana: el arma flota y rota como pieza única de exposición. Con una
-	# caja debajo se leía como piezas desarmadas sobre una mesa.
-	weapon_display_root = _recreate_weapon_display()
-	armory_label = Label3D.new()
-	armory_label.name = "ArmoryPreviewLabel"
-	armory_label.text = "RIFLE · " + selected_skin.to_upper()
-	armory_label.position = Vector3(2.52, 1.58, 1.35)
-	armory_label.font_size = 27
-	armory_label.pixel_size = 0.003
-	armory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	armory_label.modulate = BlockfireTheme.GOLD
-	armory_label.outline_size = 8
-	armory_label.outline_modulate = Color("#071127cc")
-	armory_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	armory_label.no_depth_test = true
-	add_child(armory_label)
-
-func _recreate_weapon_display() -> Node3D:
-	var display := WeaponVisualScript.new()
-	display.name = "ArmoryPreview"
-	display.configure("rifle")
-	# Flota a la altura del pecho del héroe, dentro del encuadre de la cámara
-	# del lobby (a 3.05/0.72 quedaba cortado por el borde y leía como chatarra
-	# tirada en el suelo en lugar de product shot).
-	display.position = Vector3(2.52, 1.02, 1.35)
-	# Vista de producto: costado del arma hacia la cámara del lobby, nivelada
-	# para que receiver, cargador y cañón se lean como una sola pieza.
-	display.rotation_degrees = Vector3(0.0, 68.0, 0.0)
-	display.scale = Vector3.ONE * 0.60
-	WeaponSkin.apply(display, selected_skin)
-	add_child(display)
-	return display
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -300,7 +229,7 @@ func _build_ui() -> void:
 	var chars := HBoxContainer.new()
 	chars.add_theme_constant_override("separation", 8)
 	left.add_child(chars)
-	var wardrobe := _make_select_button("ROPA\nPERSONALIZA TU PERSONAJE", 13)
+	var wardrobe := _make_select_button("ESTILO\nCOLORES Y EQUIPO", 13)
 	var armory := _make_select_button("ARMAS\nSKINS", 13)
 	chars.add_child(wardrobe)
 	chars.add_child(armory)
@@ -350,10 +279,6 @@ func _select_skin(skin: String) -> void:
 		armory_label.text = "RIFLE · " + skin.to_upper()
 	if is_instance_valid(hero):
 		hero.set_showcase_weapon_skin(skin)
-	if is_instance_valid(weapon_display_root):
-		weapon_display_root.queue_free()
-		weapon_display_root = null
-	weapon_display_root = _recreate_weapon_display()
 	if wardrobe_panel != null:
 		_refresh_wardrobe()
 
@@ -373,7 +298,7 @@ func _toggle_wardrobe() -> void:
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 6)
 	wardrobe_panel.add_child(stack)
-	var heading := BlockfireTheme.label("ROPA · PERSONALIZA TU PERSONAJE", 15, BlockfireTheme.GOLD)
+	var heading := BlockfireTheme.label("ESTILO · COLOR Y EQUIPO", 15, BlockfireTheme.GOLD)
 	stack.add_child(heading)
 	wardrobe_category_buttons.clear()
 	var cats := GridContainer.new()
@@ -462,6 +387,10 @@ func _toggle_armory() -> void:
 	armory_panel.offset_bottom = 520.0
 	armory_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#0a162cf2"), BlockfireTheme.GOLD, 14, 2))
 	ui_root.add_child(armory_panel)
+	if is_instance_valid(weapon_display_root):
+		weapon_display_root.visible = true
+	if armory_label != null:
+		armory_label.visible = true
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	armory_panel.add_child(stack)
@@ -491,6 +420,10 @@ func _close_panels() -> void:
 	if is_instance_valid(armory_panel):
 		armory_panel.queue_free()
 	armory_panel = null
+	if is_instance_valid(weapon_display_root):
+		weapon_display_root.visible = false
+	if armory_label != null:
+		armory_label.visible = false
 
 func _animate_panel_in(panel: Control) -> void:
 	panel.modulate = Color(1, 1, 1, 0)

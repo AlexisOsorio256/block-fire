@@ -19,8 +19,12 @@ static func apply(root: Node, skin: String) -> void:
 	var tint := tint_for(skin)
 	if tint.is_equal_approx(Color.WHITE) or root == null or not is_instance_valid(root):
 		return
+	var meshes: Array[MeshInstance3D] = []
+	if root is MeshInstance3D:
+		meshes.append(root as MeshInstance3D)
 	for candidate: Node in root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := candidate as MeshInstance3D
+		meshes.append(candidate as MeshInstance3D)
+	for mesh_instance: MeshInstance3D in meshes:
 		if mesh_instance == null or mesh_instance.mesh == null:
 			continue
 		for surface_index: int in range(mesh_instance.mesh.get_surface_count()):

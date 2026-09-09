@@ -52,27 +52,27 @@ static func items() -> Dictionary:
 	# es real por superficie (camisa/pantalón/botas) y el nombre promete
 	# exactamente eso: color de esa prenda, no una silueta que no existe. ---
 	var all_items: Array[CosmeticItem] = [
-		_garment("top_swat", "top", "Camisa táctica oliva", "swat", "Swat_Body"),
-		_garment("top_casual", "top", "Camisa violeta", "casual", "Casual_Body"),
-		_garment("top_worker", "top", "Camisa ámbar", "worker", "Worker_Body"),
-		_garment("top_suit", "top", "Camisa azul marino", "suit", "Suit_Body"),
-		_garment("top_punk", "top", "Camisa granate", "punk", "Punk_Body"),
-		_garment("top_farmer", "top", "Camisa oliva", "farmer", "Farmer_Body"),
-		_garment("top_scifi", "top", "Camisa azul hielo", "scifi", "SpaceSuit_Body"),
-		_garment("bottom_swat", "bottom", "Pantalón khaki", "swat", "Swat_Legs"),
-		_garment("bottom_casual", "bottom", "Pantalón lila", "casual", "Casual_Legs"),
-		_garment("bottom_worker", "bottom", "Pantalón ámbar", "worker", "Worker_Legs"),
-		_garment("bottom_suit", "bottom", "Pantalón azul marino", "suit", "Suit_Legs"),
-		_garment("bottom_punk", "bottom", "Pantalón granate", "punk", "Punk_Legs"),
-		_garment("bottom_farmer", "bottom", "Pantalón oliva", "farmer", "Farmer_Pants"),
-		_garment("bottom_scifi", "bottom", "Pantalón azul hielo", "scifi", "SpaceSuit_Legs"),
-		_garment("shoes_swat", "shoes", "Botas carbón", "swat", "Swat_Feet"),
-		_garment("shoes_casual", "shoes", "Zapatillas lila", "casual", "Casual_Feet"),
-		_garment("shoes_worker", "shoes", "Botas ámbar", "worker", "Worker_Feet"),
-		_garment("shoes_suit", "shoes", "Zapatos azul marino", "suit", "Suit_Feet"),
-		_garment("shoes_punk", "shoes", "Botas granate", "punk", "Punk_Feet"),
-		_garment("shoes_farmer", "shoes", "Botas oliva", "farmer", "Farmer_Feet"),
-		_garment("shoes_scifi", "shoes", "Botas azul hielo", "scifi", "SpaceSuit_Feet")
+		_garment("top_swat", "top", "Oliva", "swat", "Swat_Body"),
+		_garment("top_casual", "top", "Violeta", "casual", "Casual_Body"),
+		_garment("top_worker", "top", "Ámbar", "worker", "Worker_Body"),
+		_garment("top_suit", "top", "Azul marino", "suit", "Suit_Body"),
+		_garment("top_punk", "top", "Granate", "punk", "Punk_Body"),
+		_garment("top_farmer", "top", "Caqui", "farmer", "Farmer_Body"),
+		_garment("top_scifi", "top", "Azul hielo", "scifi", "SpaceSuit_Body"),
+		_garment("bottom_swat", "bottom", "Khaki", "swat", "Swat_Legs"),
+		_garment("bottom_casual", "bottom", "Lila", "casual", "Casual_Legs"),
+		_garment("bottom_worker", "bottom", "Ámbar", "worker", "Worker_Legs"),
+		_garment("bottom_suit", "bottom", "Azul marino", "suit", "Suit_Legs"),
+		_garment("bottom_punk", "bottom", "Granate", "punk", "Punk_Legs"),
+		_garment("bottom_farmer", "bottom", "Oliva", "farmer", "Farmer_Pants"),
+		_garment("bottom_scifi", "bottom", "Azul hielo", "scifi", "SpaceSuit_Legs"),
+		_garment("shoes_swat", "shoes", "Carbón", "swat", "Swat_Feet"),
+		_garment("shoes_casual", "shoes", "Lila", "casual", "Casual_Feet"),
+		_garment("shoes_worker", "shoes", "Ámbar", "worker", "Worker_Feet"),
+		_garment("shoes_suit", "shoes", "Azul marino", "suit", "Suit_Feet"),
+		_garment("shoes_punk", "shoes", "Granate", "punk", "Punk_Feet"),
+		_garment("shoes_farmer", "shoes", "Oliva", "farmer", "Farmer_Feet"),
+		_garment("shoes_scifi", "shoes", "Azul hielo", "scifi", "SpaceSuit_Feet")
 	]
 	for item: CosmeticItem in all_items:
 		result[item.slot + ":" + item.id] = item

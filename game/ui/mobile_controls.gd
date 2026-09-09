@@ -23,6 +23,7 @@ var move_pointer: int = -1
 var look_pointer: int = -1
 var fire_pointer: int = -1
 var aim_pointer: int = -1
+var sprint_pointer: int = -1
 var touch_positions: Dictionary = {}
 var layout: Dictionary = {}
 
@@ -203,6 +204,7 @@ func release_all() -> void:
 	look_pointer = -1
 	fire_pointer = -1
 	aim_pointer = -1
+	sprint_pointer = -1
 	touch_positions.clear()
 	move_vector = Vector2.ZERO
 	look_delta = Vector2.ZERO
@@ -236,6 +238,9 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 		elif _in_crouch(position):
 			crouch_request = true
 		elif _in_sprint(position):
+			sprint_pointer = pointer
+			# CORRER is a tap-to-toggle action. A quick mobile tap must persist
+			# through the next movement sample instead of requiring a long hold.
 			sprinting = not sprinting
 		elif _in_move(position):
 			move_pointer = pointer
@@ -254,6 +259,10 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			qa_release_fire()
 		if pointer == aim_pointer:
 			aim_pointer = -1
+		if pointer == sprint_pointer:
+			sprint_pointer = -1
+			# Keep the toggle latched after finger-up; release_all() clears it on
+			# pause/focus loss and at the next match reset.
 	queue_redraw()
 
 func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
@@ -293,13 +302,17 @@ func _control_opacity(id: String) -> float:
 func _button_center(id: String) -> Vector2:
 	var defaults: Dictionary = {
 		"fire": Vector2(0.87, 0.72), "aim": Vector2(0.75, 0.75), "jump": Vector2(0.91, 0.48),
-		"reload": Vector2(0.73, 0.46), "switch": Vector2(0.62, 0.86), "crouch": Vector2(0.8, 0.9), "sprint": Vector2(0.23, 0.89)
+		"reload": Vector2(0.73, 0.46), "switch": Vector2(0.62, 0.86), "crouch": Vector2(0.8, 0.9), "sprint": Vector2(0.23, 0.58)
 	}
 	var value: Vector2 = _normalized_position(id, defaults.get(id, Vector2(0.5, 0.5)))
 	return Vector2(size.x * value.x, size.y * value.y)
 
 func _in_move(position: Vector2) -> bool:
-	return position.distance_to(_move_center()) < 96.0 * _control_scale("joystick")
+	# Use both the radial hit test and a broad lower-left lane. Android safe-area
+	# transforms can move the rendered joystick by a few dozen pixels; movement
+	# must not silently fall through to camera look when the thumb lands there.
+	return position.distance_to(_move_center()) < 140.0 * _control_scale("joystick") \
+		or (position.x < size.x * 0.34 and position.y > size.y * 0.55)
 
 func _in_fire(position: Vector2) -> bool:
 	return position.distance_to(_button_center("fire")) < 58.0 * _control_scale("fire")
@@ -320,7 +333,7 @@ func _in_crouch(position: Vector2) -> bool:
 	return position.distance_to(_button_center("crouch")) < 42.0 * _control_scale("crouch")
 
 func _in_sprint(position: Vector2) -> bool:
-	return position.distance_to(_button_center("sprint")) < 42.0 * _control_scale("sprint")
+	return position.distance_to(_button_center("sprint")) < 68.0 * _control_scale("sprint")
 
 func _in_any_button(position: Vector2) -> bool:
 	for id: String in ["fire", "aim", "jump", "reload", "switch", "crouch", "sprint"]:
