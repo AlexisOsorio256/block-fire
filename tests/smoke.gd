@@ -111,7 +111,7 @@ func _test_visual_in_tree() -> void:
 		_check(visual.animation_player.has_animation("Death"), "native death clip is addressable")
 	visual.set_combat_state(false, false)
 	await process_frame
-	_check(visual.animation_player != null and visual.animation_player.current_animation == "Idle_Gun",
+	_check(visual.motion != null and visual.motion.base_state == "Idle" and not visual.animation_player.active,
 		"avatar starts in native idle")
 	# El armario debe ser geometría real: cada prenda enciende su módulo.
 	var wardrobe_settings: Node = get_root().get_node("SettingsStore")

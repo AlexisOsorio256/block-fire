@@ -11,7 +11,7 @@ extends SceneTree
 ##   godot --path . --script res://tools/qa_anim_lab.gd -- \
 ##     --clip=Reload --out=/tmp/anim.png --times=0.0,0.7 --view=q34
 
-const CHARACTER := "res://assets/models/skins/operator_adult_smooth.glb"
+const CHARACTER := "res://assets/models/skins/operator_adult_lod.glb"
 
 var _clip := "Reload"
 var _out := "/tmp/anim.png"
@@ -91,54 +91,22 @@ func _build() -> void:
 	key.light_energy = 1.3
 	world.add_child(key)
 
-	var character: PackedScene = load(CHARACTER)
-	_subject = character.instantiate() as Node3D
-	world.add_child(_subject)
-	var skeletons := _subject.find_children("*", "Skeleton3D", true, false)
-	var skeleton := skeletons[0] as Skeleton3D if not skeletons.is_empty() else null
-	print("PERSONAJE huesos=%d skeleton=%s" % [skeleton.get_bone_count() if skeleton else -1, skeleton.name if skeleton else "?"])
-	var players := _subject.find_children("*", "AnimationPlayer", true, false)
-	_player = players[0] as AnimationPlayer if not players.is_empty() else null
-	if _player == null:
-		push_error("QA_ANIM_LAB: el personaje no trae AnimationPlayer")
-		return
-
-	if _player.has_animation(_clip):
-		# Clip propio del personaje: se reproduce tal cual (linea base).
-		print("CLIP propio del personaje: %s" % _clip)
-		_build_camera(world)
-		return
-	var clip_scene: PackedScene = load("res://assets/models/animation_library/%s.glb" % _clip)
-	if clip_scene == null:
-		push_error("QA_ANIM_LAB: no existe el clip %s" % _clip)
-		return
-	var clip_root := clip_scene.instantiate()
-	var clip_players := clip_root.find_children("*", "AnimationPlayer", true, false)
-	var clip_player := clip_players[0] as AnimationPlayer if not clip_players.is_empty() else null
-	if clip_player == null:
-		push_error("QA_ANIM_LAB: el clip no trae AnimationPlayer")
-		return
-	print("CLIP animaciones=%s" % clip_player.get_animation_list())
-	var anim: Animation = clip_player.get_animation(_clip)
-	if anim == null:
-		push_error("QA_ANIM_LAB: el clip no contiene %s" % _clip)
-		return
-	print("CLIP nombre=%s duracion=%.3fs pistas=%d loop=%s" % [
-		anim.resource_name, anim.length, anim.get_track_count(),
-		anim.loop_mode])
-	for i: int in range(mini(4, anim.get_track_count())):
-		print("  pista[%d] %s" % [i, anim.track_get_path(i)])
-
-	# Las pistas del clip ya vienen con la ruta del personaje
-	# ("CharacterArmature/Skeleton3D:Hueso") y el root_node del AnimationPlayer
-	# es la escena, asi que se reproducen sin remapear. Solo se informa.
-	print("PLAYER root=%s skeleton=%s" % [_player.root_node, skeleton.get_path()])
-	for i: int in range(anim.get_track_count()):
-		print("  pista[%d] %s" % [i, anim.track_get_path(i)])
-	var library := AnimationLibrary.new()
-	library.add_animation(_clip, anim)
-	_player.add_animation_library("qa", library)
-
+	var visual := OperatorVisual.new()
+	visual.configure("BRAVO", "ally", Color.CYAN, {}, true)
+	visual.set_showcase_mode(true)
+	world.add_child(visual)
+	visual.set_process(false)
+	_subject = visual
+	_player = visual.animation_player
+	_player.active = true
+	if not _player.has_animation(_clip):
+		var copied := _player.get_animation("ual/" + _clip)
+		if copied == null:
+			push_error("Missing clip: " + _clip)
+			return
+		var library := AnimationLibrary.new()
+		library.add_animation(_clip, copied)
+		_player.add_animation_library("qa", library)
 	_build_camera(world)
 
 
@@ -147,7 +115,7 @@ func _build_camera(world: Node3D) -> void:
 	_camera.fov = 40.0
 	world.add_child(_camera)
 	_camera.make_current()
-	var yaw := 35.0 if _view == "q34" else (90.0 if _view == "side" else 0.0)
+	var yaw := 35.0 if _view == "q34" else (90.0 if _view == "side" else (180.0 if _view == "back" else 0.0))
 	var focus := Vector3(0.0, 1.15, 0.0)
 	var distance := 3.4
 	var dir := Vector3(sin(deg_to_rad(yaw)), 0.0, cos(deg_to_rad(yaw)))

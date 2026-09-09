@@ -33,10 +33,16 @@ const EXTRA_CLIP_PATHS := [
 	"res://assets/models/animation_library/Land.glb",
 	"res://assets/models/animation_library/Flinch.glb",
 	"res://assets/models/animation_library/CrouchIdle.glb",
-	"res://assets/models/animation_library/CrouchWalk.glb"
+	"res://assets/models/animation_library/CrouchWalk.glb",
+	"res://assets/models/animation_library/BackWalk.glb",
+	"res://assets/models/animation_library/CrouchLeft.glb",
+	"res://assets/models/animation_library/CrouchRight.glb",
+	"res://assets/models/animation_library/CrouchBack.glb",
+	"res://assets/models/animation_library/JumpStart.glb",
+	"res://assets/models/animation_library/AirLoop.glb"
 ]
 ## Clips que deben repetir en bucle (glTF no lleva el metadato).
-const LOOPING_CLIPS := ["StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk"]
+const LOOPING_CLIPS := ["StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk", "BackWalk", "CrouchLeft", "CrouchRight", "CrouchBack", "AirLoop"]
 const WEAPON_IDS := ["rifle", "pistol", "shotgun", "smg"]
 
 ## Cada slot del armario es un conjunto de módulos del pack. Solo un módulo
@@ -69,48 +75,60 @@ const LOCOMOTION_CLIPS := [
 ## el archivo en cada iteración.
 static var WEAPON_CONFIG := {
 	"rifle": {
+		"body_kick": 1.0, "recovery": 17,
+		"pole_l": Vector3(0.55, -1.0, -0.30),
+		"pole_r": Vector3(-0.55, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/rifle.glb",
 		"length": 0.92,
 		"pivot": Vector3(0.0, -0.10, -0.21),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(0.14, -0.06, 0.20),
-		"aim": Vector3(0.08, 0.05, 0.26),
+		"ready": Vector3(-0.10, -0.06, 0.20),
+		"aim": Vector3(-0.08, 0.05, 0.26),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.20),
 		"muzzle": Vector3(0.0, 0.0, 0.46),
 	},
 	"pistol": {
+		"body_kick": 1.35, "recovery": 14,
+		"pole_l": Vector3(0.38, -1.0, -0.30),
+		"pole_r": Vector3(-0.38, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/desert_eagle_dec.glb",
 		"length": 0.27,
 		"pivot": Vector3(0.0, -0.06, 0.07),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(0.17, -0.08, 0.22),
-		"aim": Vector3(0.09, 0.05, 0.30),
+		"ready": Vector3(-0.11, -0.08, 0.22),
+		"aim": Vector3(-0.08, 0.05, 0.30),
 		"grip": Vector3(0.0, -0.015, 0.0),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(-0.02, 0.02, 0.045),
 		"muzzle": Vector3(0.0, 0.0, 0.13),
 	},
 	"shotgun": {
+		"body_kick": 2.2, "recovery": 10,
+		"pole_l": Vector3(0.7, -1.0, -0.30),
+		"pole_r": Vector3(-0.7, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/shotgun.glb",
 		"length": 1.05,
 		"pivot": Vector3(-0.264, 0.10, 0.0),
 		"asset_rot": Vector3(0.0, -90.0, 0.0),
-		"ready": Vector3(0.14, -0.06, 0.20),
-		"aim": Vector3(0.08, 0.05, 0.26),
+		"ready": Vector3(-0.10, -0.06, 0.20),
+		"aim": Vector3(-0.08, 0.05, 0.26),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.22),
 		"muzzle": Vector3(0.0, 0.0, 0.52),
 	},
 	"smg": {
+		"body_kick": 0.65, "recovery": 22,
+		"pole_l": Vector3(0.48, -1.0, -0.30),
+		"pole_r": Vector3(-0.48, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/mpx_smg.glb",
 		"length": 0.62,
 		"pivot": Vector3(0.0, -0.08, 0.08),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(0.14, -0.06, 0.18),
-		"aim": Vector3(0.08, 0.05, 0.24),
+		"ready": Vector3(-0.10, -0.06, 0.18),
+		"aim": Vector3(-0.08, 0.05, 0.24),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.18),
@@ -132,7 +150,7 @@ const DEATH_DROP := -0.05
 const HAND_BIND_MIN_X := 0.60
 const HAND_BIND_MIN_Y := 1.30
 const HAND_BIND_MAX_Y := 1.55
-const AIM_BLEND_SPEED := 9.0
+static var RELOAD_HAND_KEYS: Array = JSON.parse_string(FileAccess.get_file_as_string("res://assets/models/animation_library/reload_hand_path.json"))
 
 var operator_id := "BRAVO"
 var team := "ally"
@@ -157,33 +175,24 @@ var retarget_ready := false
 var ik_enabled := true
 ## Congela el clip para inspeccionar un instante exacto (laboratorio).
 var debug_hold_animation := false
+var debug_manual_state := false
 ## Fuerza la pose de recarga en el laboratorio (no tiene arma padre).
 var debug_force_reload := false
 ## Laboratorio: yaw/pitch de mirada sin actor padre (grados).
 var debug_head_look := Vector2.ZERO
-var _last_locomotion_clip := ""
-var _aim_blend := 0.0
-## El pack modular no trae clips de recarga ni de salto: se resuelven como
-## desplazamientos procedurales del montaje del arma y de los brazos, leídos
-## del estado real del WeaponController (no inventan gameplay).
-var _reload_blend := 0.0
-var _switch_blend := 0.0
-var _airborne_blend := 0.0
+var motion: OperatorMotion
 var crouched := false
-var _one_shot := ""
 var _weapon_ref: Node = null
 var _head_look_yaw := 0.0
 var _head_look_pitch := 0.0
-## Flinch y aterrizaje: reacciones cortas sin clip propio en el pack.
-var _flinch := 0.0
-var _land_dip := 0.0
-var _was_on_floor := true
-var _last_fall_speed := 0.0
+var _debug_reload_time := 0.0
+var _left_fist: Node3D
+var _right_fist: Node3D
+var _mount_offset := Vector3.ZERO
+var _mount_initialized := false
+var _death_weapon_local := Transform3D.IDENTITY
+var _death_hand_local := Transform3D.IDENTITY
 var _wardrobe_pending := false
-var _ik_left: SkeletonIK3D
-var _ik_right: SkeletonIK3D
-var _left_target: Marker3D
-var _right_target: Marker3D
 var _modules: Dictionary = {}
 var _skin_materials: Array[StandardMaterial3D] = []
 var _accessory_root: Node3D
@@ -261,32 +270,36 @@ func set_combat_state(is_moving: bool, is_firing: bool, is_aiming: bool = false,
 
 
 func play_death() -> void:
+	if dead: return
+	if skeleton != null and weapon_mount != null:
+		var right := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.R"))
+		var left := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.L"))
+		_death_weapon_local = right.affine_inverse() * weapon_mount.global_transform
+		if is_instance_valid(_left_fist): _death_hand_local = left.affine_inverse() * _left_fist.global_transform
 	dead = true
-	_play_native("Death", false)
-	if model_root == null:
-		return
-	# El clip acuesta el cuerpo en espacio de huesos pero no mueve la raíz del
-	# actor: sin este descenso el cadáver queda flotando a la altura de pie.
-	model_root.position = Vector3.ZERO
-	var tween := create_tween()
-	tween.tween_property(model_root, "position:y", DEATH_DROP, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if motion != null: motion.die()
 
 
-## Sacudida al recibir daño: el gameplay avisa, el visual solo reacciona.
 func flinch(strength: float = 1.0) -> void:
-	_flinch = clampf(_flinch + strength, 0.0, 1.4)
-	if animation_player != null and animation_player.get_animation("ual/Flinch") != null:
-		_one_shot = "Flinch"
+	if motion != null: motion.hit(strength)
 
 
-## Reaparecer: el clip Death deja el cuerpo acostado y `dead` bloqueaba las
-## animaciones, así que un bot respawneado seguía mostrándose como cadáver.
+func confirmed_shot(_definition: WeaponDefinition = null) -> void:
+	if motion == null: return
+	var config: Dictionary = WEAPON_CONFIG[equipped_weapon_id]
+	motion.shot(config.get("body_kick", 1.0), config.get("recovery", 16.0))
+
+
 func revive() -> void:
 	dead = false
-	if model_root != null:
-		model_root.position = Vector3.ZERO
-	_last_locomotion_clip = ""
-	_refresh_animation_state()
+	moving = false
+	firing = false
+	aiming = false
+	_head_look_yaw = 0.0
+	_head_look_pitch = 0.0
+	_debug_reload_time = 0.0
+	if model_root != null: model_root.position = Vector3.ZERO
+	if motion != null: motion.reset()
 
 
 func get_muzzle_global_position() -> Vector3:
@@ -301,17 +314,38 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if animation_player == null or not retarget_ready:
-		return
-	_update_reload_state(delta)
-	_update_airborne_state(delta)
-	_update_head_look(delta)
-	_update_reaction_pose(delta)
-	if not dead:
-		_refresh_animation_state()
+	if motion == null or not retarget_ready: return
+	# Contract: inputs → clips/layers → head → mount → IK → hands. No other
+	# process callback writes this skeleton, including while paused/dead.
+	if not debug_hold_animation:
+		if not debug_manual_state: _read_motion_inputs(delta)
+		motion.evaluate(delta)
+		if not dead: _update_head_look(delta)
 	_update_weapon_mount(delta)
-	if not dead:
-		_solve_arms_ik()
+	if not dead: _solve_arms_ik()
+
+
+func _read_motion_inputs(delta: float) -> void:
+	motion.crouched = crouched
+	motion.aiming = aiming or firing
+	var actor := get_parent()
+	motion.local_velocity = Vector3(0, 0, -locomotion_speed_scale) if moving else Vector3.ZERO
+	if actor is CharacterBody3D:
+		motion.local_velocity = actor.global_basis.inverse() * actor.get_real_velocity()
+		motion.grounded = actor.is_on_floor()
+	var weapon := _weapon() as WeaponController
+	if weapon != null:
+		motion.reload_remaining = weapon.reload_timer
+		motion.reload_duration = weapon.current_definition().reload_time
+		motion.switch_remaining = weapon.switching_timer
+		if not weapon.weapon_fired.is_connected(confirmed_shot): weapon.weapon_fired.connect(confirmed_shot)
+	elif debug_force_reload:
+		_debug_reload_time = fposmod(_debug_reload_time + delta, 2.0)
+		motion.reload_duration = 2.0
+		motion.reload_remaining = 2.0 - _debug_reload_time
+	else:
+		motion.reload_remaining = 0.0
+		motion.switch_remaining = 0.0
 
 
 func _build() -> void:
@@ -332,7 +366,7 @@ func _build() -> void:
 	animation_player = null
 	retarget_ready = false
 	dead = false
-	_last_locomotion_clip = ""
+	motion = null
 	_modules.clear()
 	_skin_materials.clear()
 	_accessory_root = null
@@ -368,6 +402,8 @@ func _setup_target_rig(character: Node) -> void:
 	_repair_module_weights(character)
 	retarget_ready = true
 	_install_extra_clips()
+	motion = OperatorMotion.new()
+	motion.setup(skeleton, animation_player)
 
 	if skeleton.find_bone(CHEST_BONE) >= 0:
 		weapon_mount = Node3D.new()
@@ -605,9 +641,11 @@ func _build_grip_hands() -> void:
 	var config: Dictionary = WEAPON_CONFIG.get(equipped_weapon_id, {})
 	var grip: Vector3 = config.get("grip", Vector3.ZERO)
 	var foregrip: Vector3 = config.get("foregrip", Vector3.ZERO)
-	hands.add_child(_make_fist("RightFist", grip, skin_material, false))
+	_right_fist = _make_fist("RightFist", grip, skin_material, false)
+	hands.add_child(_right_fist)
 	if foregrip != Vector3.ZERO:
-		hands.add_child(_make_fist("LeftFist", foregrip, skin_material, true))
+		_left_fist = _make_fist("LeftFist", foregrip, skin_material, true)
+		hands.add_child(_left_fist)
 
 
 func _make_fist(fist_name: String, at: Vector3, skin_material: StandardMaterial3D, mirrored: bool) -> Node3D:
@@ -1001,106 +1039,8 @@ func _ring_material(color: Color) -> StandardMaterial3D:
 
 
 func _refresh_animation_state() -> void:
-	if animation_player == null or not retarget_ready or dead:
-		return
-	if debug_hold_animation:
-		return
-	animation_player.speed_scale = 1.0
-	if _reload_blend > 0.35 and animation_player.get_animation("ual/Reload") != null:
-		# Clip propio de recarga: manda sobre la pose procedural.
-		if animation_player.current_animation != "ual/Reload":
-			animation_player.play("ual/Reload", 0.12)
-		return
-	if firing:
-		# Idle_Shoot es un one-shot del pack: se rearma al terminar para que
-		# mantener FUEGO siga mostrando disparo mientras el controller dispara.
-		var shoot := animation_player.get_animation("Idle_Shoot")
-		if shoot != null:
-			if animation_player.current_animation != "Idle_Shoot" 					or animation_player.current_animation_position >= shoot.length - 0.02:
-				animation_player.play("Idle_Shoot", 0.05)
-			_last_locomotion_clip = "Idle_Shoot"
-		return
-	if aiming:
-		_play_native("Idle_Aim", true)
-		return
-	if _one_shot != "":
-		var one_shot_path := "ual/" + _one_shot
-		var one_shot_anim := animation_player.get_animation(one_shot_path)
-		if one_shot_anim == null:
-			_one_shot = ""
-		elif animation_player.current_animation != one_shot_path:
-			_play_native(one_shot_path, false)
-		elif animation_player.current_animation_position >= one_shot_anim.length - 0.03:
-			_one_shot = ""
-		else:
-			return
-	if crouched:
-		var crouch_clip := "CrouchWalk" if moving else "CrouchIdle"
-		if animation_player.get_animation("ual/" + crouch_clip) != null:
-			animation_player.speed_scale = 1.0
-			_play_native("ual/" + crouch_clip, true)
-			return
-	var strafe := _strafe_clip()
-	if strafe != "":
-		animation_player.speed_scale = 1.0
-		_play_native("ual/" + strafe, true)
-		return
-	if moving:
-		# `locomotion_speed_scale` lleva la velocidad REAL en m/s (contrato
-		# actualizado en player.gd/bot.gd): se elige el clip más lento que
-		# cubra esa velocidad y se escala su reproducción para no arrastrar
-		# los pies (antes: walk a 6,6 m/s con un clip de 1,32 m/s → 3× patinaje).
-		var speed := maxf(locomotion_speed_scale, 0.05)
-		var chosen: Dictionary = LOCOMOTION_CLIPS[0]
-		for candidate: Dictionary in LOCOMOTION_CLIPS:
-			if speed >= float(candidate["min_speed"]):
-				chosen = candidate
-		animation_player.speed_scale = clampf(speed / float(chosen["implied"]), 0.7, 3.1)
-		_play_native(str(chosen["clip"]), true)
-		return
-	_play_native("Idle_Gun", true)
-
-
-## El arma vive anclada al pecho y las dos manos van al arma. El pack modular
-## no trae ninguna pose de dos manos y sus brazos miden 0,42 m de alcance, así
-## que sostener el arma extendida es imposible: se sostiene cerca del torso,
-## como en la referencia, y el IK coloca muñeca y codo en el arma.
-## El arma se baja y se inclina mientras recarga; el brazo izquierdo suelta el
-## guardamanos y baja a por el cargador.
-func _update_reload_state(delta: float) -> void:
-	var weapon := _weapon()
-	var reloading := debug_force_reload
-	var switching := false
-	if weapon != null:
-		if not reloading:
-			reloading = float(weapon.get("reload_timer")) > 0.0
-		switching = float(weapon.get("switching_timer")) > 0.0
-	_reload_blend = move_toward(_reload_blend, 1.0 if reloading else 0.0, delta * 7.0)
-	# Cambio de arma: se baja y se vuelve a subir en lugar de aparecer de golpe.
-	_switch_blend = move_toward(_switch_blend, 1.0 if switching else 0.0, delta * 11.0)
-
-
-## Salto/aterrizaje: sin clip en el pack, las piernas se recogen al despegar.
-func _update_airborne_state(delta: float) -> void:
-	var actor := get_parent()
-	var airborne := false
-	if actor != null and actor is CharacterBody3D:
-		airborne = not (actor as CharacterBody3D).is_on_floor() and absf((actor as CharacterBody3D).velocity.y) > 0.6
-	_airborne_blend = move_toward(_airborne_blend, 1.0 if airborne else 0.0, delta * 5.0)
-	if _airborne_blend > 0.001:
-		_pose_airborne(_airborne_blend)
-
-
-func _pose_airborne(weight: float) -> void:
-	if skeleton == null:
-		return
-	for pair: Array in [["UpperLeg.L", -0.55], ["UpperLeg.R", -0.35], ["LowerLeg.L", 0.75], ["LowerLeg.R", 0.55]]:
-		var index := skeleton.find_bone(str(pair[0]))
-		if index < 0:
-			continue
-		var local := skeleton.get_bone_pose(index)
-		var extra := Basis(Vector3.RIGHT, float(pair[1]) * weight)
-		skeleton.set_bone_pose_rotation(index, (extra * local.basis).get_rotation_quaternion())
+	# Public setters only latch state; _process owns evaluation once per frame.
+	pass
 
 
 ## La cabeza sigue el punto de mira sin girar el cuerpo: el torso lo controla
@@ -1129,43 +1069,6 @@ func _update_head_look(delta: float) -> void:
 	skeleton.set_bone_pose_rotation(head, (yaw_basis * pitch_basis * local.basis).get_rotation_quaternion())
 
 
-## Flinch (torso atrás) y absorción de aterrizaje (flexión de piernas + bajada
-## del cuerpo). Se resuelven sobre los huesos que ya controlamos.
-func _update_reaction_pose(delta: float) -> void:
-	if skeleton == null:
-		return
-	var actor := get_parent()
-	if actor is CharacterBody3D:
-		var body := actor as CharacterBody3D
-		var on_floor := body.is_on_floor()
-		if on_floor and not _was_on_floor:
-			_land_dip = clampf(absf(_last_fall_speed) * 0.035, 0.0, 0.32)
-			if _land_dip > 0.06 and animation_player != null and animation_player.get_animation("ual/Land") != null:
-				_one_shot = "Land"
-		if not on_floor:
-			_last_fall_speed = body.velocity.y
-		_was_on_floor = on_floor
-	_flinch = move_toward(_flinch, 0.0, delta * 2.6)
-	_land_dip = move_toward(_land_dip, 0.0, delta * 1.6)
-	if _flinch <= 0.001 and _land_dip <= 0.001:
-		return
-	var chest := skeleton.find_bone("Chest")
-	if chest >= 0 and _flinch > 0.001:
-		var local := skeleton.get_bone_pose(chest)
-		var lean := Basis(Vector3.RIGHT, deg_to_rad(9.0 * _flinch))
-		skeleton.set_bone_pose_rotation(chest, (lean * local.basis).get_rotation_quaternion())
-	if _land_dip > 0.001:
-		for pair: Array in [["UpperLeg.L", -0.5], ["UpperLeg.R", -0.5], ["LowerLeg.L", 0.85], ["LowerLeg.R", 0.85]]:
-			var index := skeleton.find_bone(str(pair[0]))
-			if index < 0:
-				continue
-			var local := skeleton.get_bone_pose(index)
-			var bend := Basis(Vector3.RIGHT, float(pair[1]) * (_land_dip / 0.32))
-			skeleton.set_bone_pose_rotation(index, (bend * local.basis).get_rotation_quaternion())
-		if model_root != null:
-			model_root.position.y = -_land_dip * 0.5
-
-
 func _weapon() -> Node:
 	if _weapon_ref != null and is_instance_valid(_weapon_ref):
 		return _weapon_ref
@@ -1178,12 +1081,18 @@ func _weapon() -> Node:
 func _update_weapon_mount(delta: float) -> void:
 	if weapon_mount == null or skeleton == null:
 		return
+	if dead:
+		model_root.position.y = move_toward(model_root.position.y, DEATH_DROP, delta * 0.1)
+		weapon_mount.global_transform = skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.R")) * _death_weapon_local
+		if is_instance_valid(_left_fist): _left_fist.global_transform = skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.L")) * _death_hand_local
+		return
 	var chest := skeleton.find_bone(CHEST_BONE)
 	if chest < 0:
 		return
 	var config: Dictionary = WEAPON_CONFIG.get(equipped_weapon_id, {})
-	var target_blend := 1.0 if (aiming or firing) else 0.0
-	_aim_blend = move_toward(_aim_blend, target_blend, delta * AIM_BLEND_SPEED)
+	var _aim_blend := motion.aim_weight if motion != null else 0.0
+	var _reload_blend := motion.reload_weight if motion != null else 0.0
+	var _switch_blend := motion.switch_weight if motion != null else 0.0
 	var ready_offset: Vector3 = config.get("ready", Vector3.ZERO)
 	var aim_offset: Vector3 = config.get("aim", ready_offset)
 	var offset := ready_offset.lerp(aim_offset, _aim_blend)
@@ -1191,6 +1100,12 @@ func _update_weapon_mount(delta: float) -> void:
 		offset += Vector3(0.03, -0.13, -0.05) * _reload_blend
 	if _switch_blend > 0.001:
 		offset += Vector3(0.0, -0.10, -0.04) * _switch_blend
+	if not _mount_initialized:
+		_mount_offset = offset
+		_mount_initialized = true
+	_mount_offset = _mount_offset.lerp(offset, 1.0 - exp(-24.0 * delta))
+	offset = _mount_offset
+	if motion != null: offset.z -= motion.recoil * 0.018
 	var chest_global := skeleton.global_transform * skeleton.get_bone_global_pose(chest)
 	# Orientación del arma = ejes del personaje, no del hueso Chest (el hueso
 	# lleva su propio roll y dejaba el arma vertical). La posición sí sigue al
@@ -1200,6 +1115,7 @@ func _update_weapon_mount(delta: float) -> void:
 		basis = basis * Basis(Vector3.RIGHT, deg_to_rad(-16.0 * _reload_blend))
 	if _switch_blend > 0.001:
 		basis = basis * Basis(Vector3.RIGHT, deg_to_rad(-11.0 * _switch_blend))
+	if motion != null: basis *= Basis(Vector3.RIGHT, deg_to_rad(-motion.recoil * 1.8))
 	weapon_mount.global_transform = Transform3D(basis, chest_global.origin + basis * offset)
 
 
@@ -1209,19 +1125,32 @@ func _solve_arms_ik() -> void:
 	var config: Dictionary = WEAPON_CONFIG.get(equipped_weapon_id, {})
 	var grip_world := weapon_mount.global_transform * (config.get("grip", Vector3.ZERO) as Vector3)
 	var foregrip_world := weapon_mount.global_transform * (config.get("foregrip", Vector3.ZERO) as Vector3)
-	_solve_arm_ik("R", grip_world, Vector3(-0.55, -1.0, -0.30))
-	if _reload_blend > 0.35 and animation_player != null \
-			and animation_player.get_animation("ual/Reload") != null:
-		# El clip de recarga ya mueve ambos brazos: no los sobreescribas.
-		return
-	if _reload_blend > 0.35:
-		# La mano izquierda va al cargador (cadera) mientras recarga.
-		var chest_index := skeleton.find_bone(CHEST_BONE)
-		var chest_global := skeleton.global_transform * skeleton.get_bone_global_pose(chest_index)
-		var hip_target := chest_global * Vector3(0.16, -0.42, 0.10)
-		_solve_arm_ik("L", hip_target, Vector3(0.55, -1.0, -0.30))
-		return
-	_solve_arm_ik("L", foregrip_world, Vector3(0.55, -1.0, -0.30))
+	var pole_r: Vector3 = config.get("pole_r", Vector3(-0.55, -1.0, -0.30))
+	var pole_l: Vector3 = config.get("pole_l", Vector3(0.55, -1.0, -0.30))
+	_solve_arm_ik("R", grip_world, pole_r)
+	# The authored hand path is a continuous offset from support grip. Both
+	# arms retain the same solver and elbow plane throughout the whole reload.
+	var target := foregrip_world
+	if motion != null and motion.reload_weight > 0.0:
+		var path := reload_hand_offset(motion.reload_phase)
+		target += weapon_mount.global_basis * path * motion.reload_weight
+	_solve_arm_ik("L", target, pole_l)
+	if is_instance_valid(_left_fist): _left_fist.global_position = target
+	if is_instance_valid(_right_fist): _right_fist.global_position = grip_world
+
+
+static func reload_hand_offset(t: float) -> Vector3:
+	# Anticipation, release, magazine, pouch, insert, seat, return, settle.
+	# Timing is normalized to WeaponDefinition.reload_time; no ammo events here.
+	var keys: Array = RELOAD_HAND_KEYS
+	for i in range(keys.size() - 1):
+		var a: Array = keys[i]
+		var b: Array = keys[i + 1]
+		if t <= float(b[0]):
+			var av := Vector3(a[1][0], a[1][1], a[1][2])
+			var bv := Vector3(b[1][0], b[1][1], b[1][2])
+			return av.lerp(bv, smoothstep(float(a[0]), float(b[0]), t))
+	return Vector3.ZERO
 
 
 func _solve_arm_ik(side: String, target_world: Vector3, pole: Vector3) -> void:
@@ -1253,11 +1182,12 @@ func _two_bone_ik(root_idx: int, mid_idx: int, end_idx: int, target: Vector3, po
 	if l1 <= 0.0001 or l2 <= 0.0001:
 		return
 	var to_target := target - s
-	var d := clampf(to_target.length(), 0.001, l1 + l2 - 0.001)
+	var d := clampf(to_target.length(), absf(l1 - l2) + 0.005, l1 + l2 - 0.012)
 	var dir := to_target / maxf(to_target.length(), 0.0001)
+	target = s + dir * d
 	var axis := dir.cross(pole.normalized())
 	if axis.length() < 0.001:
-		axis = dir.cross(Vector3.RIGHT)
+		axis = dir.cross(Vector3.RIGHT if absf(dir.x) < 0.9 else Vector3.UP)
 	axis = axis.normalized()
 	var cos_a := clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0)
 	var elbow_dir := dir.rotated(axis, acos(cos_a))
@@ -1301,44 +1231,6 @@ func _rotation_between(from: Vector3, to: Vector3) -> Quaternion:
 
 
 ## Clip de desplazamiento lateral según la velocidad local del actor.
-func _strafe_clip() -> String:
-	if not moving:
-		return ""
-	var actor := get_parent() as Node3D
-	if actor == null:
-		return ""
-	var velocity := Vector3.ZERO
-	if actor is CharacterBody3D:
-		velocity = (actor as CharacterBody3D).velocity
-	else:
-		return ""
-	if velocity.length() < 1.2:
-		return ""
-	var local := actor.global_transform.basis.inverse() * velocity
-	if absf(local.x) < absf(local.z) * 1.2:
-		return ""
-	var clip := "StrafeRight" if local.x > 0.0 else "StrafeLeft"
-	return clip if animation_player != null and animation_player.get_animation("ual/" + clip) != null else ""
-
-
-func _play_native(clip_name: String, loop: bool) -> void:
-	if animation_player == null:
-		return
-	var animation := animation_player.get_animation(clip_name)
-	if animation == null:
-		# Fallback honesto: si el pack no trae el clip, no se inventa pose.
-		if clip_name == "Idle_Gun":
-			animation = animation_player.get_animation("Idle")
-			clip_name = "Idle"
-		if animation == null:
-			return
-	if _last_locomotion_clip == clip_name and animation_player.is_playing():
-		return
-	animation.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	animation_player.play(clip_name, 0.14)
-	_last_locomotion_clip = clip_name
-
-
 func _refresh_weapon() -> void:
 	if weapon_mount == null:
 		return

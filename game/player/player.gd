@@ -174,6 +174,7 @@ func _die(killer: Node) -> void:
 	if not is_alive:
 		return
 	is_alive = false
+	if visual != null: visual.play_death()
 	input_enabled = false
 	visible = false
 	collision_layer = 0
@@ -197,6 +198,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	velocity = Vector3.ZERO
 	health = max_health
 	is_alive = true
+	if visual != null: visual.revive()
 	input_enabled = true
 	visible = true
 	spawn_immunity = immunity
