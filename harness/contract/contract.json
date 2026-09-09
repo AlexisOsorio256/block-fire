@@ -3,7 +3,11 @@
   "validatedAgainst": {
     "dsh": "0.1.2-rc.1",
     "at": "2026-09-09",
-    "model": "deepseek-v4.1-flash-expires-on-0910"
+    "model": "deepseek-v4.1-flash-expires-on-0910",
+    "verifiedCandidates": [
+      "0.1.5-alpha.2"
+    ],
+    "verifiedAt": "2026-09-09"
   },
   "spaces": {
     "build": {
