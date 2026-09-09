@@ -1,0 +1,5 @@
+name: BLOCKFIRE
+description: >-
+  Agente de ingeniería BLOCKFIRE. Contexto progresivo, tools/bf como punto de
+  entrada, evidencia verificable y capacidades pesadas (Blender MCP) activables
+  bajo demanda en vez de inyectadas siempre.
