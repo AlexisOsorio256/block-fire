@@ -100,7 +100,13 @@ func _save() -> void:
 func _apply_audio() -> void:
 	var master: float = clampf(float(values.get("master_volume", 0.85)), 0.0, 1.0)
 	var sfx: float = clampf(float(values.get("sfx_volume", 0.9)), 0.0, 1.0)
+	var sfx_db := linear_to_db(maxf(sfx, 0.0001))
 	if AudioServer.get_bus_count() > 0:
 		AudioServer.set_bus_volume_db(0, linear_to_db(maxf(master, 0.0001)))
 	if AudioServer.get_bus_index("SFX") >= 0:
-		AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(sfx, 0.0001)))
+		AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), sfx_db)
+	# El bus UI lleva feedback de combate (markers de hit/kill del HUD): sigue
+	# al volumen SFX para que el ajuste gobierne todo el combate, no solo el 3D.
+	# Ambience no tiene ajuste ni emisor actual: conserva su -4 dB del layout.
+	if AudioServer.get_bus_index("UI") >= 0:
+		AudioServer.set_bus_volume_db(AudioServer.get_bus_index("UI"), sfx_db)

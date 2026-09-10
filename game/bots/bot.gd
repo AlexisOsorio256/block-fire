@@ -261,10 +261,10 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 	if match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
 	if health <= 0.0:
-		_play_feedback("res://assets/sfx/sfx_death.ogg")
+		_play_feedback("death")
 		_die(source)
 	else:
-		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+		_play_feedback("hurt")
 		if visual != null:
 			visual.flinch(clampf(amount / 35.0, 0.35, 1.2))
 	return true
@@ -316,10 +316,10 @@ func preferred_weapon_index() -> int:
 			return index
 	return 0
 
-func _play_feedback(path: String) -> void:
+func _play_feedback(sound_key: String) -> void:
 	if feedback_audio == null:
 		return
-	feedback_audio.stream = load(path) as AudioStream
+	feedback_audio.stream = CombatAudio.stream(sound_key)
 	feedback_audio.play()
 
 func get_team() -> String:

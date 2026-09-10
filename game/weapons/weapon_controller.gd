@@ -517,13 +517,13 @@ func _play_shot(weapon_id: String) -> void:
 	if shot_audio == null:
 		return
 	var paths: Dictionary = {
-		"rifle": "res://assets/sfx/gshot_rifle.ogg",
-		"pistol": "res://assets/sfx/gshot_pistol.ogg",
-		"shotgun": "res://assets/sfx/gshot_shotgun.ogg",
-		"smg": "res://assets/sfx/gshot_rifle.ogg"
+		"rifle": "shot_rifle",
+		"pistol": "shot_pistol",
+		"shotgun": "shot_shotgun",
+		"smg": "shot_smg"
 	}
 	if not shot_streams.has(weapon_id):
-		shot_streams[weapon_id] = load(str(paths.get(weapon_id, ""))) as AudioStream
+		shot_streams[weapon_id] = CombatAudio.stream(str(paths.get(weapon_id, "")))
 	shot_audio.stream = shot_streams[weapon_id]
 	# Sin sample propio de SMG en el repo: comparte el de rifle una octava de
 	# cadencia más rápido y medio tono más grave (no acelerado-agudo), con un
@@ -559,8 +559,8 @@ func _play_shot(weapon_id: String) -> void:
 func _play_reload(phase: String) -> void:
 	if reload_audio == null:
 		return
-	var path := "res://assets/sfx/reload_start.ogg" if phase == "start" else "res://assets/sfx/reload_end.ogg"
-	reload_audio.stream = load(path) as AudioStream
+	var path := "reload_start" if phase == "start" else "reload_end"
+	reload_audio.stream = CombatAudio.stream(path) as AudioStream
 	reload_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.05)
 	CombatAudio.configure_falloff(reload_audio, 22.0, 2.4)
 	reload_audio.play()
@@ -568,7 +568,7 @@ func _play_reload(phase: String) -> void:
 func _play_switch() -> void:
 	if switch_audio == null:
 		return
-	switch_audio.stream = load("res://assets/sfx/switch.ogg") as AudioStream
+	switch_audio.stream = CombatAudio.stream("switch") as AudioStream
 	switch_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.05)
 	CombatAudio.configure_falloff(switch_audio, 22.0, 2.4)
 	switch_audio.play()
@@ -576,7 +576,7 @@ func _play_switch() -> void:
 func _play_empty() -> void:
 	if empty_audio == null:
 		return
-	empty_audio.stream = load("res://assets/sfx/empty.ogg") as AudioStream
+	empty_audio.stream = CombatAudio.stream("empty") as AudioStream
 	empty_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.06)
 	CombatAudio.configure_falloff(empty_audio, 18.0, 2.0)
 	empty_audio.play()
@@ -585,7 +585,7 @@ func _play_impact_once() -> void:
 	if impact_played_this_shot or impact_audio == null:
 		return
 	impact_played_this_shot = true
-	impact_audio.stream = load("res://assets/sfx/sfx_impact_wall.ogg") as AudioStream
+	impact_audio.stream = CombatAudio.stream("impact_wall") as AudioStream
 	impact_audio.pitch_scale = CombatAudio.jitter_pitch(1.0, 0.07)
 	CombatAudio.configure_falloff(impact_audio, 30.0, 3.0)
 	impact_audio.play()

@@ -6,9 +6,10 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 ## Instantánea
 
 - **HEAD**: `7f695d9` (unifica la tabla de módulos del armario).
-- **Modelo de la última sesión**: `GLM-5.3-Flash`.
-- **Tests verdes**: `tools/bf test` → smoke 210 checks PASS, animation_layers
-  PASS. `tools/bf qa touch` → PASS (13 checks).
+- **Modelo de la última sesión**: `muse-spark`.
+- **Tests verdes**: `tools/bf test` → smoke 296 checks PASS, animation_layers
+  PASS. `tools/bf qa touch` → PASS (13 checks). `tools/bf qa fx` → OK
+  (idéntico a base).
 - **Tests rojos**: ninguno.
 - **Pie deslizante** (peor fotograma de aterrizaje): walk 0.16 · sprint 0.01 ·
   strafe 0.01 m/s (presupuestos 0.40 / 1.20 / 0.55).
@@ -33,8 +34,10 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 1. **`OperatorVisual` sigue siendo el archivo más grande** (1331 líneas).
    Candidatos de extracción ya identificados y ordenados en
    `docs/ARCHITECTURE.md` → no partirlo a lo bruto.
-2. **Audio sin dueño ni suite**: buses en `.tres`, volúmenes en SettingsStore y
-   rutas de samples dispersas; cero tests.
+
+Resuelto: audio con dueño y suite (`CombatAudio.SAMPLES` + caché, buses
+`SFX`/`UI` gobernados por `SettingsStore`, contrato en `tests/smoke.gd`):
+rutas dispersas centralizadas y el ajuste SFX ya afecta al feedback de UI.
 
 Resuelto: la tabla de módulos del armario vive solo en
 `CosmeticCatalog.SLOT_MODULES` (incluye los módulos sin prenda publicada,

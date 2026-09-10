@@ -18,6 +18,7 @@ func _run() -> void:
 	await _test_player_and_operator_contracts()
 	_test_touch_contracts()
 	_test_settings_layout_contract()
+	_test_audio_contract()
 	_test_control_editor_contract()
 	_test_consolidation_contracts()
 	await _test_navigation_contract()
@@ -451,6 +452,57 @@ func _test_settings_layout_contract() -> void:
 	controls.reset_layout()
 	get_root().remove_child(controls)
 	controls.free()
+
+func _ensure_audio_buses() -> void:
+	## En headless `--script` el layout de buses del proyecto no se aplica
+	## (solo existe Master): la suite levanta los buses que el juego declara.
+	for bus_name: String in [CombatAudio.BUS_SFX, CombatAudio.BUS_UI]:
+		if AudioServer.get_bus_index(bus_name) < 0:
+			AudioServer.add_bus()
+			AudioServer.set_bus_name(AudioServer.get_bus_count() - 1, bus_name)
+			AudioServer.set_bus_send(AudioServer.get_bus_index(bus_name), "Master")
+
+func _test_audio_contract() -> void:
+	## CombatAudio es el dueño único: buses, catálogo, caché y mezcla.
+	_check(CombatAudio.BUS_SFX == "SFX" and CombatAudio.BUS_UI == "UI", "audio buses are named once")
+	_ensure_audio_buses()
+	_check(AudioServer.get_bus_index(CombatAudio.BUS_SFX) >= 0, "SFX bus exists")
+	_check(AudioServer.get_bus_index(CombatAudio.BUS_UI) >= 0, "UI bus exists")
+	_check(CombatAudio.SAMPLES.size() >= 18, "audio catalog covers every combat sample")
+	for sound_key: String in CombatAudio.SAMPLES:
+		var sample_path := str(CombatAudio.SAMPLES[sound_key])
+		_check(sample_path.begins_with("res://assets/sfx/") and sample_path.ends_with(".ogg"),
+			"catalog entry points at sfx: " + sound_key)
+		_check(ResourceLoader.exists(sample_path), "audio sample exists: " + sound_key)
+		var via_catalog: AudioStream = CombatAudio.stream(sound_key)
+		_check(via_catalog != null, "audio sample loads: " + sound_key)
+		_check(via_catalog != null and is_same(via_catalog, CombatAudio.stream(sound_key)),
+			"audio sample is cached: " + sound_key)
+	_check(CombatAudio.stream("no_existe") == null, "unknown audio key stays silent")
+	# Matemáticas perceptuales intactas tras la extracción del catálogo.
+	_check(absf(CombatAudio.tail_volume_db(-2.0) - (-9.5)) < 0.001, "tail layer sits below the main shot")
+	var jittered: float = CombatAudio.jitter_pitch(1.0)
+	_check(jittered >= 1.0 - CombatAudio.PITCH_JITTER and jittered <= 1.0 + CombatAudio.PITCH_JITTER,
+		"pitch jitter stays perceptual")
+	CombatAudio.configure_falloff(null, 10.0, 2.0)
+	_check(true, "falloff setup tolerates a missing player")
+	# El ajuste SFX gobierna el 3D y el feedback de UI (hit/kill del HUD).
+	var settings: Node = get_root().get_node("SettingsStore")
+	var master_before: float = float(settings.get_value("master_volume", 0.85))
+	var sfx_before: float = float(settings.get_value("sfx_volume", 0.9))
+	settings.set_value("sfx_volume", 0.0)
+	var muted_db := linear_to_db(0.0001)
+	_check(absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("UI")) - muted_db) < 0.5,
+		"SFX setting mutes UI feedback")
+	settings.set_value("sfx_volume", 0.9)
+	_check(absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("UI")) - AudioServer.get_bus_volume_db(AudioServer.get_bus_index("SFX"))) < 0.001,
+		"UI feedback follows the SFX bus")
+	settings.set_value("master_volume", master_before)
+	settings.set_value("sfx_volume", sfx_before)
+	# Ningún sistema escribe rutas de samples: una sola fuente de verdad.
+	for source_file: String in ["res://game/weapons/weapon_controller.gd", "res://game/player/player.gd", "res://game/bots/bot.gd", "res://game/ui/hud.gd"]:
+		_check(not FileAccess.get_file_as_string(source_file).contains("assets/sfx/"),
+			"no dispersed sample paths in " + source_file.get_file())
 
 func _test_control_editor_contract() -> void:
 	var controls := BlockfireMobileControls.new()

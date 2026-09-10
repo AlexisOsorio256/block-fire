@@ -34,7 +34,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | Arena | `game/world/arena.gd` | `build()` del match | geometría, spawns, navegación | `tools/test.sh`, `qa_perf`, `--qa-ffa` | selección de spawn, pathing de bots |
 | CombatFX | `game/fx/combat_fx.gd` | `muzzle_burst/tracer/impact/shell_eject` | partículas y decals con pool | `qa_fx_lab` | posición de boca (eso es `muzzle_marker`) |
 | CameraFX | `game/fx/camera_fx.gd` | `CameraFX.kick(...)` | trauma y FOV punch | `qa_shot` (visual) | posición/pivote de cámara (eso es `player.gd`) |
-| Audio | **sin dueño único** | llamadas ad hoc | buses en `default_bus_layout.tres`, volúmenes en SettingsStore | sin suite (`SIN VERIFICAR`) | timing de gameplay |
+| Audio | `game/audio/combat_audio.gd` (dueño único: catálogo `SAMPLES`, caché, mezcla) + `game/settings_store.gd` (volúmenes) | claves lógicas (`stream("hit")`), ajustes `master/sfx` | buses `SFX`/`UI` en `default_bus_layout.tres`, samples en `assets/sfx/` | `tools/test.sh` (smoke: `_test_audio_contract`) | timing de gameplay |
 
 ## Dónde se configura cada cosa
 
@@ -49,6 +49,11 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
   en `tests/animation_layers.gd`.
 - **Skins de arma**: `game/data/weapon_skin.gd` (`TINTS`). El lobby deriva su
   lista con `WeaponSkin.skin_names()`; no la dupliques.
+- **Audio**: samples en `CombatAudio.SAMPLES` (única fuente de verdad; nadie
+  escribe literales `res://assets/sfx/...`), buses en
+  `game/audio/default_bus_layout.tres`, volúmenes (`master` + `sfx`, donde el
+  bus `UI` de feedback sigue a `sfx`) en `SettingsStore._apply_audio()`.
+  `ui.ogg` y `sfx_kill_banner.ogg` están reservados sin emisor.
 - **Harness BLOCKFIRE** (espacios BUILD/CREATOR, tools, skills, capacidades JIT,
   política de permisos, Update Center): `harness/`. Dueño de la frontera con
   DeepSeek Harness: `harness/ARCHITECTURE.md`; uso: `harness/README.md`. Arranque

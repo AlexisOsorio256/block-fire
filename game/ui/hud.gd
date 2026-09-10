@@ -581,7 +581,7 @@ func show_hit_feedback(amount: float, headshot: bool) -> void:
 	if _hit_marker != null:
 		_hit_marker.queue_redraw()
 	_spawn_damage_popup(amount, headshot)
-	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_hit.ogg")
+	_play_ui_sound("headshot" if headshot else "hit")
 
 func show_kill(headshot: bool = false) -> void:
 	show_banner("HEADSHOT" if headshot else "ELIMINACIÓN", 0.8)
@@ -593,12 +593,12 @@ func show_kill(headshot: bool = false) -> void:
 	_push_kill_feed("TÚ  ▸  %s" % ("HEADSHOT" if headshot else "ENEMIGO"),
 		Color("#ffd35f") if headshot else Color("#eaf6ff"))
 	_hit_stop(0.05, 0.82)
-	_play_ui_sound("res://assets/sfx/sfx_headshot.ogg" if headshot else "res://assets/sfx/sfx_kill.ogg")
+	_play_ui_sound("headshot" if headshot else "kill")
 
-func _play_ui_sound(path: String) -> void:
+func _play_ui_sound(sound_key: String) -> void:
 	if ui_audio == null:
 		return
-	ui_audio.stream = load(path) as AudioStream
+	ui_audio.stream = CombatAudio.stream(sound_key)
 	ui_audio.play()
 
 func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[WeaponDefinition], equipped: int) -> void:

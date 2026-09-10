@@ -110,7 +110,7 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	if _jump_pressed() and is_on_floor():
 		velocity.y = 8.4
-		_play_feedback("res://assets/sfx/jump.ogg")
+		_play_feedback("jump")
 	if _crouch_pressed():
 		crouched = not crouched
 		_update_crouch_visual()
@@ -164,10 +164,10 @@ func take_damage(amount: float, source: Node, headshot: bool = false) -> bool:
 	if match_context != null and match_context.has_method("register_damage"):
 		match_context.register_damage(self, amount, headshot, source)
 	if health <= 0.0:
-		_play_feedback("res://assets/sfx/sfx_death.ogg")
+		_play_feedback("death")
 		_die(source)
 	else:
-		_play_feedback("res://assets/sfx/sfx_hurt.ogg")
+		_play_feedback("hurt")
 		if visual != null:
 			visual.flinch(clampf(amount / 35.0, 0.35, 1.2))
 	return true
@@ -215,7 +215,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	assist_break_timer = 0.0
 	camera_recoil = 0.0
 	last_damage_headshot = false
-	_play_feedback("res://assets/sfx/respawn.ogg")
+	_play_feedback("respawn")
 
 func break_spawn_immunity() -> void:
 	spawn_immunity = 0.0
@@ -233,10 +233,10 @@ func apply_weapon_recoil(amount: float, ads: bool) -> void:
 	# Solo toca rotation/h_offset/v_offset de la cámara, nunca el pivot.
 	CameraFX.kick(self, amount, ads)
 
-func _play_feedback(path: String) -> void:
+func _play_feedback(sound_key: String) -> void:
 	if feedback_audio == null:
 		return
-	feedback_audio.stream = load(path) as AudioStream
+	feedback_audio.stream = CombatAudio.stream(sound_key)
 	feedback_audio.play()
 
 func _update_footsteps(delta: float) -> void:
@@ -248,7 +248,7 @@ func _update_footsteps(delta: float) -> void:
 	if step_timer > 0.0:
 		return
 	step_timer = lerpf(0.48, 0.27, clampf(horizontal_speed / sprint_speed, 0.0, 1.0))
-	_play_feedback("res://assets/sfx/step.ogg" if int(Time.get_ticks_msec() / 100) % 2 == 0 else "res://assets/sfx/step2.ogg")
+	_play_feedback("step" if int(Time.get_ticks_msec() / 100) % 2 == 0 else "step2")
 
 func get_team() -> String:
 	return team
