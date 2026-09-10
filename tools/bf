@@ -17,7 +17,8 @@ cd "$ROOT" || exit 1
 GODOT_BIN="${BLOCKFIRE_GODOT:-}"
 find_godot() {
 	if [ -n "$GODOT_BIN" ] && [ -x "$GODOT_BIN" ]; then echo "$GODOT_BIN"; return 0; fi
-	for candidate in "$(command -v godot 2>/dev/null || true)" "$(command -v godot4 2>/dev/null || true)"; do
+	for candidate in "$(command -v godot 2>/dev/null || true)" "$(command -v godot4 2>/dev/null || true)" \
+			"$HOME/.local/share/blockfire-tools/godot-4.7.2/godot"; do
 		if [ -n "$candidate" ] && [ -x "$candidate" ]; then echo "$candidate"; return 0; fi
 	done
 	return 1
