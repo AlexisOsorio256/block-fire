@@ -72,6 +72,9 @@ func _apply_time(t: float) -> void:
 		_player.play(name)
 		_player.seek(t, true)
 		_player.pause()
+		# Seek composes the authored pose, but processing is disabled in this lab.
+		# Mount the weapon after that pose without solving or masking the arms.
+		(_subject as OperatorVisual)._update_weapon_mount(1.0)
 
 
 func _build() -> void:

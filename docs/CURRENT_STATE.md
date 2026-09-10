@@ -23,13 +23,27 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 
 ## P0 visual
 
-Resuelto: `SprintFwd`/`StrafeLeft` ya muestran agarre de rifle creíble en sus
+En la base `4be6d19`, `SprintFwd`/`StrafeLeft` recibieron brazos de rifle en sus
 fuentes Blender sin depender del IK de runtime (horneado IK-temporal en
 `tools/bake_locomotion_arms.py`: solo `UpperArm`/`LowerArm`, hombros/muñecas y
 piernas intactos; bucle 0.0, velocidades 7.01/4.79 m/s, reach <1). Runtime con
-IK pixel-idéntico a base (diff medio 0.02/255). `ReloadRifle`/`ReloadPistol`
+IK de aquella entrega pixel-idéntico a su base (diff medio 0.02/255). `ReloadRifle`/`ReloadPistol`
 (CRAFT_LOCKED) intactos. Verificación: `qa_anim_lab` sin IK (brazos al frente,
 manos juntas) + `qa_motion` con IK + `probe-noik-hold`.
+
+Pulido posterior sobre `4be6d19`: sprint demasiado erguido en runtime.
+`SprintFwd.blend` ajustado en Blender interactivo: abdomen +12°, cuello −10°,
+contrarrotación de brazos para conservar la orientación de agarre. Solo cambian
+las rotaciones de esos cuatro huesos; las demás curvas, piernas y tiempos son
+idénticos a la base. Export y reimport Godot ejecutados. Comparación visual de
+`qa motion --mode=locomotion --duration=8` antes/después (incluidas transiciones
+walk→sprint→strafe) y `qa anim` lateral sin IK: inclinación más legible, mirada
+al frente. El laboratorio actualiza el montaje tras cada seek y deja de mostrar
+el arma en los pies. Capturas runtime: `captures/anim-polish/`.
+`tools/bf test`: 296 checks + animation_layers PASS; foot slide 0.16/0.01/0.01
+m/s. `tools/bf qa reload`: PASS, aunque el probe avisa de recursos vivos al
+salir. Pendiente visual: manos de apoyo toscas y rigidez del strafe.
+Android de este pulido: SIN VERIFICAR (sesión limitada a animación en Linux).
 
 ## P0 técnico
 
