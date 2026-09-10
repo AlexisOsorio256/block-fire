@@ -5,16 +5,15 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 
 ## Instantánea
 
-- **HEAD**: `7f695d9` (unifica la tabla de módulos del armario).
+- **HEAD**: `0633ac6` (base de sesión; el P0 visual de locomoción se cierra en este árbol).
 - **Modelo de la última sesión**: `muse-spark`.
 - **Tests verdes**: `tools/bf test` → smoke 296 checks PASS, animation_layers
-  PASS. `tools/bf qa touch` → PASS (13 checks). `tools/bf qa fx` → OK
-  (idéntico a base).
+  PASS (pie deslizante walk 0.16 · sprint 0.01 · strafe 0.01 m/s, presupuestos
+  0.40 / 1.20 / 0.55). `tools/bf qa touch` → PASS. `tools/bf build android` →
+  APK debug firmado OK (84 M). IK de brazos idéntico a base (`probe-ik-quality`:
+  rifle STRAFE 54.8/118.1/4.6/0.829/0.075, clavado).
 - **Tests rojos**: ninguno.
-- **Pie deslizante** (peor fotograma de aterrizaje): walk 0.16 · sprint 0.01 ·
-  strafe 0.01 m/s (presupuestos 0.40 / 1.20 / 0.55).
-- **Android**: VERIFIED en SM-S901E (`R5CT403MXZJ`) — APK debug construido,
-  instalado, lanzado y grabado con input real.
+- **Android en dispositivo**: SIN VERIFICAR (sin teléfono conectado; APK construido, no instalado).
 - **Personaje activo**: `assets/models/skins/operator_adult_lod.glb`.
 - **Armas activas**: `rifle`, `pistol`, `shotgun`, `smg`
   (`game/data/weapons/*.tres`).
@@ -24,10 +23,13 @@ uses para decidir. Mapa de dueños y contratos: `docs/ARCHITECTURE.md`.
 
 ## P0 visual
 
-1. **Arms de los clips de locomotion**: el generador deja los brazos en reposo
-   (T-pose) y el IK de runtime los sustituye. En Blender el viewport de
-   `SprintFwd`/`StrafeLeft` no muestra una pose de arma creíble. No afecta al
-   runtime, sí al juicio visual y a cualquier export sin IK.
+Resuelto: `SprintFwd`/`StrafeLeft` ya muestran agarre de rifle creíble en sus
+fuentes Blender sin depender del IK de runtime (horneado IK-temporal en
+`tools/bake_locomotion_arms.py`: solo `UpperArm`/`LowerArm`, hombros/muñecas y
+piernas intactos; bucle 0.0, velocidades 7.01/4.79 m/s, reach <1). Runtime con
+IK pixel-idéntico a base (diff medio 0.02/255). `ReloadRifle`/`ReloadPistol`
+(CRAFT_LOCKED) intactos. Verificación: `qa_anim_lab` sin IK (brazos al frente,
+manos juntas) + `qa_motion` con IK + `probe-noik-hold`.
 
 ## P0 técnico
 
@@ -84,5 +86,5 @@ con `harness/test.sh`; una sesión real de BUILD/CREATOR sigue SIN VERIFICAR.
 
 ## Siguiente tarea recomendada
 
-Dar brazos creíbles a `SprintFwd`/`StrafeLeft` en Blender (mismo método que la
-recarga: IK temporal + bake) para que el source se pueda juzgar sin runtime.
+P0 técnico pendiente (`OperatorVisual`, 1331 líneas): partir por los candidatos
+de extracción ordenados en `docs/ARCHITECTURE.md`, no a lo bruto.
