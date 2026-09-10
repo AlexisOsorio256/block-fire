@@ -18,7 +18,11 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |-
+    # Dual-key persona, one content, two upstream shapes: 0.1.2-rc.1 reads
+    # `text`, 0.1.5-alpha.2 requires `prefix` — each schema accepts the other
+    # key, so one anchor serves the running version and the candidate (and
+    # rollback keeps working in both directions).
+    text: &persona |-
       Eres el agente de ingeniería de BLOCKFIRE sobre BLOCKFIRE Harness. Directorio de trabajo: {{cwd}}.
 
       La tarjeta operativa (AGENTS.md) ya está cargada y posee los hechos del proyecto y su procedimiento; no los repitas de memoria. Esta persona posee solo el contrato del harness.
@@ -28,6 +32,7 @@
       - Contexto JIT: carga una skill cuando la tarea encaje, no antes; las capacidades pesadas (bf_capability) están apagadas a propósito.
       - commit + push están autorizados al cerrar una sesión verificada: no pidas permiso. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
       - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
+    prefix: *persona
 
 # The space's own skill catalog. `customSkillDirs` resolves against this preset
 # directory, so the skills travel with the space.

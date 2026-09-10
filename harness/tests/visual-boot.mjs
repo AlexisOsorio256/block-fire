@@ -13,6 +13,10 @@ import { join, resolve } from 'node:path'
 
 const harness = fileURLToPath(new URL('../', import.meta.url))
 const repo = resolve(harness, '..')
+// NOTE: this resolution runs BEFORE DSH_HOME is redirected to the temp home
+// below, so it follows the REAL install's ACTIVE pin — after an `activate`,
+// boots here run the candidate. Pin this boot to another version explicitly:
+//   BLOCKFIRE_DSH_BIN=<bin> BLOCKFIRE_INSTALL_MODULES=<modules> node tests/visual-boot.mjs
 const runtime = await import(pathToFileURL(join(harness, 'lib/runtime.mjs')).href).then(m => m.resolveRuntime())
 if (!runtime.ok) throw new Error(runtime.error)
 const modules = runtime.nodeModules
@@ -39,7 +43,12 @@ const load = file => loadOverlayPatches('blockfire-visual', file)
 const ownPatch = load(join(harness, 'host/patch.cordis.yml'))
 for (const patch of ownPatch) for (const row of patch.insert ?? []) {
   if (row.id === 'blockfire-guard') row.name = pathToFileURL(join(harness, 'host/guard.js')).href
-  if (row.id === 'blockfire-update-center') row.name = pathToFileURL(join(harness, 'web/lib/index.js')).href
+  if (row.id === 'blockfire-update-center') {
+    row.name = pathToFileURL(join(harness, 'web/lib/index.js')).href
+    // BF_UPDATE_FAKE_REPO=<dir with harness/bin/update.mjs>: drive the panel
+    // against a hermetic updater (fixture scripts) instead of the real one.
+    if (process.env.BF_UPDATE_FAKE_REPO) row.config = { repoRoot: process.env.BF_UPDATE_FAKE_REPO }
+  }
 }
 const patches = [
   ...load(join(modules, '@deepseek-ai/dsh-base/cordis.patch.yml')),
@@ -62,10 +71,15 @@ if (measureDir !== undefined || process.env.BF_SKIP_FIXTURE !== '1') {
   await ctx.workspaceRegistry.create(measureDir ?? repo, 'BlockFire')
 }
 if (process.env.BF_SKIP_FIXTURE !== '1') {
-const sessionId = '0b5e5ee1-7a70-4a12-9a3c-3f01c5a4b9a1'
+// The prefixed shape the current runtime issues (workspace registry, log dirs
+// and the projection cache all key on it) — the delete route must accept it.
+const sessionId = 'session-0b5e5ee1-7a70-4a12-9a3c-3f01c5a4b9a1'
 const persistence = ctx.get('sessionPersistence')
 const now = Date.now()
-const meta = { version: 0, id: sessionId, cwd: repo, createdAt: now, agentPreset: 'build', delegationDepth: 0 }
+// No `version` in the meta: the runtime stamps its current session format —
+// 0.1.5 rejects an explicit 0 (encodeCurrent requires the chain's current
+// version). Same shape mount.mjs uses, so this boots on both pinned versions.
+const meta = { id: sessionId, cwd: repo, createdAt: now, agentPreset: 'build', delegationDepth: 0 }
 await persistence.create(meta)
 // Real event shapes from a recorded BUILD session (first steps), rebased —
 // guarantees the log passes the gateway's stored-session validation.

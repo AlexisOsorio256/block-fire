@@ -152,7 +152,11 @@ async function check() {
   const versions = Object.keys(times)
     .filter((key) => key !== 'created' && key !== 'modified')
     .sort(compareVersions)
-  const newer = versions.filter((version) => installed === 'unknown' || compareVersions(version, installed) > 0)
+  // Newest first: the first entry is the natural Update target, and the Web
+  // panel defaults its version picker to exactly this order.
+  const newer = versions
+    .filter((version) => installed === 'unknown' || compareVersions(version, installed) > 0)
+    .sort((left, right) => compareVersions(right, left))
   const notes = await releaseNotes()
   const channels = Object.entries(distTags).map(([channel, version]) => {
     const release = notes.find((entry) => entry.tag === `dsh-v${String(version)}`)
@@ -267,7 +271,10 @@ function verify(version) {
   }
   state.verified = {
     ...(state.verified ?? {}),
-    [version]: { ok, at: new Date().toISOString(), tail: output.trim().split('\n').slice(-12).join('\n') },
+    // 40 lines, not 12: the FAIL line and its section header live at the top
+    // of the tail, and re-running the whole suite just to see which check
+    // failed is minutes of the same evidence.
+    [version]: { ok, at: new Date().toISOString(), tail: output.trim().split('\n').slice(-40).join('\n') },
   }
   writeState(state)
   process.stdout.write(`${output}\n`)

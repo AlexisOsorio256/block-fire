@@ -34,7 +34,7 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | `presets/build/plugins/capabilities.js` | Router `bf_capability` + capacidades JIT declaradas | Blender MCP son ~7.4k tokens de esquema; la mayoría de sesiones no lo toca |
 | `host/guard.js` | Guard de operaciones destructivas (host plane) | Sustituye los prompts de aprobación por un límite de política |
 | `host/patch.cordis.yml` | Capa de parche del perfil Web (guard, Update Center, roster) | Punto de extensión **soportado** por DSH; no toca archivos del usuario |
-| `web/` | Plugin propio host+cliente: ruta `/blockfire/update` y página *Settings → BLOCKFIRE*, stats de sesión en vivo, botón `+ New` y borrado permanente de conversaciones | Superficie Web visible sin tocar el frontend de upstream |
+| `web/` | Plugin propio host+cliente: ruta `/blockfire/update` (estado, acciones, progreso de job), página *Settings → BLOCKFIRE* que maneja Update/Rollback, stats de sesión en vivo, botón `+ New` y borrado permanente de conversaciones | Superficie Web visible sin tocar el frontend de upstream |
 | `bin/blockfire` | Launcher: política + parche + versión activa | Una sola forma de arrancar el producto |
 | `bin/update.mjs` | Update Center: detectar, stage, verify, activate, rollback | Actualizar sin congelar y sin rezar |
 | `lib/runtime.mjs` | Resolutor único del runtime DSH (binario + `node_modules`) | Un solo lugar decide qué DSH se arranca y contra qué `node_modules` resuelven los puentes |
@@ -131,6 +131,10 @@ quitan o se quedan, nunca se esconden tras el router.
 - No hay atomicidad fingida: el switch es una escritura de estado y el rollback
   es la inversa.
 - Ninguna versión se activa sin pasar la suite (`--force` es explícito y raro).
+- La Web maneja ESTE mecanismo, no una copia: las rutas del plugin host lanzan
+  `update.mjs` y devuelven su salida textual; el botón Update es la cadena
+  stage → verify → activate gobernada por los códigos de salida del CLI, y un
+  fallo deja todo exactamente donde estaba.
 
 ## Riesgos abiertos
 
@@ -157,7 +161,10 @@ quitan o se quedan, nunca se esconden tras el router.
    no ha corrido no tiene evidencia de contrato (`--live` lo reporta como skip).
    Un log sin model requests es SIN EVIDENCIA, no PASS ni FAIL.
 4. **El Update Center no prueba el candidato en un navegador real**: verifica la
-   composición, las filas, el log y los plugins, no una sesión Web completa.
+   composición, las filas, el log y los plugins, no una sesión Web completa. Y
+   `verify` exige la sección *installation* de la suite: desde un `$DSH_HOME`
+   aislado sin copias sincronizadas (un boot E2E) falla ahí aunque el candidato
+   sea compatible — fail-closed, pero hay que saberlo al interpretarlo.
 5. **CREATOR lee las skills de autoría del preset shipped por ruta de instalación**
    (`node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills`). Si
    upstream mueve ese layout, `test.sh` falla y hay que reapuntar una línea.

@@ -12,7 +12,11 @@ window.__ModuleLoader__.load({
      * Four pieces, all additive seats in the shipped slot tree (no upstream
      * file is modified, no ChatView fork):
      *
-     * 1. Update Center (Settings → BLOCKFIRE) — unchanged since V1.
+     * 1. Update Center (Settings → BLOCKFIRE) — reads the same status the CLI
+     *    prints and drives the same updater: Update (stage → verify →
+     *    activate, refusing activation on a failed verify), Rollback, live
+     *    job output, and a restart-required banner for a pinned-but-not-yet-
+     *    running version.
      * 2. Session stats strip at `conversation.input.dock` — directly below the
      *    model's activity and above the composer card. Upstream renders the
      *    same figures at `conversation.composer.dock` (below the composer);
@@ -74,10 +78,82 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    // ── 1. Update Center (unchanged behavior) ────────────────────────────────
+    // ── 1. Update Center (drives the existing update.mjs mechanism) ─────────
+
+    const PRE = {
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: 11,
+      lineHeight: "16px",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      margin: "8px 0 0",
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: "1px solid var(--dsw-alias-border-l1)",
+      background: "var(--dsw-alias-bg-layer-2)",
+      color: "var(--dsw-alias-label-secondary)",
+      maxHeight: 180,
+      overflowY: "auto",
+    };
+    const BANNER_OK = {
+      border: "1px solid var(--dsw-alias-state-success-primary)",
+      borderRadius: 8,
+      padding: "8px 12px",
+      marginBottom: 10,
+      color: "var(--dsw-alias-state-success-primary)",
+      fontSize: 12,
+    };
+    const BANNER_WARN = {
+      border: "1px solid var(--dsw-alias-state-warn-primary)",
+      borderRadius: 8,
+      padding: "8px 12px",
+      marginBottom: 10,
+      color: "var(--dsw-alias-state-warn-primary)",
+      fontSize: 12,
+    };
+    const BANNER_FAIL = {
+      border: "1px solid var(--dsw-alias-state-error-primary)",
+      borderRadius: 8,
+      padding: "8px 12px",
+      marginBottom: 10,
+      color: "var(--dsw-alias-state-error-primary)",
+      fontSize: 12,
+    };
+
+    const ACTION_LABEL = {
+      update: "Update",
+      rollback: "Rollback",
+      check: "Check",
+      stage: "Stage",
+      verify: "Verify",
+      activate: "Activate",
+    };
+
+    /** Live view of one update operation (stage → verify → activate, or rollback). */
+    function JobView({ job }) {
+      if (job === null) return null;
+      const head = `${ACTION_LABEL[job.action] ?? job.action}${job.version ? ` → ${job.version}` : ""}`;
+      const running = job.state === "running";
+      const tone = running
+        ? "var(--dsw-alias-label-secondary)"
+        : job.ok === true
+          ? "var(--dsw-alias-state-success-primary)"
+          : "var(--dsw-alias-state-error-primary)";
+      return h("div", { style: { marginTop: 10 }, key: "job" }, [
+        h("div", { style: { fontSize: 12, color: tone }, key: "head" }, running ? `${head} — running…` : `${head} — ${job.ok === true ? "done" : "failed"}`),
+        job.output
+          ? h("pre", { style: PRE, key: "out" }, job.output)
+          : running
+            ? h("div", { style: Object.assign({}, VALUE, { fontSize: 12, marginTop: 6 }), key: "wait" }, "Working — first output appears here as soon as the updater prints it.")
+            : null,
+      ]);
+    }
 
     function UpdateCenter() {
       const [state, setState] = React.useState({ phase: "loading" });
+      const [job, setJob] = React.useState(null);
+      const [busyAction, setBusyAction] = React.useState(false);
+      const [selected, setSelected] = React.useState(undefined);
       const load = React.useCallback((withCheck) => {
         setState((previous) => Object.assign({}, previous, { phase: "loading" }));
         fetch(withCheck === true ? "/blockfire/update?check=1" : "/blockfire/update", { headers: { accept: "application/json" } })
@@ -92,7 +168,48 @@ window.__ModuleLoader__.load({
         load(false);
       }, [load]);
 
-      if (state.phase === "loading") return h("div", { style: VALUE }, "Reading update state…");
+      const startAction = React.useCallback((action, version) => {
+        if (busyAction) return;
+        setBusyAction(true);
+        setJob({ state: "running", action, version: version || null, output: "" });
+        fetch("/blockfire/update/action", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-blockfire-update": "1" },
+          body: JSON.stringify({ action, version }),
+        })
+          .then((response) => response.json())
+          .then((payload) => {
+            if (!(payload && payload.ok === true)) throw new Error((payload && payload.error) || "could not start the operation");
+            setJob({ state: "running", action, version: version || null, output: "", id: payload.jobId });
+          })
+          .catch((cause) => {
+            setBusyAction(false);
+            setJob({ state: "done", ok: false, action, version: version || null, output: String(cause && cause.message ? cause.message : cause) });
+          });
+      }, [busyAction]);
+
+      // Poll the running job until it settles; a settled job refreshes status.
+      const jobId = job !== null ? job.id : null;
+      const jobRunning = job !== null && job.state === "running";
+      React.useEffect(() => {
+        if (!jobRunning || jobId === null) return undefined;
+        const timer = setInterval(() => {
+          fetch("/blockfire/update/job", { headers: { accept: "application/json" } })
+            .then((response) => response.json())
+            .then((payload) => {
+              if (!(payload && payload.ok === true)) return;
+              setJob(payload.job);
+              if (payload.job.state !== "running") {
+                setBusyAction(false);
+                load(false);
+              }
+            })
+            .catch(() => {});
+        }, 1500);
+        return () => clearInterval(timer);
+      }, [jobRunning, jobId, load]);
+
+      if (state.phase === "loading" && state.payload === undefined) return h("div", { style: VALUE }, "Reading update state…");
       if (state.phase === "error") {
         return h("div", null, [
           h("div", { style: Object.assign({}, VALUE, { color: "var(--dsw-alias-state-error-primary)" }), key: "e" }, `Update Center unavailable: ${state.message}`),
@@ -104,59 +221,98 @@ window.__ModuleLoader__.load({
       const status = payload.status || {};
       const active = status.active || null;
       const previous = status.previous || null;
+      const running = status.runningInstall || null;
       const staged = Object.keys(status.staged || {});
       const verified = status.verified || {};
       const check = payload.check || null;
       const newer = check && Array.isArray(check.newer) ? check.newer : [];
       const channels = check && Array.isArray(check.channels) ? check.channels : [];
 
+      // Candidate picker: what upstream publishes plus what is already staged,
+      // minus the version this launcher is pinned to. Nothing is hardcoded.
+      const seen = new Set();
+      const choices = [];
+      for (const entry of newer) {
+        if (!seen.has(entry.version) && (!active || entry.version !== active.version)) { seen.add(entry.version); choices.push(entry.version); }
+      }
+      for (const version of staged) {
+        if (!seen.has(version) && (!active || version !== active.version)) { seen.add(version); choices.push(version); }
+      }
+      const restartNeeded = active !== null && running !== null && active.version !== running.version;
+      const activatedNow = job !== null && job.state === "done" && job.ok === true && (job.action === "update" || job.action === "activate");
+      const rolledBackNow = job !== null && job.state === "done" && job.ok === true && job.action === "rollback";
+      const loading = state.phase === "loading";
+      const chosen = selected !== undefined && choices.includes(selected) ? selected : choices[0];
+
       return h("div", null, [
+        restartNeeded
+          ? h("div", { style: BANNER_WARN, key: "restart" }, `Restart required: version ${active.version} is pinned and runs on the NEXT launch — this process is still on ${running.version}.`)
+          : null,
+        activatedNow
+          ? h("div", { style: BANNER_OK, key: "ok" }, `Activated ${job.version}. Restart the harness to run it; the previous version stays available for rollback below.`)
+          : null,
+        rolledBackNow
+          ? h("div", { style: BANNER_OK, key: "rb" }, `Rolled back to ${job.version === null ? "the previous version" : job.version}. Restart the harness to run it.`)
+          : null,
         h("div", { style: CARD, key: "now" }, [
           h("div", { style: { fontWeight: 600, marginBottom: 6, color: "var(--dsw-alias-label-primary)" }, key: "t" }, "Runtime"),
           row(
-            "installed (resolver)",
-            status.runningInstall
-              ? `${status.runningInstall.version}${status.runningInstall.sourceLabel ? ` — ${status.runningInstall.sourceLabel}` : ""}`
-              : "unknown",
+            "running now",
+            running ? `${running.version}${running.sourceLabel ? ` — ${running.sourceLabel}` : ""}` : "unknown",
           ),
-          row("launcher pin", active ? `${active.version}` : "none — resolver default"),
+          row("launcher pin (next launch)", active ? active.version : "none — resolver default"),
           row("rollback target", previous ? previous.version : "none"),
           row(
             "staged candidates",
             staged.length === 0 ? "none" : staged.map((version) => `${version} ${verified[version] ? (verified[version].ok ? "[verified]" : "[failed]") : "[unverified]"}`).join(", "),
           ),
+          previous !== null
+            ? h("div", { style: { marginTop: 8 }, key: "rb-btn" },
+                h("button", { style: BUTTON, disabled: busyAction || loading, onClick: () => startAction("rollback") }, `Rollback to ${previous.version}`))
+            : null,
         ]),
         h("div", { style: CARD, key: "up" }, [
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }, key: "head" }, [
             h("div", { style: { fontWeight: 600, color: "var(--dsw-alias-label-primary)" }, key: "t" }, "Upstream"),
-            h("button", { style: BUTTON, key: "b", onClick: () => load(true) }, check === null ? "Check now" : "Re-check"),
+            h("button", { style: BUTTON, disabled: busyAction || loading, key: "b", onClick: () => load(true) }, check === null ? "Check now" : "Re-check"),
           ]),
           check === null
             ? h("div", { style: VALUE, key: "n" }, "Not checked yet in this process. Nothing is installed or replaced by checking.")
             : h("div", { key: "c" }, [
-                ...channels.map((channel) =>
-                  row(
-                    `channel ${channel.channel}`,
-                    channel.notesUrl
-                      ? h("span", null, [channel.version, " ", h("a", { href: channel.notesUrl, target: "_blank", rel: "noreferrer", style: { color: "var(--dsw-alias-brand-primary)" }, key: "a" }, "release notes")])
-                      : channel.version,
-                  ),
-                ),
+                ...channels.map((channel) => {
+                  const label = channel.notesUrl
+                    ? h("span", null, [channel.version, " ", h("a", { href: channel.notesUrl, target: "_blank", rel: "noreferrer", style: { color: "var(--dsw-alias-brand-primary)" }, key: "a" }, "release notes")])
+                    : channel.version;
+                  return h("div", { key: `ch-${channel.channel}` }, [
+                    row(`channel ${channel.channel}`, label),
+                    channel.notes
+                      ? h("details", { key: "notes", style: { margin: "0 0 6px 190px" } }, [
+                          h("summary", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" } }, "notes"),
+                          h("pre", { style: PRE }, channel.notes),
+                        ])
+                      : null,
+                  ]);
+                }),
                 newer.length === 0
                   ? row("newer versions", "none published", "var(--dsw-alias-state-success-primary)")
                   : row("newer versions", newer.map((entry) => entry.version).join(", "), "var(--dsw-alias-state-warn-primary)"),
               ]),
         ]),
-        h("div", { style: CARD, key: "how" }, [
-          h("div", { style: { fontWeight: 600, marginBottom: 6, color: "var(--dsw-alias-label-primary)" }, key: "t" }, "How an update happens"),
-          h("div", { style: Object.assign({}, VALUE, { marginBottom: 8 }), key: "p" }, "Never automatic. The candidate is installed into an isolated tree, the compatibility suite runs against that tree, and only a passing candidate can be activated. The previous version stays available for rollback, and a switch takes effect on the next launch."),
-          h("div", { style: { display: "grid", gap: 6 }, key: "cmds" }, [
-            h("code", { style: CODE, key: "1" }, "node harness/bin/update.mjs check"),
-            h("code", { style: CODE, key: "2" }, "node harness/bin/update.mjs stage <version>"),
-            h("code", { style: CODE, key: "3" }, "node harness/bin/update.mjs verify <version>"),
-            h("code", { style: CODE, key: "4" }, "node harness/bin/update.mjs activate <version>"),
-            h("code", { style: CODE, key: "5" }, "node harness/bin/update.mjs rollback"),
-          ]),
+        h("div", { style: CARD, key: "act" }, [
+          h("div", { style: { fontWeight: 600, marginBottom: 6, color: "var(--dsw-alias-label-primary)" }, key: "t" }, "Update"),
+          h("div", { style: Object.assign({}, VALUE, { marginBottom: 8 }), key: "p" }, "One button runs the existing updater: stage into an isolated tree, verify the BLOCKFIRE suite against it, and activate only if it passed. The running process is never touched — a switch applies on the next launch, with the previous version kept for rollback. A failed verify stops everything and shows the suite's output below."),
+          choices.length === 0
+            ? h("div", { style: Object.assign({}, VALUE, { fontSize: 12 }), key: "none" }, "No candidate available. Check upstream first; a published release then appears here on its own.")
+            : h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }, key: "row" }, [
+                h("select", {
+                  key: "sel",
+                  value: chosen,
+                  onChange: (event) => setSelected(event.target.value),
+                  style: Object.assign({}, BUTTON, { padding: "5px 8px" }),
+                }, choices.map((version) => h("option", { key: version, value: version }, version))),
+                h("button", { style: BUTTON, disabled: busyAction || loading, onClick: () => startAction("update", chosen) }, `Update to ${chosen}`),
+              ]),
+          h(JobView, { job, key: "job" }),
         ]),
       ]);
     }
@@ -330,13 +486,26 @@ window.__ModuleLoader__.load({
      * and drops the id from workspace accounting through the workspace
      * storage domain. On success the strip waits for the sidebar feed to
      * drop the id, then opens a session in the same workspace.
+     *
+     * The armed flag lives at module scope, not component state: the header
+     * slot can remount on workspace-feed ticks, and state held inside the
+     * component dies with it — the user presses Delete, confirms, and the
+     * remounted button asks all over again. Armed survives remounts here,
+     * and a failed attempt STAYS armed (retry = one click); only switching
+     * sessions disarms.
      */
+    let armedDeleteFor = null;
+
     function DeleteSessionButton({ sessionId, uiWorkspace, workspaces }) {
-      const [armed, setArmed] = React.useState(false);
+      const [, setTick] = React.useState(0);
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState(null);
+      const armed = armedDeleteFor === sessionId;
       React.useEffect(() => {
-        setArmed(false);
+        if (armedDeleteFor !== null && armedDeleteFor !== sessionId) {
+          armedDeleteFor = null;
+          setTick((tick) => tick + 1);
+        }
         setError(null);
       }, [sessionId]);
 
@@ -352,7 +521,8 @@ window.__ModuleLoader__.load({
           .then((response) => response.json())
           .then((payload) => {
             if (!(payload && payload.ok === true)) throw new Error((payload && payload.error) || "delete failed");
-            setArmed(false);
+            armedDeleteFor = null;
+            disarm(); // clear the busy flag and re-render disarmed
             // Navigate away once the workspace feed reflects the deletion, so
             // startSession cannot reuse the just-deleted provisional blank.
             const deadline = Date.now() + 3000;
@@ -369,8 +539,13 @@ window.__ModuleLoader__.load({
           })
           .catch((cause) => {
             setError(String(cause && cause.message ? cause.message : cause));
-            setBusy(false);
+            setBusy(false); // stays armed: one click retries, no re-asking
           });
+      };
+
+      const disarm = () => {
+        setBusy(false);
+        setTick((tick) => tick + 1);
       };
 
       return h("div", { style: { display: "inline-flex", alignItems: "center", gap: 6 } }, [
@@ -383,7 +558,14 @@ window.__ModuleLoader__.load({
             disabled: busy,
             "aria-label": armed ? "Confirm permanent delete" : "Delete session permanently",
             title: armed ? "Click again to delete permanently" : "Delete permanently",
-            onClick: () => (armed ? run() : setArmed(true)),
+            onClick: () => {
+              if (busy) return;
+              if (armed) run();
+              else {
+                armedDeleteFor = sessionId;
+                setTick((tick) => tick + 1);
+              }
+            },
           },
           [
             h("span", { style: { display: "inline-flex", alignItems: "center" }, key: "i" }, h(primitives.IconTrashOutline16, { key: "t" })),

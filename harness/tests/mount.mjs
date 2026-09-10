@@ -134,8 +134,10 @@ export function apply(ctx) {
     assert.match(await router.execute({ action: 'on', capability: 'probe' },
       { agent: first.agent }), /activated/)
   } finally { await first.dispose() }
-  const resumed = await ctx.agents.create({ sessionId: 'blockfire-mount-resume',
-    meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
+  // Resume, not a second create: upstream 0.1.5 made session ids unique at
+  // create (SessionAlreadyExistsError) and split resuming into agents.resume.
+  // Both pinned versions (0.1.2-rc.1 and 0.1.5-alpha.2) expose this shape.
+  const resumed = await ctx.agents.resume({ resumeSessionId: 'blockfire-mount-resume', setup: resumeSetup })
   try {
     const listed = await router.execute({ action: 'list' }, { agent: resumed.agent })
     assert.match(listed, /\[off\]/, 'a session created after the owner closed must not inherit ACTIVE')

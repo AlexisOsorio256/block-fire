@@ -115,8 +115,14 @@ node harness/bin/update.mjs rollback
 Nada se reemplaza solo y el proceso en marcha nunca se toca: el cambio aplica al
 siguiente arranque. Estado en `$DSH_HOME/.blockfire-harness/state.json`.
 
-En la Web, **Settings → BLOCKFIRE** muestra el estado (instalado, pin, staged,
-verificado) y ofrece el botón de comprobación. No instala nada desde la UI.
+En la Web, **Settings → BLOCKFIRE** maneja el mismo mecanismo, sin duplicar
+ninguna lógica: el host lanza `update.mjs` y muestra su salida tal cual. El botón
+**Update** ejecuta la cadena stage → verify → activate (un fallo de verify corta
+la cadena y muestra el output exacto de la suite), **Rollback** vuelve al pin
+anterior, y el progreso del job se consulta en vivo. Un pin distinto de la
+versión en marcha muestra el aviso "Restart required": el cambio aplica al
+próximo arranque. Las rutas mutadoras exigen su header propio
+(`x-blockfire-update`), igual que el borrado de sesiones (`x-blockfire-delete`).
 
 ## Superficie Web (plugin propio)
 

@@ -357,11 +357,13 @@ test('update center: serves the status JSON the Web panel reads', async () => {
     },
   }
   module.apply(ctx)
-  assert.equal(routes.length, 2, 'the plugin registers the status route and the delete route')
+  assert.equal(routes.length, 4, 'status, action, job and delete routes are registered')
   assert.equal(routes[0].path, '/blockfire/update')
   assert.equal(routes[0].kind, 'exact')
-  assert.equal(routes[1].path, '/blockfire/session/delete')
-  assert.equal(routes[1].kind, 'exact')
+  assert.equal(routes[1].path, '/blockfire/update/action')
+  assert.equal(routes[2].path, '/blockfire/update/job')
+  assert.equal(routes[3].path, '/blockfire/session/delete')
+  assert.equal(routes[3].kind, 'exact')
 
   const chunks = []
   const res = {
@@ -464,7 +466,8 @@ async function deleteCtx(options = {}) {
         chunks.push({ body })
       },
     }
-    await routes[1].handler(request, res)
+    const route = routes.find((candidate) => candidate.path === '/blockfire/session/delete')
+    await route.handler(request, res)
     return {
       status: chunks.find((chunk) => chunk.status !== undefined)?.status,
       body: JSON.parse(chunks.find((chunk) => typeof chunk.body === 'string')?.body ?? 'null'),
@@ -500,8 +503,22 @@ test('delete: refuses anything that is not a POST with the delete header and a s
   assert.equal(denied.status, 405, 'GET is never a delete')
   const noHeader = await ctx.post({ sessionId: DELETE_ID }, {})
   assert.equal(noHeader.status, 405, 'a cross-origin form cannot forge the custom header')
-  const badBody = await ctx.post({ sessionId: 'not-a-session-id' })
-  assert.equal(badBody.status, 400, 'a malformed session id is rejected before any write')
+  const missing = await ctx.post({})
+  assert.equal(missing.status, 400, 'a missing session id is rejected before any write')
+  const traversal = await ctx.post({ sessionId: '../../etc' })
+  assert.equal(traversal.status, 400, 'ids are charset-checked: no path shapes')
+})
+
+test('delete: an unknown but well-formed id is a 404, never a write', async () => {
+  await deleteHome()
+  const ctx = await deleteCtx({
+    sessionId: DELETE_ID,
+    root: process.env.DSH_HOME,
+    workspaces: [['w1', { path: '/p', title: 't', createdAt: '', updatedAt: '', sessionIds: [DELETE_ID] }]],
+  })
+  const unknown = await ctx.post({ sessionId: 'not-a-real-session-id' })
+  assert.equal(unknown.status, 404, 'the persistence lookup is the real gate')
+  assert.equal(ctx.records.get('w1').sessionIds.length, 1, 'no accounting change for an unknown session')
 })
 
 test('delete: 404 unknown session, 409 running session, no writes on either', async () => {
@@ -549,4 +566,163 @@ test('delete: removes workspace accounting, archived set entry, log dir and cach
   assert.equal(existsSync(cacheEntry), false, 'the projection-cache entry is gone')
   const again = await ctx.post({ sessionId: DELETE_ID })
   assert.equal(again.status, 200, 'a second call stays consistent (accounting already clean)')
+})
+
+test('delete: accepts the session- prefixed ids the current runtime issues', async () => {
+  // The workspace registry, the log directories and the projection cache all
+  // key on `session-<uuid>` today (this exact shape is what the user's real
+  // GUI sends); the bare uuid above covers older installs. Regression: the
+  // validator used to demand exactly 36 hex-ish chars and rejected it.
+  const fs = await import('node:fs/promises')
+  const home = await deleteHome()
+  const prefixed = `session-${DELETE_ID}`
+  const cacheDir = join(home, 'storages', 'session_projcache', 'sessions')
+  await fs.mkdir(cacheDir, { recursive: true })
+  const logDir = join(home, 'log', prefixed)
+  await fs.mkdir(logDir, { recursive: true })
+  await fs.writeFile(join(logDir, 'session.jsonl.zstd'), 'x')
+  const cacheEntry = join(cacheDir, `${prefixed}.json`)
+  await fs.writeFile(cacheEntry, '{}')
+  const ctx = await deleteCtx({
+    sessionId: prefixed,
+    root: home,
+    workspaces: [['w1', { path: '/p', title: 't', createdAt: '', updatedAt: '', sessionIds: [prefixed] }]],
+    workspaceIds: ['w1'],
+    archived: [prefixed],
+  })
+  const result = await ctx.post({ sessionId: prefixed })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.ok, true)
+  assert.deepEqual(ctx.records.get('w1').sessionIds, [], 'the prefixed id leaves its workspace record')
+  assert.deepEqual(ctx.global().archivedSessionIds, [], 'the prefixed id leaves the archive set')
+  assert.equal(existsSync(logDir), false, 'the session log directory is gone')
+  assert.equal(existsSync(cacheEntry), false, 'the projection-cache entry is gone')
+})
+
+// ── update actions: the Web driving the same CLI mechanism ──────────────────
+
+/**
+ * A host context with a fake `<repoRoot>/harness/bin/update.mjs` (fixture
+ * copy), so the action route spawns something hermetic instead of npm, the
+ * network or the real state file. The fixture records every invocation.
+ */
+async function actionCtx(options = {}) {
+  const fs = await import('node:fs/promises')
+  const root = await fs.mkdtemp(join(tmpdir(), 'blockfire-act-'))
+  await fs.mkdir(join(root, 'harness', 'bin'), { recursive: true })
+  await fs.copyFile(join(HARNESS, 'tests', 'fixtures', 'fake-update.mjs'), join(root, 'harness', 'bin', 'update.mjs'))
+  process.env.FAKE_UPDATE_LOG = join(root, 'invocations.log')
+  process.env.FAKE_VERIFY_FAIL = options.verifyFails === true ? '1' : ''
+  process.env.FAKE_UPDATE_DELAY_MS = options.delayMs === undefined ? '' : String(options.delayMs)
+  const routes = []
+  const module = await import(UPDATE_CENTER)
+  module.apply(
+    {
+      get() {
+        return undefined
+      },
+      webServer: {
+        register(route) {
+          routes.push(route)
+        },
+      },
+      effect(factory) {
+        return factory()
+      },
+    },
+    { repoRoot: root },
+  )
+  const actionRoute = routes.find((route) => route.path === '/blockfire/update/action')
+  const jobRoute = routes.find((route) => route.path === '/blockfire/update/job')
+  const call = async (route, request) => {
+    const chunks = []
+    const res = {
+      writeHead(status) {
+        chunks.push({ status })
+      },
+      end(body) {
+        chunks.push({ body })
+      },
+    }
+    await route.handler(request, res)
+    return {
+      status: chunks.find((chunk) => chunk.status !== undefined)?.status,
+      body: JSON.parse(chunks.find((chunk) => typeof chunk.body === 'string')?.body ?? 'null'),
+    }
+  }
+  const post = (body, headers = { 'x-blockfire-update': '1' }) => {
+    const payload = JSON.stringify(body)
+    return call(actionRoute, {
+      method: 'POST',
+      headers,
+      on(event, handler) {
+        if (event === 'data') handler(Buffer.from(payload))
+        if (event === 'end') handler()
+      },
+    })
+  }
+  const getJob = () => call(jobRoute, { method: 'GET', url: '/blockfire/update/job', headers: {} })
+  const waitFor = async (predicate, timeoutMs = 15000) => {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const reply = await getJob()
+      if (reply.body?.job && predicate(reply.body.job)) return reply.body.job
+      if (Date.now() > deadline) throw new Error(`job never settled: ${JSON.stringify(reply.body)}`)
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+  }
+  const invocations = async () => (await fs.readFile(process.env.FAKE_UPDATE_LOG, 'utf8')).trim().split('\n')
+  return { post, getJob, waitFor, invocations }
+}
+
+test('update actions: header-gated, validated, and single-flight', async () => {
+  const ctx = await actionCtx({ delayMs: 500 })
+  const noHeader = await ctx.post({ action: 'rollback' }, {})
+  assert.equal(noHeader.status, 405, 'a cross-origin form cannot forge the custom header')
+  const unknown = await ctx.post({ action: 'reinstall' })
+  assert.equal(unknown.status, 400)
+  const noVersion = await ctx.post({ action: 'stage' })
+  assert.equal(noVersion.status, 400, 'stage without a version is rejected before spawning')
+  const badVersion = await ctx.post({ action: 'update', version: '../etc' })
+  assert.equal(badVersion.status, 400, 'versions are shape-checked')
+  const started = await ctx.post({ action: 'rollback' })
+  assert.equal(started.status, 200)
+  assert.ok(started.body.jobId, 'the caller gets a job id to poll')
+  const concurrent = await ctx.post({ action: 'rollback' })
+  assert.equal(concurrent.status, 409, 'one update operation at a time')
+  const job = await ctx.waitFor((candidate) => candidate.state === 'done')
+  assert.equal(job.ok, true)
+  assert.deepEqual(await ctx.invocations(), ['rollback'])
+})
+
+test('update actions: the update chain is stage → verify → activate, stopping on failure', async () => {
+  const ctx = await actionCtx({ verifyFails: true })
+  const started = await ctx.post({ action: 'update', version: '9.9.9-fake' })
+  assert.equal(started.status, 200)
+  const job = await ctx.waitFor((candidate) => candidate.state === 'done')
+  assert.equal(job.ok, false, 'a failed verify fails the whole chain')
+  assert.match(job.output, /FAIL — the suite rejected the candidate/, 'the exact CLI failure is in the job output')
+  assert.match(job.output, /stopped — nothing was activated/)
+  assert.deepEqual(await ctx.invocations(), ['stage 9.9.9-fake', 'verify 9.9.9-fake'], 'activate is never reached')
+})
+
+test('update actions: a passing chain reaches activate', async () => {
+  const ctx = await actionCtx()
+  const started = await ctx.post({ action: 'update', version: '9.9.9-fake' })
+  assert.equal(started.status, 200)
+  const job = await ctx.waitFor((candidate) => candidate.state === 'done')
+  assert.equal(job.ok, true)
+  assert.deepEqual(await ctx.invocations(), ['stage 9.9.9-fake', 'verify 9.9.9-fake', 'activate 9.9.9-fake'])
+})
+
+test('update actions: the job endpoint reports state and output', async () => {
+  const ctx = await actionCtx({ delayMs: 300 })
+  await ctx.post({ action: 'rollback' })
+  const running = await ctx.getJob()
+  assert.equal(running.status, 200)
+  assert.equal(running.body.job.state, 'running', 'the job is visible while it runs')
+  const job = await ctx.waitFor((candidate) => candidate.state === 'done')
+  assert.match(job.output, /rolled back/, 'the CLI output is reported verbatim')
+  const missing = await ctx.getJob() // last job — a wrong id would be a 404
+  assert.equal(missing.status, 200)
 })
