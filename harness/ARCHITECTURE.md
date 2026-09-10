@@ -50,6 +50,7 @@ La capa depende exactamente de esto, y `contract/contract.json` lo nombra:
 |---|---|---|
 | Filas de composición (`name: '@deepseek-ai/dsh-*'`) | Montar tools/skills/compaction | `check_composition.py` (paquete instalado, archivo relativo, include, patch sin target) |
 | Roster de presets (`$DSH_HOME/.agent-presets/<id>`, `preset.yml`) | Los dos espacios | `agentPresets.standingKeyFor` en cada sesión nueva + `--dump-config` |
+| Sección de usuario `llm-pi-ai:` / `llm-deepseek:` en `$DSH_HOME/settings.yaml` | Rutas que cada adaptador LLM sirve: proveedor, baseURL, api, credencial (`apiKeyEnv`) y catálogo por ruta; hot-reload sin reinicio, la fila `llm-pi-ai` monta dormant | Boot real aislado con la sección candidata (molde: `tests/mount.mjs`) |
 | Capa de parche del perfil (`--patch`, `cordis.patch.yml`) | Guard, Update Center, roster por defecto | `dsh --profile web --patch <archivo> --dump-config` (falla si un patch no matchea) |
 | `ctx.tools.register/guard/schemas`, `ctx.plugin` (Fiber: `await()`/`dispose()`), `ctx.effect` | Router y guard | Tests unitarios con contexto falso (`tests/plugins.test.mjs`) + montaje real con Fiber y scopes (`tests/mount.mjs`) |
 | Log de sesión (`request/header`, `assistant/message.usage.*`, `compaction/*`) | Métricas y contrato de superficie | `contract_check.mjs log/surface` contra sesiones reales; fixtures vacías/sin tools/con tools/malformadas en `--self-test` |

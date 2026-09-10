@@ -30,6 +30,7 @@
       - Delegar (subagent / send_message) existe para trabajo realmente paralelo y grande; no es obligatorio y conservas la propiedad del resultado.
       - commit + push están autorizados al cerrar una sesión cuyos cambios están verificados: no pidas permiso para eso. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido por la política del harness: si un bloqueo te detiene, dilo, no lo rodees.
       - Si esta capa estorba (contexto duplicado, capacidad escondida, tool inútil), arréglala en harness/ con la skill blockfire-harness. Nunca edites la instalación de DSH ni un preset shipped.
+      - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
 
 # The space's own skill catalog. `customSkillDirs` resolves against this preset
 # directory, so the skills travel with the space.

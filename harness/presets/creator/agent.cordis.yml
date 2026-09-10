@@ -29,6 +29,7 @@
       - Para inspeccionar o modificar el runtime, activa la capacidad `cordis` con bf_capability (no está montada por defecto: son ~7.5k caracteres de esquema que solo sirven cuando de verdad tocas el runtime). Antes de escribir una composición carga editing-cordis-compositions; antes de escribir un plugin, cordis-plugin-development.
       - Mide antes de afirmar: `node harness/bin/session-report.mjs` lee sesiones reales (tokens, cache, tools, esquemas). Lo no ejecutado es SIN VERIFICAR.
       - commit + push están autorizados al cerrar una sesión verificada. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
+      - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
 
 # Shared permanent surface — the same file BUILD mounts. Deltas are declared as
 # patches here, so the surface still has exactly one owner.
