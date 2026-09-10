@@ -59,13 +59,15 @@
                 off when that work is done.
               config: {}
 
-# The two blockfire skills plus the shipped composition-authoring skills. The
-# shipped ones are read from the installed preset package (never edited); the
-# harness compatibility suite fails loudly if that path moves.
+# CREATOR's own harness-authoring skill, the four shared BLOCKFIRE skills, and
+# the shipped composition-authoring skills. The shipped ones are read from the
+# installed preset package (never edited); the harness compatibility suite
+# fails loudly if that path moves.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../build/skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/', baseUrl))"
 

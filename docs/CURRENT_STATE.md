@@ -45,8 +45,24 @@ que `OperatorVisual` necesita poder ocultar).
 
 ## Harness
 
+Sesión 2026-09-09 (noche): contexto permanente reducido con evidencia —
+`AGENTS.md` 4.0k→1.9k chars (tabla de dueños fuera, duplica `docs/ARCHITECTURE.md`;
+arranque = doctor + git + código, no lectura de documentos), persona BUILD
+recortada, skill `blockfire-orientation` eliminada (costaba 2.8k chars en el
+step 1 e inducía ~16k chars de lecturas de documentos en el step 2) y
+`blockfire-harness` movida a CREATOR. BUILD queda en 4 skills; primer request
+medido 7345→6857 tokens con el mismo catálogo de 18 tools. Superficie Web nueva
+(sin tocar upstream): stats de sesión en vivo junto a la actividad (bajo
+"Deep diving", encima del dock de To-Do), botón `+ New` en el pie del sidebar,
+y borrado permanente de conversaciones (`POST /blockfire/session/delete` +
+slots de header) — verificado E2E en navegador aislado; el strip que DSH monta
+debajo del composer queda anulado. Verificación: `harness/test.sh` PASS (17
+tests de plugins, incluidos 3 nuevos del borrado), `tests/visual-boot.mjs` +
+CDP para la pieza visual. El proceso Web vivo requiere reinicio para cargar la
+ruta de borrado; el cliente se recarga con F5.
+
 Cierre del traspaso de auditoría (2026-09-09,
-[harness/ARCHITECTURE_HANDOFF.md](../harness/ARCHITECTURE_HANDOFF.md)): el router
+[docs/history/HANDOFF-AUDIT-ASTRA.md](history/HANDOFF-AUDIT-ASTRA.md)): el router
 JIT ahora usa el lifecycle real de Cordis (Fiber `await()`/`dispose()`), limpia
 montajes parciales cuando un arranque rechaza, libera la entrada al cerrar la
 sesión dueña y nombra las tools reales de cada capacidad; `harness/test.sh`

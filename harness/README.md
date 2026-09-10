@@ -89,15 +89,16 @@ contrato del harness), `AGENTS.md` como mensaje durable y el catálogo de skills
 (una línea por skill). Los hechos del proyecto — HEAD, P0, estado, assets,
 teléfono, últimos tests — viven en el repo y se leen cuando la tarea los pide.
 Un hecho tiene un dueño: los hechos del proyecto los posee `AGENTS.md` y
-`docs/`, y la persona no los repite.
+`docs/`, y la persona no los repite. El arranque es `tools/bf doctor` + git +
+el código dueño; los documentos se leen cuando la tarea los necesita, no de
+rutina.
 
 | Tarea | Skill |
 |---|---|
-| Orientación / cambio de área | `blockfire-orientation` |
 | Cierre de cualquier tarea | `blockfire-evidence` |
 | Animación, rig, pose | `blockfire-animation-craft` (+ capacidad `blender`) |
 | Input táctil, APK, rendimiento | `blockfire-android-qa` |
-| Cambiar esta capa | `blockfire-harness` |
+| Cambiar esta capa | `blockfire-harness` (solo CREATOR) |
 | Escribir una composición / un plugin (CREATOR) | `editing-cordis-compositions`, `cordis-plugin-development` |
 
 ## Update Center
@@ -116,6 +117,28 @@ siguiente arranque. Estado en `$DSH_HOME/.blockfire-harness/state.json`.
 
 En la Web, **Settings → BLOCKFIRE** muestra el estado (instalado, pin, staged,
 verificado) y ofrece el botón de comprobación. No instala nada desde la UI.
+
+## Superficie Web (plugin propio)
+
+`web/` añade, sin tocar archivos upstream, cuatro piezas sobre slots reales del
+frontend:
+
+- **Stats de sesión** junto a la actividad: turns · steps, tiempo de LLM,
+  velocidad de decode, cache hit y tokens de entrada/salida, leídos de las
+  proyecciones `sessionStats`/`tokenUsage` — se actualizan mientras el agente
+  trabaja. Va encima del dock de To-Do (que de otro modo la tapa) y debajo de
+  la línea de estado; el strip que DSH monta debajo del composer queda
+  anulado por id + prioridad.
+- **Botón `+ New`** junto a Settings en el pie del sidebar: nueva sesión en el
+  workspace actual/reciente (el `+` por-fila de upstream solo aparece al
+  hover).
+- **Borrado permanente** de la sesión abierta (Dos clics: armar + confirmar)
+  vía `POST /blockfire/session/delete`: quita la cuenta del workspace por los
+  puntos de escritura del propio registro, borra el directorio del log y la
+  entrada del cache de proyecciones. Una sesión con agente en RUN se rechaza.
+  El seam mínimo que falta upstream: `sessionPersistence.delete(id)` +
+  `workspaceRegistry.removeSession(id)` como una operación durable.
+- **Update Center** (sin cambios).
 
 ## Pruebas
 

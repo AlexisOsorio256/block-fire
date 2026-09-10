@@ -34,7 +34,7 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | `presets/build/plugins/capabilities.js` | Router `bf_capability` + capacidades JIT declaradas | Blender MCP son ~7.4k tokens de esquema; la mayoría de sesiones no lo toca |
 | `host/guard.js` | Guard de operaciones destructivas (host plane) | Sustituye los prompts de aprobación por un límite de política |
 | `host/patch.cordis.yml` | Capa de parche del perfil Web (guard, Update Center, roster) | Punto de extensión **soportado** por DSH; no toca archivos del usuario |
-| `web/` | Plugin propio host+cliente: ruta `/blockfire/update` y página *Settings → BLOCKFIRE* | Update Center visible sin tocar el frontend de upstream |
+| `web/` | Plugin propio host+cliente: ruta `/blockfire/update` y página *Settings → BLOCKFIRE*, stats de sesión en vivo, botón `+ New` y borrado permanente de conversaciones | Superficie Web visible sin tocar el frontend de upstream |
 | `bin/blockfire` | Launcher: política + parche + versión activa | Una sola forma de arrancar el producto |
 | `bin/update.mjs` | Update Center: detectar, stage, verify, activate, rollback | Actualizar sin congelar y sin rezar |
 | `lib/runtime.mjs` | Resolutor único del runtime DSH (binario + `node_modules`) | Un solo lugar decide qué DSH se arranca y contra qué `node_modules` resuelven los puentes |
@@ -54,6 +54,8 @@ La capa depende exactamente de esto, y `contract/contract.json` lo nombra:
 | Capa de parche del perfil (`--patch`, `cordis.patch.yml`) | Guard, Update Center, roster por defecto | `dsh --profile web --patch <archivo> --dump-config` (falla si un patch no matchea) |
 | `ctx.tools.register/guard/schemas`, `ctx.plugin` (Fiber: `await()`/`dispose()`), `ctx.effect` | Router y guard | Tests unitarios con contexto falso (`tests/plugins.test.mjs`) + montaje real con Fiber y scopes (`tests/mount.mjs`) |
 | Log de sesión (`request/header`, `assistant/message.usage.*`, `compaction/*`) | Métricas y contrato de superficie | `contract_check.mjs log/surface` contra sesiones reales; fixtures vacías/sin tools/con tools/malformadas en `--self-test` |
+| Slots del frontend (`conversation.input.dock`, `conversation.composer.dock`, `sidebar.footer.action`, `conversation.session.header.utilities`) y su semántica de id+`priority` (menor prioridad sombrea; mismo id a la misma prioridad lanza) | Stats, botón `+ New`, Delete | Boot aislado con navegador (`tests/visual-boot.mjs` + CDP); la suite estática solo comprueba sintaxis |
+| `sessionPersistence` (`create/append/locate/list`), `storageDomain` (`workspace`), `workspaceRegistry` (`setState/rebuildEntities`), `agents` (`status`) | Borrado permanente de sesiones | `tests/plugins.test.mjs` (405/400/404/409 + ruta feliz en tmpdir) y prueba E2E en navegador |
 | `dsh.client` + `window.__ModuleLoader__` | Página BLOCKFIRE en Settings | Bundle propio escrito a mano; si el formato cambia, falla al cargar el módulo |
 | Registro npm `@deepseek-ai/dsh` + releases de GitHub | Update Center | `update.mjs check` |
 
@@ -89,8 +91,15 @@ es lo que necesita Blender MCP para resolver.
 - Prompt permanente = persona del espacio (identidad + contrato del harness) +
   `AGENTS.md` como mensaje durable + catálogo de skills (una línea por skill).
 - **Un hecho, un dueño**: los hechos del proyecto los posee `AGENTS.md` y
-  `docs/*`; la persona no los repite. Por eso la persona bajó de ~2.6k a ~1.5k
-  caracteres sin perder contrato.
+  `docs/*`; la persona no los repite. Por eso la persona bajó de ~2.6k a ~1.2k
+  caracteres y `AGENTS.md` de ~4.0k a ~1.9k sin perder contrato: la tabla de
+  dueños vive solo en `docs/ARCHITECTURE.md`, el craft de animación solo en su
+  skill, y la terminología solo en `PROJECT_RULES.md`.
+- El arranque NO es una lectura de documentos: es `tools/bf doctor` + git + el
+  código dueño. La skill de orientación se eliminó porque su cuerpo costaba en
+  toda sesión (2.8k chars en el step 1) y sus instrucciones inducían leer tres
+  documentos de entrada (~16k chars) que la tarea rara vez necesita: la
+  selección de contexto es JIT como todo lo demás.
 - El cuerpo de una skill se paga solo cuando la tarea encaja con su descripción.
 - Nada volátil en el prefijo: eso es lo que mantiene la tasa de acierto de
   KV-cache (95–99.9% medido en sesiones reales).
@@ -124,6 +133,18 @@ quitan o se quedan, nunca se esconden tras el router.
 - Ninguna versión se activa sin pasar la suite (`--force` es explícito y raro).
 
 ## Riesgos abiertos
+
+0. **El borrado permanente usa seams reales pero incompletos upstream.**
+   `sessionPersistence` es append-only y `workspaceRegistry` no tiene
+   `removeSession`: la capa escribe la cuenta del workspace por
+   `table.put` + `registry.setState` + `rebuildEntities` y borra el log y el
+   cache de proyecciones por ruta conocida. Quedan dos costuras: (a) si el
+   registro muta su estado global cacheado después de un borrado, un id
+   archivado borrado puede reaparecer en el JSON (invisible en toda la UI,
+   se limpia al reiniciar); (b) los hijos subagent de una sesión borrada
+   sobreviven como sesiones independientes. El seam mínimo que eliminaría
+   ambos: `sessionPersistence.delete(id)` + `workspaceRegistry.removeSession(id)`
+   como una operación durable upstream.
 
 1. **`tool-cordis` registra proveedores de inspección process-globales.** Dos
    sesiones que activen la capacidad `cordis` a la vez chocan (`provider already

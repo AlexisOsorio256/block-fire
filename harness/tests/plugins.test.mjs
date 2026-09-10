@@ -20,6 +20,7 @@
 import { strict as assert } from 'node:assert'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
 import { resolveRuntime } from '../lib/runtime.mjs'
@@ -333,12 +334,15 @@ test('guard: unrelated tools are ignored', async () => {
   assert.equal(guard({ name: 'read_image', arguments: { file_path: '/etc/shadow' } }), undefined)
 })
 
-// ── Update Center host route ────────────────────────────────────────────────
+// ── Update Center host routes ───────────────────────────────────────────────
 
 test('update center: serves the status JSON the Web panel reads', async () => {
   const module = await import(UPDATE_CENTER)
   const routes = []
   const ctx = {
+    get() {
+      return undefined
+    },
     webServer: {
       register(route) {
         routes.push(route)
@@ -353,9 +357,11 @@ test('update center: serves the status JSON the Web panel reads', async () => {
     },
   }
   module.apply(ctx)
-  assert.equal(routes.length, 1, 'the plugin registers exactly one route')
+  assert.equal(routes.length, 2, 'the plugin registers the status route and the delete route')
   assert.equal(routes[0].path, '/blockfire/update')
   assert.equal(routes[0].kind, 'exact')
+  assert.equal(routes[1].path, '/blockfire/session/delete')
+  assert.equal(routes[1].kind, 'exact')
 
   const chunks = []
   const res = {
@@ -374,4 +380,173 @@ test('update center: serves the status JSON the Web panel reads', async () => {
   assert.equal(typeof payload.status, 'object')
   assert.ok(payload.status.stateFile.includes('.blockfire-harness'), 'status reports its state file')
   assert.equal(payload.check, null, 'no network check unless explicitly requested')
+})
+
+// ── permanent delete route ──────────────────────────────────────────────────
+
+/** Fake host context exposing exactly the services the delete route reads and writes. */
+async function deleteCtx(options = {}) {
+  const sessionId = options.sessionId
+  const root = options.root
+  const records = new Map(options.workspaces ?? [])
+  let global = { initialized: true, workspaceIds: options.workspaceIds ?? [], archivedSessionIds: [...(options.archived ?? [])] }
+  const stateWrites = []
+  const entityRebuilds = []
+  const registry = {
+    setState(next) {
+      stateWrites.push(next.archivedSessionIds)
+      global = next
+    },
+    rebuildEntities() {
+      entityRebuilds.push(entityRebuilds.length + 1)
+    },
+  }
+  const domain = {
+    table(name) {
+      assert.equal(name, 'workspaces')
+      return {
+        entries: () => [...records.entries()],
+        async put(id, record) {
+          records.set(id, record)
+        },
+      }
+    },
+    global: {
+      get: () => global,
+      async set(next) {
+        global = next
+      },
+    },
+  }
+  const agents = new Map(options.agents ?? [])
+  const routes = []
+  const module = await import(UPDATE_CENTER)
+  // The route closes over the plugin ctx, which declares inject:
+  // ['webServer', 'sessionPersistence', 'storageDomain'] — so the fake must
+  // expose those services as ctx properties, exactly as Cordis does.
+  const services = {
+    sessionPersistence: {
+      async list() {
+        return (options.knownIds ?? [sessionId]).map((id) => ({ id, cwd: root }))
+      },
+      locate(meta) {
+        return { kind: 'jsonl', path: join(root, 'log', meta.id, 'session.jsonl.zstd') }
+      },
+    },
+    storageDomain: { get: () => domain },
+    workspaceRegistry: registry,
+    agents: { get: (id) => agents.get(id) },
+  }
+  module.apply({
+    get(name) {
+      return services[name]
+    },
+    sessionPersistence: services.sessionPersistence,
+    storageDomain: services.storageDomain,
+    workspaceRegistry: services.workspaceRegistry,
+    agents: services.agents,
+    webServer: {
+      register(route) {
+        routes.push(route)
+      },
+    },
+    effect(factory) {
+      return factory()
+    },
+  })
+  const call = async (request) => {
+    const chunks = []
+    const res = {
+      writeHead(status) {
+        chunks.push({ status })
+      },
+      end(body) {
+        chunks.push({ body })
+      },
+    }
+    await routes[1].handler(request, res)
+    return {
+      status: chunks.find((chunk) => chunk.status !== undefined)?.status,
+      body: JSON.parse(chunks.find((chunk) => typeof chunk.body === 'string')?.body ?? 'null'),
+    }
+  }
+  const post = (body, headers = { 'x-blockfire-delete': '1' }) => {
+    const payload = JSON.stringify(body)
+    return call({
+      method: 'POST',
+      headers,
+      on(event, handler) {
+        if (event === 'data') handler(Buffer.from(payload))
+        if (event === 'end') handler()
+      },
+    })
+  }
+  return { post, call, records, agents, stateWrites, entityRebuilds, global: () => global }
+}
+
+const DELETE_ID = '0123abcd-0000-4000-8000-000000000001'
+const OTHER_ID = '0123abcd-0000-4000-8000-000000000002'
+const deleteHome = async () => {
+  const fs = await import('node:fs/promises')
+  const home = await fs.mkdtemp(join(tmpdir(), 'blockfire-del-'))
+  process.env.DSH_HOME = home
+  return home
+}
+
+test('delete: refuses anything that is not a POST with the delete header and a session id', async () => {
+  await deleteHome()
+  const ctx = await deleteCtx({ sessionId: DELETE_ID, root: process.env.DSH_HOME })
+  const denied = await ctx.call({ method: 'GET', headers: {} })
+  assert.equal(denied.status, 405, 'GET is never a delete')
+  const noHeader = await ctx.post({ sessionId: DELETE_ID }, {})
+  assert.equal(noHeader.status, 405, 'a cross-origin form cannot forge the custom header')
+  const badBody = await ctx.post({ sessionId: 'not-a-session-id' })
+  assert.equal(badBody.status, 400, 'a malformed session id is rejected before any write')
+})
+
+test('delete: 404 unknown session, 409 running session, no writes on either', async () => {
+  await deleteHome()
+  const ctx = await deleteCtx({
+    sessionId: DELETE_ID,
+    root: process.env.DSH_HOME,
+    workspaces: [['w1', { path: '/p', title: 't', createdAt: '', updatedAt: '', sessionIds: [DELETE_ID] }]],
+  })
+  const missing = await deleteCtx({ sessionId: OTHER_ID, root: process.env.DSH_HOME, knownIds: [] })
+  const unknown = await missing.post({ sessionId: OTHER_ID })
+  assert.equal(unknown.status, 404)
+  assert.equal(ctx.records.get('w1').sessionIds.length, 1, 'no accounting change for an unknown session')
+  ctx.agents.set(DELETE_ID, { status: 'running' })
+  const running = await ctx.post({ sessionId: DELETE_ID })
+  assert.equal(running.status, 409, 'a RUNNING agent must not have its log deleted under it')
+  assert.equal(ctx.records.get('w1').sessionIds.length, 1, 'no accounting change while the session runs')
+})
+
+test('delete: removes workspace accounting, archived set entry, log dir and cache entry', async () => {
+  const fs = await import('node:fs/promises')
+  const home = await deleteHome()
+  const cacheDir = join(home, 'storages', 'session_projcache', 'sessions')
+  await fs.mkdir(cacheDir, { recursive: true })
+  const logDir = join(home, 'log', DELETE_ID)
+  await fs.mkdir(logDir, { recursive: true })
+  await fs.writeFile(join(logDir, 'session.jsonl.zstd'), 'x')
+  const cacheEntry = join(cacheDir, `${DELETE_ID}.json`)
+  await fs.writeFile(cacheEntry, '{}')
+  const ctx = await deleteCtx({
+    sessionId: DELETE_ID,
+    root: home,
+    workspaces: [['w1', { path: '/p', title: 't', createdAt: '', updatedAt: '', sessionIds: [DELETE_ID, OTHER_ID] }]],
+    workspaceIds: ['w1'],
+    archived: [DELETE_ID],
+  })
+  const result = await ctx.post({ sessionId: DELETE_ID })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.ok, true)
+  assert.deepEqual(ctx.records.get('w1').sessionIds, [OTHER_ID], 'the deleted id leaves its workspace record')
+  assert.deepEqual(ctx.global().archivedSessionIds, [], 'the deleted id leaves the archive set')
+  assert.equal(ctx.stateWrites.length, 1, 'the global write goes through the registry setState')
+  assert.equal(ctx.entityRebuilds.length, 1, 'entity cache rebuilt from the table after the write')
+  assert.equal(existsSync(logDir), false, 'the session log directory is gone')
+  assert.equal(existsSync(cacheEntry), false, 'the projection-cache entry is gone')
+  const again = await ctx.post({ sessionId: DELETE_ID })
+  assert.equal(again.status, 200, 'a second call stays consistent (accounting already clean)')
 })
