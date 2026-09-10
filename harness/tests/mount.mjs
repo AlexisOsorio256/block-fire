@@ -82,13 +82,16 @@ export function apply(ctx) {
     const schemas = ctx.tools.schemas(scope)
     assert.deepEqual(schemas.map(tool => tool.name).sort(), [...contract.spaces[space].tools].sort(), `${space} tools`)
     const skills = (await ctx.skills.list({ scope })).map(skill => skill.name)
-    for (const name of ['blockfire-evidence', 'blockfire-android-qa', 'blockfire-animation-craft',
-      ...(space === 'creator' ? ['blockfire-harness', 'editing-cordis-compositions', 'cordis-plugin-development'] : [])]) {
+    for (const name of space === 'build'
+      ? ['blockfire-evidence', 'blockfire-android-qa', 'blockfire-animation-craft']
+      : ['blockfire-evidence', 'blockfire-harness', 'editing-cordis-compositions', 'cordis-plugin-development']) {
       assert(skills.includes(name), `${space} missing skill ${name}`)
     }
     if (space === 'build') {
       assert(!skills.includes('blockfire-harness'), 'BUILD must not carry the harness-authoring skill')
-      assert(!skills.includes('blockfire-orientation'), 'the orientation skill was removed: AGENTS.md owns arranque')
+    } else {
+      assert(!skills.includes('blockfire-android-qa') && !skills.includes('blockfire-animation-craft'),
+        'CREATOR must not carry game skills')
     }
     console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
     if (space === 'build') {

@@ -14,21 +14,16 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    # Dual-key persona — see build/agent.cordis.yml for why both keys exist.
+    # Harness-only identity: CREATOR carries no project card (AGENTS.md is
+    # BUILD's) and no game context. Operating detail (layout, install/test
+    # cycle, measurement) lives in the blockfire-harness skill, JIT.
     text: &persona |-
-      Eres el agente CREATOR de BLOCKFIRE sobre BLOCKFIRE Harness. Directorio de trabajo: {{cwd}}.
-
-      Tu trabajo es el harness: la capa BLOCKFIRE de este repositorio (harness/) y, cuando hace falta, el runtime DeepSeek Harness/Cordis sobre el que corre. La tarjeta operativa del proyecto (AGENTS.md) ya está cargada y sigue siendo la dueña de los hechos del juego.
-
-      DOS PLANOS, y de cuál es cada cosa depende dónde va un cambio:
-      - COMPOSICIÓN HOST: los registries compartidos (persistencia, sandbox/aprobación, ruta de modelo, registro de subagentes). Se configura por la capa de parche del perfil Web (harness/host/), no editando paquetes.
-      - PRESET DE AGENTE: lo que una sesión aporta a esos registries (sus tools, su persona, sus skills). Es harness/presets/<espacio>/ en este repo.
-      - Nunca edites la instalación de DSH ni un preset shipped: se sobrescriben al actualizar. La frontera completa está en harness/ARCHITECTURE.md.
+      Eres el agente CREATOR de BLOCKFIRE. Trabajas sobre el propio harness: la capa harness/ de este repo (presets, host, web, bin, lib, tests), el runtime DeepSeek Harness/Cordis sobre el que corre y su superficie Web. No recibes contexto del juego ni de sus documentos.
 
       CONTRATO
-      - Cambia el harness por evidencia, no por gusto: una tool que no se usa, contexto duplicado, una capacidad difícil de descubrir, cache degradado o una incompatibilidad upstream. El repositorio es la fuente; harness/install.sh materializa y harness/test.sh prueba.
-      - Para inspeccionar o modificar el runtime, activa la capacidad `cordis` con bf_capability (no está montada por defecto: son ~7.5k caracteres de esquema que solo sirven cuando de verdad tocas el runtime). Antes de escribir una composición carga editing-cordis-compositions; antes de escribir un plugin, cordis-plugin-development.
-      - Mide antes de afirmar: `node harness/bin/session-report.mjs` lee sesiones reales (tokens, cache, tools, esquemas). Lo no ejecutado es SIN VERIFICAR.
+      - Cambia el harness por evidencia, no por gusto; el repositorio es la fuente. harness/install.sh materializa la capa y harness/test.sh la prueba; lo no ejecutado es SIN VERIFICAR.
+      - Contexto JIT: carga una skill cuando la tarea encaje, no antes; las capacidades pesadas (bf_capability) están apagadas a propósito.
+      - Antes de escribir o cambiar una composición carga editing-cordis-compositions; antes de escribir un plugin, cordis-plugin-development.
       - commit + push están autorizados al cerrar una sesión verificada. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
       - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
     prefix: *persona
@@ -61,16 +56,17 @@
                 off when that work is done.
               config: {}
 
-# CREATOR's own harness-authoring skill, the four shared BLOCKFIRE skills, and
-# the shipped composition-authoring skills. The shipped ones are read from the
-# installed preset package (never edited); the harness compatibility suite
+# CREATOR's own harness-authoring skill, the two space-agnostic closing skills
+# (shared home), and the shipped composition-authoring skills. The game skills
+# (blockfire-android-qa, blockfire-animation-craft) stay BUILD-only. Shipped
+# skills are read from the installed preset package (never edited); test.sh
 # fails loudly if that path moves.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../build/skills/', baseUrl))"
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../shared/skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/', baseUrl))"
 
 # ── delegation, complete ────────────────────────────────────────────────────

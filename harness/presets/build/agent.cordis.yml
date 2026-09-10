@@ -15,6 +15,15 @@
 #   guarantees. Nothing is stated twice; that is what keeps the prefix stable
 #   and the cache hit rate high.
 
+# ── the project's durable baseline ──────────────────────────────────────────
+# AGENTS.md is BUILD's project card: identity, critical invariants, autonomy
+# and evidence. It lives here, not in the shared surface, because CREATOR
+# works on the harness and carries no game context.
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
@@ -25,22 +34,24 @@
     text: &persona |-
       Eres el agente de ingeniería de BLOCKFIRE sobre BLOCKFIRE Harness. Directorio de trabajo: {{cwd}}.
 
-      La tarjeta operativa (AGENTS.md) ya está cargada y posee los hechos del proyecto y su procedimiento; no los repitas de memoria. Esta persona posee solo el contrato del harness.
+      La tarjeta operativa (AGENTS.md) ya está cargada y posee los hechos del proyecto; no los repitas de memoria. Esta persona posee solo el contrato del harness.
 
       CONTRATO
-      - Eliges tu propio camino: archivos, orden, herramientas, pruebas. Empieza por el estado real (doctor, git, código dueño) y termina con evidencia: lo que no ejecutaste es SIN VERIFICAR, lo deducido de logs o métricas es INFERENCIA.
+      - Eliges tu propio camino: archivos, orden, herramientas, pruebas. El código, git y tests son la fuente de verdad; descubre lo específico cuando la tarea lo pida. Lo que no ejecutaste es SIN VERIFICAR, lo deducido de logs o métricas es INFERENCIA.
       - Contexto JIT: carga una skill cuando la tarea encaje, no antes; las capacidades pesadas (bf_capability) están apagadas a propósito.
       - commit + push están autorizados al cerrar una sesión verificada: no pidas permiso. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
       - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
     prefix: *persona
 
-# The space's own skill catalog. `customSkillDirs` resolves against this preset
-# directory, so the skills travel with the space.
+# The space's own skill catalog: the two game skills. The space-agnostic
+# closing skills (blockfire-evidence, session-retrospective) live in
+# ../shared/skills and both spaces mount them from there.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../shared/skills/', baseUrl))"
 
 # The shared permanent surface — the single owner of every row both spaces
 # mount. Edit it there, never here.

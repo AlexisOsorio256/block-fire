@@ -46,7 +46,10 @@ harness/
 ## Ciclo de cambio
 
 1. Edita en `harness/` (nunca en `$DSH_HOME`).
-2. `harness/install.sh` — sincroniza la copia activa.
+2. `harness/install.sh` — sincroniza la copia activa. Ojo: los presets que el
+   roster monta son `SPACES`; cualquier directorio nuevo bajo `presets/` (p. ej.
+   `shared/`) necesita su propio paso de copia y su check de drift, o la suite
+   (que copia el árbol completo) pasa y la instalación real se queda sin él.
 3. `harness/test.sh` — boots reales: `tests/mount.mjs` arranca un host Web
    aislado con los dos presets y prueba la superficie y el ciclo de capacidades
    sin llamadas al modelo; los controles negativos deben fallar con

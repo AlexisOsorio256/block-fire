@@ -29,7 +29,7 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | Componente | Qué es | Por qué existe |
 |---|---|---|
 | `presets/build/` | El espacio BUILD: persona + skills; incluye `surface.cordis.yml` | Punto de entrada del trabajo normal |
-| `presets/build/surface.cordis.yml` | **Único dueño** de la superficie permanente que ambos espacios montan | BUILD y CREATOR no pueden divergir en filas |
+| `presets/build/surface.cordis.yml` | **Único dueño** de la superficie de tools que ambos espacios montan | BUILD y CREATOR no pueden divergir en filas de tools |
 | `presets/creator/` | El espacio CREATOR: persona + skills + deltas (delegación completa, goals, web fetch, capacidad `cordis`) | Trabajo sobre el harness |
 | `presets/build/plugins/capabilities.js` | Router `bf_capability` + capacidades JIT declaradas | Blender MCP son ~7.4k tokens de esquema; la mayoría de sesiones no lo toca |
 | `host/guard.js` | Guard de operaciones destructivas (host plane) | Sustituye los prompts de aprobación por un límite de política |
@@ -88,13 +88,13 @@ es lo que necesita Blender MCP para resolver.
 
 ## Estrategia de contexto
 
-- Prompt permanente = persona del espacio (identidad + contrato del harness) +
-  `AGENTS.md` como mensaje durable + catálogo de skills (una línea por skill).
-- **Un hecho, un dueño**: los hechos del proyecto los posee `AGENTS.md` y
-  `docs/*`; la persona no los repite. Por eso la persona bajó de ~2.6k a ~1.2k
-  caracteres y `AGENTS.md` de ~4.0k a ~1.9k sin perder contrato: la tabla de
-  dueños vive solo en `docs/ARCHITECTURE.md`, el craft de animación solo en su
-  skill, y la terminología solo en `PROJECT_RULES.md`.
+- Prompt permanente = persona del espacio (identidad + contrato del espacio) +
+  catálogo de skills (una línea por skill). `AGENTS.md` como mensaje durable es
+  **solo de BUILD**: CREATOR trabaja el harness sin tarjeta del proyecto ni
+  skills del juego; su detalle operativo vive en la skill `blockfire-harness`.
+- **Un hecho, un dueño**: los hechos del proyecto los posee `AGENTS.md` (BUILD)
+  y `docs/*`; la persona no los repite. Sin ritual de arranque: la tarjeta no
+  obliga a doctor/git/lecturas al abrir sesión — eso es decisión de la tarea.
 - El arranque NO es una lectura de documentos: es `tools/bf doctor` + git + el
   código dueño. La skill de orientación se eliminó porque su cuerpo costaba en
   toda sesión (2.8k chars en el step 1) y sus instrucciones inducían leer tres

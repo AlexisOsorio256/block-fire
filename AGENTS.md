@@ -7,14 +7,12 @@ contratos de cada sistema: `docs/ARCHITECTURE.md`. Estado operativo de hoy:
 
 ## Arranque
 
-1. `tools/bf doctor` — una sola sonda: HEAD, Godot, Blender (+MCP), teléfono,
-   armas y clips activos. No la sustituyas por comandos ad-hoc.
-2. El código dueño del comportamiento (mapa en `docs/ARCHITECTURE.md`); no
-   deduzcas el dueño por el nombre del archivo ni por proximidad de carpetas.
-3. `git status --short` y `git log --oneline -5` antes de tocar.
-
-Lee `PROJECT_RULES.md`, `docs/ARCHITECTURE.md` o `docs/CURRENT_STATE.md` solo
-cuando la tarea los necesite; no como trámite de arranque.
+Sin ritual: entra al código y trabaja. El mapa de dueños de cada comportamiento
+vive en `docs/ARCHITECTURE.md` — consúltalo cuando necesites saber quién posee
+qué; no lo deduzcas por nombre de archivo ni cercanía de carpetas.
+`PROJECT_RULES.md` y `docs/CURRENT_STATE.md` se leen cuando la tarea los pide.
+`tools/bf doctor` (HEAD, Godot, Blender, teléfono, armas y clips) es la sonda
+de estado cuando la tarea toca plataforma o assets — no un paso de apertura.
 
 ## Producto y plataforma
 

@@ -23,17 +23,12 @@
 #   * Host-plane services (tools, skills, jobs, goals, subagents, sandbox) are
 #     never re-provided here.
 
-# ── the project's durable baseline ──────────────────────────────────────────
-# AGENTS.md is the project's own operational card and the single owner of
-# project facts. The persona deliberately does NOT restate them.
-- id: agent-instructions
-  name: '@deepseek-ai/dsh-agent-instructions'
-  config:
-    maxBytes: 65536
-
 # ── shell ───────────────────────────────────────────────────────────────────
 # The general tool. Evidence: bash is used in 100% of measured sessions and
 # dominates every one of them; it must never be wrapped by a custom tool.
+# (AGENTS.md used to be mounted here for both spaces; it is BUILD's project
+# card and lives in build/agent.cordis.yml since — CREATOR works on the
+# harness and carries no game context.)
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
   disabled: !!js process.platform === 'win32'

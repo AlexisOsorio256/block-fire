@@ -30,6 +30,9 @@ GUARD_LINK="$PROFILE_DIR/blockfire"
 PATCH_DEST="$PROFILE_DIR/blockfire.patch.yml"
 
 SPACES=(build creator)
+# Copy-only preset dirs: no roster entry, no bridge link — today the
+# space-agnostic skills both spaces mount from ../shared/skills.
+SHARED=(shared)
 LEGACY_PRESETS=(blockfire)
 
 MODE="sync"
@@ -113,6 +116,21 @@ check_or_diff() {
 	for legacy in "${LEGACY_PRESETS[@]}"; do
 		[ -d "$DEST_ROOT/$legacy" ] && { echo "DRIFT: legacy preset $DEST_ROOT/$legacy still present — re-run harness/install.sh"; rc=1; }
 	done
+	for dir in "${SHARED[@]}"; do
+		local src="$PRESETS_SRC/$dir" dest="$DEST_ROOT/$dir"
+		if [ ! -d "$dest" ]; then
+			echo "DRIFT: $dest does not exist — run harness/install.sh"
+			rc=1
+			continue
+		fi
+		if diff -r -q "$src" "$dest" >/dev/null 2>&1; then
+			echo "IN SYNC: $dest"
+		else
+			echo "DRIFT: $dest differs from $src"
+			[ "$MODE" = "diff" ] && diff -r -u "$src" "$dest" | head -60
+			rc=1
+		fi
+	done
 	if [ ! -d "$PROFILE_DIR" ]; then
 		echo "DRIFT: $PROFILE_DIR missing — boot the Web profile once, then re-run"
 		rc=1
@@ -170,6 +188,17 @@ for legacy in "${LEGACY_PRESETS[@]}"; do
 		rm -rf "$DEST_ROOT/$legacy"
 		echo "removed legacy preset $DEST_ROOT/$legacy (superseded by ${SPACES[*]})"
 	fi
+done
+
+# ── shared (copy-only) ──────────────────────────────────────────────────────
+for dir in "${SHARED[@]}"; do
+	src="$PRESETS_SRC/$dir"
+	dest="$DEST_ROOT/$dir"
+	[ -d "$src" ] || { echo "install.sh: missing $src" >&2; exit 1; }
+	rm -rf "$dest"
+	cp -a "$src" "$dest" || { echo "install.sh: copy failed for $dir" >&2; exit 1; }
+	chmod -R u+rwX,go-rwx "$dest"
+	echo "shared $dir -> $dest"
 done
 
 # ── host plane ──────────────────────────────────────────────────────────────
