@@ -1,41 +1,7 @@
 #!/usr/bin/env node
-/**
- * BLOCKFIRE Update Center — detect, stage, verify, switch, roll back.
- *
- * WHY THIS EXISTS
- * Freezing DSH forever is wrong (the layer is a thin boundary, not a fork) and
- * updating blindly is wrong (the layer's composition, tool surface and metrics
- * all depend on upstream shapes). This tool makes the update a STAGED, VERIFIED,
- * REVERSIBLE operation:
- *
- *   1. `check`    — what is installed, what exists upstream, what changed.
- *   2. `stage`    — install the candidate into an isolated tree. The running
- *                   installation is never touched.
- *   3. `verify`   — run the BLOCKFIRE compatibility suite against that tree.
- *   4. `activate` — point the launcher at it. The previous tree is kept.
- *   5. `rollback` — point the launcher back.
- *
- * NO FAKE ATOMICITY: the switch is a single state file write, and it takes
- * effect on the NEXT launch. The process that is running keeps running whatever
- * it booted with. That is the honest guarantee this V1 can make.
- *
- * WHICH DSH TREES EXIST is not decided here. `installed` and the ACTIVE pin come
- * from harness/lib/runtime.mjs, the one resolver shared with the launcher,
- * install.sh and test.sh — a second copy of the discovery rules is exactly the
- * bug that used to make `harness/bin/blockfire` claim there was no runtime.
- *
- *   node harness/bin/update.mjs status [--json]
- *   node harness/bin/update.mjs check [--json]
- *   node harness/bin/update.mjs stage <version>
- *   node harness/bin/update.mjs verify <version>
- *   node harness/bin/update.mjs activate <version> [--force]
- *   node harness/bin/update.mjs rollback
- *
- * State: $DSH_HOME/.blockfire-harness/state.json  (never inside the repo)
- */
-
+/** Staged, verified and reversible DeepSeek Harness updates. */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -50,11 +16,7 @@ const STATE_FILE = join(STATE_DIR, 'state.json')
 const STAGING_DIR = join(STATE_DIR, 'staging')
 const RELEASES_URL = 'https://api.github.com/repos/deepseek-ai/deepseek-harness/releases'
 
-// `... | head` closes the pipe early; that is not an error worth a stack trace.
-process.stdout.on('error', (error) => {
-  if (error?.code === 'EPIPE') process.exit(0)
-})
-
+process.stdout.on('error', (error) => { if (error?.code === 'EPIPE') process.exit(0) })
 const argv = process.argv.slice(2)
 const asJson = argv.includes('--json')
 const force = argv.includes('--force')
@@ -67,38 +29,27 @@ function fail(message) {
 }
 
 function readState() {
-  try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf8'))
-  } catch {
-    return { active: undefined, previous: undefined, staged: {}, lastCheck: undefined }
-  }
+  try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')) }
+  catch { return { active: undefined, previous: undefined, staged: {}, verified: {}, lastCheck: undefined } }
 }
 
 function writeState(state) {
   mkdirSync(STATE_DIR, { recursive: true })
-  writeFileSync(STATE_FILE, `${JSON.stringify(state, undefined, 2)}\n`)
+  const tmp = `${STATE_FILE}.${process.pid}.tmp`
+  writeFileSync(tmp, `${JSON.stringify(state, undefined, 2)}\n`)
+  renameSync(tmp, STATE_FILE)
 }
 
 function readJson(text) {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
+  try { return JSON.parse(text) } catch { return undefined }
 }
 
-/** The tree the launcher is pinned to by `activate`, or undefined. */
 function pinnedTree(state) {
   const active = state.active
   if (active === null || active === undefined || typeof active !== 'object') return undefined
   return describeInstall(active.nodeModules ?? active.bin, 'active-pin')
 }
 
-/**
- * What a plain `dsh` on this machine resolves to: the shared resolver without
- * the BLOCKFIRE-managed sources. PATH alone would miss the npx cache, which is
- * where DSH normally lives here.
- */
 function installedTree() {
   const resolved = resolveRuntime({ skip: ['active-pin', 'staged'] })
   if (resolved.ok !== true) return undefined
@@ -115,14 +66,24 @@ function activeTree(state) {
   return pinnedTree(state) ?? installedTree()
 }
 
+/** Web children inherit these from harness/bin/blockfire, so this is the actual host. */
+function runningTree() {
+  const version = process.env.BLOCKFIRE_RUNNING_DSH_VERSION
+  if (typeof version === 'string' && version !== '') {
+    return {
+      version,
+      bin: process.env.BLOCKFIRE_RUNNING_DSH_BIN,
+      source: 'running-process',
+      sourceLabel: process.env.BLOCKFIRE_RUNNING_DSH_SOURCE_LABEL ?? 'BLOCKFIRE host',
+    }
+  }
+  return installedTree()
+}
+
 function npmView(args) {
   return execFileSync('npm', ['view', PACKAGE, ...args], { encoding: 'utf8', timeout: 120000 }).trim()
 }
-
-function npmJson(args) {
-  const text = npmView([...args, '--json'])
-  return readJson(text)
-}
+function npmJson(args) { return readJson(npmView([...args, '--json'])) }
 
 async function releaseNotes() {
   try {
@@ -130,33 +91,24 @@ async function releaseNotes() {
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'blockfire-harness' },
     })
     if (!response.ok) return []
-    const releases = await response.json()
-    return releases.map((release) => ({
+    return (await response.json()).map((release) => ({
       tag: String(release.tag_name ?? ''),
-      name: String(release.name ?? ''),
       url: String(release.html_url ?? ''),
-      publishedAt: String(release.published_at ?? ''),
       body: String(release.body ?? '').slice(0, 4000),
     }))
-  } catch {
-    return []
-  }
+  } catch { return [] }
 }
 
 async function check() {
   const state = readState()
-  const active = activeTree(state)
-  const installed = active?.version ?? 'unknown'
+  const target = activeTree(state)
+  const installed = target?.version ?? 'unknown'
   const distTags = npmJson(['dist-tags']) ?? {}
   const times = npmJson(['time']) ?? {}
-  const versions = Object.keys(times)
-    .filter((key) => key !== 'created' && key !== 'modified')
-    .sort(compareVersions)
-  // Newest first: the first entry is the natural Update target, and the Web
-  // panel defaults its version picker to exactly this order.
+  const versions = Object.keys(times).filter((key) => key !== 'created' && key !== 'modified')
   const newer = versions
     .filter((version) => installed === 'unknown' || compareVersions(version, installed) > 0)
-    .sort((left, right) => compareVersions(right, left))
+    .sort((a, b) => compareVersions(b, a))
   const notes = await releaseNotes()
   const channels = Object.entries(distTags).map(([channel, version]) => {
     const release = notes.find((entry) => entry.tag === `dsh-v${String(version)}`)
@@ -165,13 +117,12 @@ async function check() {
       version: String(version),
       publishedAt: times[String(version)] ?? undefined,
       notesUrl: release?.url,
-      notes: release?.body === undefined ? undefined : release.body.split('\n').slice(0, 40).join('\n'),
+      notes: release?.body?.split('\n').slice(0, 40).join('\n'),
     }
   })
-  const checkResult = {
+  const result = {
     package: PACKAGE,
     installed,
-    activeBin: active?.bin,
     channels,
     newer: newer.map((version) => ({
       version,
@@ -180,9 +131,9 @@ async function check() {
     })),
     checkedAt: new Date().toISOString(),
   }
-  state.lastCheck = checkResult
+  state.lastCheck = result
   writeState(state)
-  return checkResult
+  return result
 }
 
 function stagedTrees(state) {
@@ -195,16 +146,14 @@ function stagedTrees(state) {
 
 function status() {
   const state = readState()
-  const active = activeTree(state)
-  const installed = installedTree()
   const pinned = pinnedTree(state)
   return {
     package: PACKAGE,
-    active: active ?? null,
+    active: activeTree(state) ?? null,
     pinned: pinned ?? null,
     pinStale: state.active !== undefined && pinned === undefined,
     previous: state.previous ?? null,
-    runningInstall: installed ?? null,
+    runningInstall: runningTree() ?? null,
     staged: stagedTrees(state),
     verified: state.verified ?? {},
     lastCheck: state.lastCheck ?? null,
@@ -214,11 +163,11 @@ function status() {
 }
 
 function stage(version) {
-  if (version === undefined) fail('stage needs a version, for example: update.mjs stage 0.1.5-alpha.2')
+  if (version === undefined) fail('stage needs a version')
   const dir = join(STAGING_DIR, version)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  process.stdout.write(`staging ${PACKAGE}@${version} into ${dir}\n`)
+  process.stdout.write(`staging ${PACKAGE}@${version}\n`)
   execFileSync('npm', ['install', '--prefix', dir, '--no-save', '--no-audit', '--no-fund', `${PACKAGE}@${version}`], {
     stdio: ['ignore', 'inherit', 'inherit'],
     timeout: 900000,
@@ -227,16 +176,18 @@ function stage(version) {
   if (tree === undefined) fail(`staged tree at ${dir} does not contain ${PACKAGE}`)
   const state = readState()
   state.staged = { ...(state.staged ?? {}), [version]: tree }
+  state.verified = { ...(state.verified ?? {}) }
+  delete state.verified[version] // a fresh tree never inherits an old verdict
   writeState(state)
-  process.stdout.write(`staged ${version} (bin: ${tree.bin})\nnext: node harness/bin/update.mjs verify ${version}\n`)
+  process.stdout.write(`staged ${version}\n`)
 }
 
 function verify(version) {
   if (version === undefined) fail('verify needs a version')
   const state = readState()
   const tree = stagedTrees(state)[version]
-  if (tree === undefined) fail(`${version} is not staged — run: update.mjs stage ${version}`)
-  process.stdout.write(`verifying ${version} against harness/test.sh\n`)
+  if (tree === undefined) fail(`${version} is not staged`)
+  process.stdout.write(`verifying ${version}\n`)
   let ok = false
   let output = ''
   try {
@@ -248,37 +199,23 @@ function verify(version) {
     ok = true
   } catch (error) {
     output = `${error.stdout ?? ''}${error.stderr ?? ''}`
-    ok = false
   }
-  // The suite must have run against the CANDIDATE tree. A resolver regression
-  // once made it quietly test the installed runtime instead, which would make
-  // `verify` worthless, so the reported tree is cross-checked here.
+
   const usedModules = /^ {2}install modules: (.+)$/m.exec(output)?.[1]?.trim()
   if (ok && usedModules !== undefined) {
-    let same = usedModules === tree.nodeModules
-    try {
-      same = realpathSync(usedModules) === realpathSync(tree.nodeModules)
-    } catch {
-      same = false
-    }
-    if (!same) {
-      ok = false
-      output = `${output}\nverify: the suite ran against ${usedModules}, not the staged tree ${tree.nodeModules}\n`
-    }
-  } else if (ok && usedModules === undefined) {
+    try { ok = realpathSync(usedModules) === realpathSync(tree.nodeModules) } catch { ok = false }
+    if (!ok) output += `\nverify: suite did not run against ${tree.nodeModules}\n`
+  } else if (ok) {
     ok = false
-    output = `${output}\nverify: the suite did not report which node_modules it used — refusing to trust the verdict\n`
+    output += '\nverify: suite did not report its node_modules; verdict refused\n'
   }
+
   state.verified = {
     ...(state.verified ?? {}),
-    // 40 lines, not 12: the FAIL line and its section header live at the top
-    // of the tail, and re-running the whole suite just to see which check
-    // failed is minutes of the same evidence.
     [version]: { ok, at: new Date().toISOString(), tail: output.trim().split('\n').slice(-40).join('\n') },
   }
   writeState(state)
-  process.stdout.write(`${output}\n`)
-  process.stdout.write(ok ? `verified ${version}: PASS\n` : `verified ${version}: FAIL — activation refused unless --force\n`)
+  process.stdout.write(`${output}\n${ok ? 'PASS' : 'FAIL'} ${version}\n`)
   process.exit(ok ? 0 : 1)
 }
 
@@ -286,86 +223,60 @@ function activate(version) {
   if (version === undefined) fail('activate needs a version')
   const state = readState()
   const tree = stagedTrees(state)[version]
-  if (tree === undefined) fail(`${version} is not staged — run: update.mjs stage ${version}`)
-  const verdict = state.verified?.[version]
-  if (verdict?.ok !== true && !force) {
-    fail(`${version} has not passed the compatibility suite — run: update.mjs verify ${version} (or --force)`)
-  }
+  if (tree === undefined) fail(`${version} is not staged`)
+  if (state.verified?.[version]?.ok !== true && !force) fail(`${version} has not passed verification`)
   const current = activeTree(state)
   state.previous = current ?? undefined
   state.active = tree
   writeState(state)
-  process.stdout.write(`active -> ${version} (${tree.bin})\n`)
-  if (current !== undefined) process.stdout.write(`previous kept -> ${current.version} (${current.bin})\n`)
-  process.stdout.write('takes effect on the next launch; the running process is untouched\n')
+  process.stdout.write(`active -> ${version}\nrestart BLOCKFIRE to use it\n`)
 }
 
 function rollback() {
   const state = readState()
   if (state.previous === undefined) fail('nothing to roll back to')
+  const target = describeInstall(state.previous.nodeModules ?? state.previous.bin, 'rollback')
+  if (target === undefined) fail('rollback target no longer exists')
   const current = activeTree(state)
-  const target = state.previous
   state.previous = current ?? undefined
   state.active = target
   writeState(state)
-  process.stdout.write(`rolled back -> ${target.version} (${target.bin})\n`)
-  process.stdout.write('takes effect on the next launch\n')
+  process.stdout.write(`rolled back -> ${target.version}\nrestart BLOCKFIRE to use it\n`)
 }
 
 function printStatus(value) {
-  const installed = value.runningInstall
-  process.stdout.write(`installed (resolver)     ${installed === null ? 'unknown' : `${installed.version} (${installed.sourceLabel ?? installed.source ?? 'unknown'})`}\n`)
-  process.stdout.write(`launcher pin (active)    ${value.active?.version ?? '(none: resolver default)'}\n`)
-  if (value.pinStale === true) {
-    process.stdout.write('WARNING                  the active pin in state.json no longer resolves; the resolver default is used\n')
-  }
-  process.stdout.write(`previous (rollback)      ${value.previous?.version ?? '(none)'}\n`)
+  const running = value.runningInstall
+  process.stdout.write(`running                  ${running ? `${running.version} (${running.sourceLabel ?? running.source ?? 'unknown'})` : 'unknown'}\n`)
+  process.stdout.write(`next launch              ${value.active?.version ?? 'resolver default'}\n`)
+  process.stdout.write(`pin                      ${value.pinned?.version ?? '(none)'}\n`)
+  if (value.pinStale) process.stdout.write('WARNING                  active pin is stale; resolver default will be used\n')
+  process.stdout.write(`rollback                 ${value.previous?.version ?? '(none)'}\n`)
   const staged = Object.keys(value.staged)
-  process.stdout.write(`staged candidates        ${staged.length === 0 ? '(none)' : staged.join(', ')}\n`)
-  for (const [version, verdict] of Object.entries(value.verified)) {
-    process.stdout.write(`  verified ${version}        ${verdict.ok ? 'PASS' : 'FAIL'} (${verdict.at})\n`)
-  }
-  process.stdout.write(`state file               ${value.stateFile}\n`)
+  process.stdout.write(`staged                   ${staged.length ? staged.join(', ') : '(none)'}\n`)
 }
 
 function printCheck(value) {
-  process.stdout.write(`installed ${value.installed}\n`)
-  process.stdout.write('channels\n')
-  for (const channel of value.channels) {
-    process.stdout.write(`  ${channel.channel.padEnd(8)} ${channel.version}  ${channel.publishedAt ?? ''}\n`)
-    if (channel.notesUrl !== undefined) process.stdout.write(`           ${channel.notesUrl}\n`)
-  }
-  process.stdout.write(value.newer.length === 0 ? 'no newer version published\n' : 'newer versions\n')
-  for (const entry of value.newer) {
-    process.stdout.write(`  ${entry.version.padEnd(16)} ${entry.publishedAt ?? ''}${entry.notesUrl === undefined ? '' : `  ${entry.notesUrl}`}\n`)
-  }
+  process.stdout.write(`current ${value.installed}\n`)
+  for (const channel of value.channels) process.stdout.write(`${channel.channel.padEnd(10)} ${channel.version}\n`)
+  process.stdout.write(value.newer.length === 0 ? 'up to date\n' : `newer ${value.newer.map((entry) => entry.version).join(', ')}\n`)
 }
 
 switch (command) {
   case 'status': {
     const value = status()
-    if (asJson) process.stdout.write(`${JSON.stringify(value, undefined, 2)}\n`)
-    else printStatus(value)
+    process.stdout.write(asJson ? `${JSON.stringify(value, undefined, 2)}\n` : '')
+    if (!asJson) printStatus(value)
     break
   }
   case 'check': {
     const value = await check()
-    if (asJson) process.stdout.write(`${JSON.stringify(value, undefined, 2)}\n`)
-    else printCheck(value)
+    process.stdout.write(asJson ? `${JSON.stringify(value, undefined, 2)}\n` : '')
+    if (!asJson) printCheck(value)
     break
   }
-  case 'stage':
-    stage(operand)
-    break
-  case 'verify':
-    verify(operand)
-    break
-  case 'activate':
-    activate(operand)
-    break
-  case 'rollback':
-    rollback()
-    break
-  default:
-    fail(`unknown command "${command}" — use status, check, stage, verify, activate or rollback`)
+  case 'stage': stage(operand); break
+  case 'verify': verify(operand); break
+  case 'activate': activate(operand); break
+  case 'rollback': rollback(); break
+  default: fail(`unknown command "${command}"`)
 }
