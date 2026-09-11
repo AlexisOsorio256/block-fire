@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PACKAGE, compareVersions, describeInstall, resolveRuntime } from '../lib/runtime.mjs'
+import { updateVersionError, validUpdateVersion } from '../lib/update-version.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
@@ -15,7 +16,6 @@ const STATE_DIR = join(DSH_HOME, '.blockfire-harness')
 const STATE_FILE = join(STATE_DIR, 'state.json')
 const STAGING_DIR = join(STATE_DIR, 'staging')
 const RELEASES_URL = 'https://api.github.com/repos/deepseek-ai/deepseek-harness/releases'
-const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/
 
 process.stdout.on('error', (error) => { if (error?.code === 'EPIPE') process.exit(0) })
 const argv = process.argv.slice(2)
@@ -32,9 +32,7 @@ function fail(message) {
 /** Versions/tags become staging directory names; path syntax is never valid here. */
 function safeVersion(version, action) {
   if (version === undefined) fail(`${action} needs a version`)
-  if (!SAFE_VERSION.test(version) || version.includes('..')) {
-    fail(`${action} version must be an npm version/tag without path syntax`)
-  }
+  if (!validUpdateVersion(version)) fail(updateVersionError(action))
   return version
 }
 
