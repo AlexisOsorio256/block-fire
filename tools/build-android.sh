@@ -7,7 +7,8 @@ find_godot() {
 		echo "$BLOCKFIRE_GODOT"
 		return 0
 	fi
-	for candidate in "$(command -v godot 2>/dev/null || true)" "$(command -v godot4 2>/dev/null || true)"; do
+	for candidate in "$(command -v godot 2>/dev/null || true)" "$(command -v godot4 2>/dev/null || true)" \
+			"$HOME/.local/share/blockfire-tools/godot-4.7.2/godot"; do
 		if [ -n "$candidate" ] && [ -x "$candidate" ]; then
 			echo "$candidate"
 			return 0
