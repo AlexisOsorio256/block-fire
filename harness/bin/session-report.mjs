@@ -92,11 +92,21 @@ function readEvents(file) {
     fail(`cannot read ${file}: ${String(error?.message ?? error)}`)
   }
   const events = []
-  for (const line of text.split('\n')) {
+  const malformedLines = []
+  let truncatedTail = false
+  const lines = text.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
     if (line === '') continue
-    try { events.push(JSON.parse(line)) } catch {}
+    try {
+      events.push(JSON.parse(line))
+    } catch {
+      const later = lines.slice(index + 1).some((candidate) => candidate !== '')
+      if (later) malformedLines.push(index + 1)
+      else truncatedTail = true
+    }
   }
-  return events
+  return { events, malformedLines, truncatedTail }
 }
 
 function messageText(content) {
@@ -108,7 +118,16 @@ function messageText(content) {
   }).join('')
 }
 
-function fold(file, events) {
+function timeMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function fold(file, events, parse) {
   const report = {
     file,
     sessionId: undefined,
@@ -145,18 +164,22 @@ function fold(file, events) {
     subagents: [],
     userMessages: 0,
     lastEventTime: undefined,
+    malformedLines: parse.malformedLines,
+    truncatedTail: parse.truncatedTail,
+    evidenceComplete: parse.malformedLines.length === 0,
   }
 
   const openCompactions = new Set()
 
   for (const event of events) {
-    if (typeof event.time === 'number') report.lastEventTime = event.time
+    const eventTime = timeMs(event.time)
+    if (eventTime !== undefined) report.lastEventTime = eventTime
     switch (event.type) {
       case 'session':
         report.sessionId = event.id
         report.cwd = event.cwd
         report.agentPreset = event.agentPreset
-        report.startedAt = event.createdAt
+        report.startedAt = timeMs(event.createdAt) ?? eventTime ?? report.startedAt
         break
       case 'agent-preset/selected':
         report.agentPreset = event.data?.preset ?? event.data?.agentPreset ?? report.agentPreset
@@ -271,11 +294,15 @@ function fold(file, events) {
 }
 
 const pct = (value) => value === undefined ? 'n/a' : `${value}%`
-const reports = resolveTargets().map((file) => fold(file, readEvents(file)))
+const reports = resolveTargets().map((file) => {
+  const parsed = readEvents(file)
+  return fold(file, parsed.events, parsed)
+})
+const corrupt = reports.some((report) => !report.evidenceComplete)
 
 if (asJson) {
   process.stdout.write(`${JSON.stringify(reports, null, 2)}\n`)
-  process.exit(0)
+  process.exit(corrupt ? 1 : 0)
 }
 
 for (const report of reports) {
@@ -283,6 +310,13 @@ for (const report of reports) {
   const billedPrompt = report.inputTokens + report.cacheReadTokens + report.cacheWriteTokens
   lines.push(`session ${report.sessionId ?? '?'}  preset=${report.agentPreset ?? '?'}  model=${report.model ?? '?'}  provider=${report.provider ?? '?'}`)
   lines.push(`  cwd            ${report.cwd ?? '?'}`)
+  if (report.malformedLines.length > 0) {
+    lines.push(`  log integrity  CORRUPT middle lines ${report.malformedLines.join(', ')} — metrics are partial`)
+  } else if (report.truncatedTail) {
+    lines.push('  log integrity  live tail truncated; completed events are usable')
+  } else {
+    lines.push('  log integrity  complete')
+  }
   if (Object.keys(report.permission).length > 0) {
     lines.push(`  policy         preset=${report.permission.preset ?? '?'}  sandbox=${report.permission.sandbox ?? '?'}  approval=${report.permission.approval ?? '?'}`)
   }
@@ -305,3 +339,5 @@ for (const report of reports) {
   if (report.subagents.length > 0) lines.push(`  subagents      ${report.subagents.join(', ')}`)
   process.stdout.write(`${lines.join('\n')}\n\n`)
 }
+
+if (corrupt) process.exitCode = 1
