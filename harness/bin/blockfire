@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 HARNESS="$(cd "$HERE/.." && pwd)"
 DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
 PATCH="$DSH_HOME_DIR/profiles/web/blockfire.patch.yml"
+PURGER="$HERE/purge-sessions.mjs"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 	cat <<'EOF'
@@ -18,13 +19,12 @@ EOF
 fi
 
 [ -f "$PATCH" ] || { echo "blockfire: missing $PATCH — run harness/install.sh" >&2; exit 1; }
+[ -f "$PURGER" ] || { echo "blockfire: missing $PURGER — harness checkout is incomplete" >&2; exit 1; }
 export DSH_PERMISSION_MODE="${DSH_PERMISSION_MODE:-danger-full-access}"
 
 # Session persistence is append-only. Web Delete hides/detaches immediately and
 # queues disk artifacts; remove them only at this clean pre-boot boundary.
-if [ -f "$HERE/purge-sessions.mjs" ]; then
-	node "$HERE/purge-sessions.mjs" || echo "blockfire: warning: some deleted-session artifacts will retry next launch" >&2
-fi
+node "$PURGER" || echo "blockfire: warning: some deleted-session artifacts will retry next launch" >&2
 
 # shellcheck source=lib/runtime.sh
 . "$HARNESS/lib/runtime.sh"
