@@ -1,84 +1,43 @@
 # PROJECT RULES — BLOCKFIRE
 
-Constitución estable del producto. `README.md` contiene los hechos
-cambiantes; `CREDITS.md`, las atribuciones. Si hay duda, inspeccionar y
-probar: no inventar.
+Reglas estables del producto. Léelas solo cuando la tarea necesite una decisión
+de producto/arquitectura. Código y pruebas mandan sobre documentación obsoleta;
+atribuciones viven en `CREDITS.md`.
 
-## 1. Producto y prioridades
+## Producto
 
-BLOCKFIRE es un TPS arcade estilizado, colorido, legible y rápido para
-Android en orientación horizontal. El núcleo es moverse, apuntar, disparar,
-impactar, matar, morir y repetir.
+TPS arcade estilizado para Android landscape. Prioridad:
+**estabilidad → gameplay → rendimiento → UX → inmersión → features**.
+Presentación canónica: tercera persona sobre el hombro. Runtime canónico: Godot
+4.7.2 Standard + GDScript + renderer Mobile. No reintroducir Unity, runtime web,
+PWA, WebView/Capacitor ni brazos/FPS antiguos.
 
-Prioridades inmutables: estabilidad → gameplay → rendimiento → UX → inmersión
-→ features.
+Modos: Duelo de Escuadras 4v4 por rondas y FFA de 8. Jugador: 200 HP. Skins
+locales/cosméticas y moneda ficticia. Sin backend, cuentas, economía real,
+multijugador online, anuncios, ranking, chat, clanes, vehículos, campaña, loot o
+matchmaking.
 
-La presentación visual canónica es **tercera persona sobre el hombro**. No se
-vuelve a primera persona, no se reintroducen brazos PSX y ningún documento
-antiguo que diga "FPS" autoriza a revertir esa decisión.
+## Invariantes de ingeniería
 
-La ruta canónica es Godot 4.7.2 Standard, GDScript y renderer Mobile. El
-proyecto no debe volver a incorporar Unity, Three.js, WebGL como runtime,
-PWA, WebView o Capacitor. Linux sirve para desarrollo y pruebas headless;
-Android físico valida la plataforma.
+- Un dueño y una fuente de verdad por input, daño, muerte/respawn, HUD, audio,
+  colisión, VFX, navegación y assets. Evita managers/autoloads nuevos; hoy
+  `SettingsStore` es el único autoload.
+- Disparo: intención → cadencia/munición → trayectoria/oclusión → daño → feedback
+  → muerte/score/respawn. Jugador y bots comparten las reglas de combate.
+- Aim assist móvil: cono visible + línea de visión; nunca autofuego, wallhack ni
+  teletransporte de mira. Fuego amigo desactivado.
+- Animación no decide desplazamiento ni gameplay. Procesos iniciados por una
+  tarea deben cerrarse al terminar.
+- No añadir assets sin licencia/provenance; `CREDITS.md` es la autoridad legal.
+- Haz el cambio causal mínimo que cierre el problema; no reorganices código sano
+  por estética mientras exista un defecto de mayor impacto.
 
-## 2. Alcance e invariantes
+## Evidencia y Git
 
-El juego ofrece Duelo de Escuadras 4v4 por rondas y FFA de ocho combatientes.
-La vida del jugador es 200 HP. La tienda usa monedas ficticias y las skins
-son locales y cosméticas. No hay backend, cuentas, economía real,
-multijugador online, anuncios, ranking, chat, clanes, vehículos, campaña,
-loot ni matchmaking.
+La prueba depende del cambio, no de un ritual global. Ejecuta la evidencia más
+barata que demuestre el comportamiento tocado; usa Android físico cuando la
+conclusión dependa del dispositivo/plataforma. No declares una prueba que no se
+ejecutó: usa `SIN VERIFICAR` o `INFERENCIA` cuando corresponda.
 
-Un dueño y una fuente de verdad por concepto: input, daño, muerte, respawn,
-HUD, audio, colisión, VFX, navegación y assets. `game/match/match.gd`
-orquesta el estado de sesión; cada sistema posee su comportamiento. Hay como
-máximo uno o dos autoloads y no se crea una colección de managers globales.
-
-Todo disparo sigue intención → cadencia/munición → trayectoria → oclusión →
-daño → feedback → muerte/score/respawn. Jugador y bots comparten colisión,
-visión y daño. La asistencia móvil ayuda a apuntar dentro de un cono visible,
-con línea de visión, sin autofuego, wallhack ni teletransporte de mira.
-Fuego amigo está desactivado.
-
-## 3. Tipos de cambio
-
-- `HOTFIX`: parche mínimo para una causa concreta.
-- `FRENTE COMPLETO`: cierra una experiencia o problema entero.
-- `REFACTOR CAUSAL`: elimina una causa de bugs o reduce caminos duplicados de
-  forma comprobable.
-
-Aplicar el cambio causal mínimo que cierre el problema. No reorganizar lo
-que funciona mientras quede un defecto jugable importante.
-
-## 4. Rendimiento y recursos
-
-Priorizar frame estable, pocas asignaciones por frame, geometría y materiales
-reutilizados, navegación nativa y timers con dueño y reset. `tools/*.sh`
-calcula la raíz desde su ubicación y no contiene rutas absolutas de una
-máquina humana. `.godot/`, `builds/`, imports y capturas rutinarias no son
-fuente del juego.
-
-Todo proceso iniciado tiene lifecycle explícito y se cierra al terminar:
-editor/juego Godot, servidor, adb, Gradle, exportaciones o watchers. No usar
-procesos duplicados, emulador ni comandos destructivos de amplio alcance.
-
-## 5. Assets y legal
-
-No incorporar assets sin licencia y atribución. Los samples
-`assets/sfx/gshot_*.ogg` son CC-BY 3.0 de Jesús Lastra. La biblioteca UAL de
-rig/animaciones bajo CC0 conserva su licencia junto a los GLB. La skin técnica
-y las armas de integración de Sketchfab son CC-BY 4.0 y deben mantener sus
-fuentes. Los modelos Kenney heredados también conservan su licencia mientras
-se retiran. La atribución canónica está en `CREDITS.md` y la mención de audio
-permanece accesible en el lobby y Ajustes → Legal.
-
-## 6. Evidencia y Git
-
-La suite DEV, las pruebas dirigidas, el export Android y la inspección de
-procesos son gates. Al finalizar un frente se comprueban también la salida
-visual afectada y los logs propios. No inventar capturas ni declarar prueba
-física si no se ejecutó; etiquetar lo pendiente como `SIN VERIFICAR`.
-
-Los cambios deben ser revisables y enfocados. No hacer commit ni push sin
-petición explícita.
+Los cambios deben ser enfocados y revisables. Commit + push están autorizados al
+cerrar trabajo verificado; no se pide permiso adicional.
