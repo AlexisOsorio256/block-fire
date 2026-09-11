@@ -7,8 +7,8 @@ missing, an include that does not resolve, and a patch that silently matches
 nothing. This checker resolves all of them offline, and treats every one as a
 hard FAIL — a clear failure beats silently different behavior.
 
-  check_composition.py [--install-modules DIR] [--expect-rows FILE] COMPOSITION...
-  check_composition.py --patch [--install-modules DIR] PATCH.yml
+  check_composition.py [--install-modules DIR] COMPOSITION...
+  check_composition.py --patch [--base PROFILE_DIR] [--install-modules DIR] PATCH.yml
 
 Exit 0 = every row resolves and every patch target exists. Exit 1 = at least one
 problem, printed as `FAIL <path>: <reason>`.
@@ -72,10 +72,19 @@ def url_literal(entry):
     return rest[1:end]
 
 
-def visit(rows, file_dir, install_modules, patch_targets=None):
+def package_roots(install_modules, extra_roots):
+    roots = []
+    for root in [*(extra_roots or []), install_modules]:
+        if root and root not in roots:
+            roots.append(root)
+    return roots
+
+
+def visit(rows, file_dir, install_modules, extra_package_roots=None):
     if not isinstance(rows, list):
         problems.append(f"{file_dir}: top-level list expected")
         return
+    roots = package_roots(install_modules, extra_package_roots)
     for row in rows:
         if not isinstance(row, dict):
             problems.append(f"{file_dir}: row is not a map")
@@ -113,7 +122,7 @@ def visit(rows, file_dir, install_modules, patch_targets=None):
                     for candidate in included_rows
                 ):
                     problems.append(f"{file_dir}:{row_id}: patch target not in include: {patch_id}")
-            visit(included_rows, included_dir, install_modules)
+            visit(included_rows, included_dir, install_modules, extra_package_roots)
             continue
 
         if name.startswith("cordis:"):
@@ -125,14 +134,11 @@ def visit(rows, file_dir, install_modules, patch_targets=None):
                 problems.append(f"{file_dir}:{row_id}: relative row target missing: {name}")
             continue
 
-        if patch_targets is not None:
-            # Patch rows are matched by id, not declared; nothing else to resolve here.
-            continue
-
-        if install_modules:
+        if roots:
             package = package_root(name)
-            if not os.path.isdir(os.path.join(install_modules, package)):
-                problems.append(f"{file_dir}:{row_id}: package not installed: {package}")
+            if not any(os.path.isdir(os.path.join(root, package)) for root in roots):
+                shown = ", ".join(roots)
+                problems.append(f"{file_dir}:{row_id}: package not installed: {package} (searched {shown})")
 
         if name == "@deepseek-ai/dsh-skill-filesystem":
             for entry in (row.get("config") or {}).get("customSkillDirs") or []:
@@ -155,11 +161,11 @@ def visit(rows, file_dir, install_modules, patch_targets=None):
 
 
 def check_patch(path, install_modules, base=None):
-    """A patch list: every non-insert row must target a row that exists upstream.
+    """A patch list: inserted rows resolve; modified ids are verified by DSH later.
 
-    Relative row names in a patch resolve against the PROFILE directory, not the
-    patch file's own directory, because the loader composes patches onto the
-    profile root. `base` is that directory.
+    Relative row names and package resolution in an insert start at the PROFILE
+    directory, because the loader composes patches onto the profile root. DSH's
+    own install node_modules remains a fallback for upstream packages.
     """
     rows = load(path)
     if rows is None:
@@ -168,12 +174,13 @@ def check_patch(path, install_modules, base=None):
     if not isinstance(rows, list):
         problems.append(f"{path}: patch must be a top-level list")
         return
+    profile_modules = os.path.join(base_dir, "node_modules")
     for row in rows:
         if not isinstance(row, dict):
             problems.append(f"{path}: patch entry is not a map")
             continue
         if "insert" in row:
-            visit(row["insert"], base_dir, install_modules, patch_targets=True)
+            visit(row["insert"], base_dir, install_modules, [profile_modules])
             continue
         if not isinstance(row.get("id"), str):
             problems.append(f"{path}: patch without an id")
