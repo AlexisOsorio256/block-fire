@@ -49,6 +49,7 @@ export async function withIsolatedHost(options, run) {
 
   const temporary = mkdtempSync(join(tmpdir(), 'blockfire-isolated-'))
   const previousHome = process.env.DSH_HOME
+  const previousTelemetry = process.env.DSH_TELEMETRY_DISABLED
   process.env.DSH_HOME = temporary
   process.env.DSH_TELEMETRY_DISABLED = '1'
   let ctx
@@ -102,6 +103,8 @@ export async function withIsolatedHost(options, run) {
     try { await ctx?.fiber.dispose() } finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previousHome
+      if (previousTelemetry === undefined) delete process.env.DSH_TELEMETRY_DISABLED
+      else process.env.DSH_TELEMETRY_DISABLED = previousTelemetry
       rmSync(temporary, { recursive: true, force: true })
     }
   }
