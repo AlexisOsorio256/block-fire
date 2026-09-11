@@ -38,6 +38,17 @@ Para editar el clip, activa `bf_capability` con
 no hace falta el MCP completo para esas consultas. Si falta una capacidad real,
 apaga `blender` y activa `blender-full`; no conviven.
 
+Los `*.blend` son rig puro: el viewport no tiene cuerpo y el render sale vacío.
+Para juzgar de verdad, ejecuta `exec(open('tools/bf_blender_body.py').read())`
+en la escena abierta (enlaza el operador real al rig del clip) y **renderiza**
+el ciclo con `bpy.ops.render.render` a varios fotogramas, no una pose suelta:
+`blender_screenshot` captura el viewport y no siempre refresca. Medir el clip
+también pide mirar la curva, no la pose: `Body.location` usa su **Y local** como
+eje vertical (la Z local es el avance), y leer el índice equivocado hace
+concluir que una curva plana "ya se aplica". Si el clip sale de `--rebuild`,
+revisa si le toca re-cocer brazos (`tools/bake_locomotion_arms.py`, solo
+SprintFwd y StrafeLeft) antes de exportar.
+
 Guarda la fuente, exporta con `tools/bf blender <Clip>`, fuerza reimport Godot y
 mira el runtime/QA relevante antes de cerrar. Una captura no mirada ni un export
 sin runtime prueban calidad visual. Android solo cuando la conclusión dependa
