@@ -243,11 +243,15 @@ func _on_settings_requested() -> void:
 		hud.toggle_settings()
 
 func set_local_overlay_paused(paused: bool) -> void:
-	# El HUD es dueño del snapshot/restauración de input. Este setter sólo
-	# congela el reloj de la ronda; limpiar input aquí ocurría ANTES de que el
-	# HUD pudiera recordar `input_enabled` y dejaba al jugador bloqueado al
-	# cerrar Ajustes/Editor.
+	# El HUD es dueño del snapshot/restauración de input. Aquí se congela el
+	# reloj de ronda Y los WeaponController hijos: desactivar solo la física del
+	# actor no detiene el callback de un hijo y una recarga seguía avanzando bajo
+	# Ajustes aunque la pantalla dijera PARTIDA EN PAUSA.
 	local_overlay_paused = paused
+	for combatant: Node in get_combatants():
+		var controller := combatant.get("weapon") as WeaponController
+		if controller != null:
+			controller.set_physics_process(not paused)
 
 func _set_damage_hitbox_enabled(actor: Node, enabled: bool) -> void:
 	if not is_instance_valid(actor):
@@ -511,10 +515,24 @@ func _owned_weapon_indices() -> Array[int]:
 func _stop_combat_inputs() -> void:
 	if hud != null and hud.mobile_controls != null:
 		hud.mobile_controls.release_all()
+	# Un overlay debe soltar gatillos/latches, no cancelar recarga/cooldown ni
+	# resetear spread; esos temporizadores ya están congelados por
+	# set_local_overlay_paused(). Los cierres de ronda/muerte sí limpian todo.
+	var preserve_weapon_state := local_overlay_paused
 	if is_instance_valid(player):
 		player.input_enabled = false
 		if player.weapon != null:
-			player.weapon.clear_combat_input()
+			if preserve_weapon_state:
+				player.weapon.set_fire_held(false)
+				player.weapon.set_aim_held(false)
+				player.weapon.previous_fire = false
+			else:
+				player.weapon.clear_combat_input()
 	for bot: BlockfireBot in bots:
 		if is_instance_valid(bot) and bot.weapon != null:
-			bot.weapon.clear_combat_input()
+			if preserve_weapon_state:
+				bot.weapon.set_fire_held(false)
+				bot.weapon.set_aim_held(false)
+				bot.weapon.previous_fire = false
+			else:
+				bot.weapon.clear_combat_input()
