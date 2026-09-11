@@ -14,7 +14,6 @@ assert.equal(runtime.ok, true, runtime.error)
 const modules = runtime.nodeModules
 const require = createRequire(join(modules, 'blockfire-mount.cjs'))
 const fromRuntime = async name => import(pathToFileURL(require.resolve(name)))
-// Set the home BEFORE importing runtime packages; some sample it at import time.
 const temporary = mkdtempSync(join(tmpdir(), 'blockfire-mount-'))
 process.env.DSH_HOME = temporary
 process.env.DSH_TELEMETRY_DISABLED = '1'
@@ -25,9 +24,8 @@ try {
   writeFileSync(join(temporary, 'cordis.yml'), '[]\n')
   symlinkSync(modules, join(temporary, 'node_modules'), 'dir')
   cpSync(join(harness, 'presets'), join(temporary, 'presets'), { recursive: true })
-  for (const space of ['build', 'creator']) {
-    symlinkSync(modules, join(temporary, 'presets', space, 'node_modules'), 'dir')
-  }
+  for (const space of ['build', 'creator']) symlinkSync(modules, join(temporary, 'presets', space, 'node_modules'), 'dir')
+
   const fixture = join(temporary, 'probe.mjs')
   writeFileSync(fixture, `export const inject = ['tools'];
 export function apply(ctx) {
@@ -35,8 +33,6 @@ export function apply(ctx) {
     parameters:{type:'object',properties:{}}, output:{schema:{type:'string'},render:()=>[]},
     execute:async()=> 'pong'}));
 }`)
-  // A plugin that registers a tool while starting and THEN fails: proves the
-  // router cleans a partial mount instead of leaving tools behind.
   const failFixture = join(temporary, 'probe-fail.mjs')
   writeFileSync(failFixture, `export function apply(ctx) {
   ctx.effect(() => ctx.tools.register({name:'mcp__fail__ping', description:'Partial mount fixture',
@@ -44,13 +40,12 @@ export function apply(ctx) {
     execute:async()=> 'pong'}));
   throw new Error('probe start failure');
 }`)
-  // Test lightweight local capabilities through the installed router, without Blender.
   appendFileSync(join(temporary, 'presets/build/surface.cordis.yml'),
     `\n  config:\n    capabilities:\n      probe:\n        package: ${JSON.stringify(fixture)}\n        config:\n          serverName: probe\n` +
     `      fail:\n        package: ${JSON.stringify(failFixture)}\n        config:\n          serverName: fail\n`)
+
   const load = file => loadOverlayPatches('blockfire-mount', file)
   const ownPatch = load(join(harness, 'host/patch.cordis.yml'))
-  // Same repo modules as install.sh links, without writing into candidate packages.
   for (const patch of ownPatch) for (const row of patch.insert ?? []) {
     if (row.id === 'blockfire-guard') row.name = pathToFileURL(join(harness, 'host/guard.js')).href
     if (row.id === 'blockfire-update-center') row.name = pathToFileURL(join(harness, 'web/lib/index.js')).href
@@ -65,12 +60,11 @@ export function apply(ctx) {
     { id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext: true } },
   ]
-  if (process.argv.includes('--missing-host-service')) {
-    patches.push({ id: 'subagent-model-selection-settings', disabled: true })
-  }
+  if (process.argv.includes('--missing-host-service')) patches.push({ id: 'subagent-model-selection-settings', disabled: true })
   ctx = await boot('blockfire-mount', join(temporary, 'cordis.yml'), patches,
     host => provideCmdline(host, { args: ['--no-open'], exit: code => { throw new Error(`unexpected exit ${code}`) } }),
     pathToFileURL(`${modules}/`).href)
+
   const contract = JSON.parse(readFileSync(join(harness, 'contract/contract.json'), 'utf8'))
   const { scopeOf } = await fromRuntime('@deepseek-ai/dsh-scope')
   for (const space of ['build', 'creator']) {
@@ -78,100 +72,85 @@ export function apply(ctx) {
       meta: { cwd: resolve(harness, '..'), agentPreset: space },
       setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
     try {
-    const scope = scopeOf(handle.agent.ctx)
-    const schemas = ctx.tools.schemas(scope)
-    assert.deepEqual(schemas.map(tool => tool.name).sort(), [...contract.spaces[space].tools].sort(), `${space} tools`)
-    const skills = (await ctx.skills.list({ scope })).map(skill => skill.name)
-    for (const name of space === 'build'
-      ? ['blockfire-evidence', 'blockfire-android-qa', 'blockfire-animation-craft']
-      : ['blockfire-evidence', 'blockfire-harness', 'editing-cordis-compositions', 'cordis-plugin-development']) {
-      assert(skills.includes(name), `${space} missing skill ${name}`)
-    }
-    if (space === 'build') {
-      assert(!skills.includes('blockfire-harness'), 'BUILD must not carry the harness-authoring skill')
-    } else {
-      assert(!skills.includes('blockfire-android-qa') && !skills.includes('blockfire-animation-craft'),
-        'CREATOR must not carry game skills')
-    }
-    console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
-    if (space === 'build') {
-      const router = ctx.tools.get('bf_capability', scope)
-      const sibling = await ctx.agents.create({ sessionId: 'blockfire-mount-sibling',
-        meta: { cwd: resolve(harness, '..'), agentPreset: space },
-        setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
-      try {
-        const call = action => router.execute({ action, capability: 'probe' }, { agent: handle.agent })
-        for (let cycle = 0; cycle < 2; cycle++) {
-          assert.match(await call('on'), /activated/)
-          assert(ctx.tools.get('mcp__probe__ping', scope), 'capability tools visible to owner')
-          assert.equal(ctx.tools.get('mcp__probe__ping', scopeOf(sibling.agent.ctx)), undefined,
-            'capability must not leak into sibling')
-          assert.match(await call('list'), /tools now visible: mcp__probe__ping/)
-          assert.match(await call('off'), /deactivated/)
-          assert.equal(ctx.tools.get('mcp__probe__ping', scope), undefined, 'off removes tools')
-        }
-        console.log('  ok    real capability lifecycle: on/list/off twice, session isolation')
+      const scope = scopeOf(handle.agent.ctx)
+      const schemas = ctx.tools.schemas(scope)
+      assert.deepEqual(schemas.map(tool => tool.name).sort(), [...contract.spaces[space].tools].sort(), `${space} tools`)
+      const skills = (await ctx.skills.list({ scope })).map(skill => skill.name)
+      for (const name of space === 'build'
+        ? ['blockfire-evidence', 'blockfire-android-qa', 'blockfire-animation-craft']
+        : ['blockfire-harness', 'editing-cordis-compositions', 'cordis-plugin-development']) {
+        assert(skills.includes(name), `${space} missing skill ${name}`)
+      }
+      if (space === 'build') {
+        assert(!skills.includes('blockfire-harness'), 'BUILD must not carry the harness-authoring skill')
+      } else {
+        assert(!skills.includes('blockfire-evidence') && !skills.includes('session-retrospective'),
+          'CREATOR must not carry shared project workflow skills')
+        assert(!skills.includes('blockfire-android-qa') && !skills.includes('blockfire-animation-craft'),
+          'CREATOR must not carry game skills')
+        const creatorRouter = ctx.tools.get('bf_capability', scope)
+        const listed = await creatorRouter.execute({ action: 'list' }, { agent: handle.agent })
+        assert.match(listed, /cordis/)
+        assert.doesNotMatch(listed, /blender/, 'CREATOR capabilities are harness-only')
+      }
+      console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
 
-        // The minimal Blender craft loop mounts headless: it registers its two
-        // tools synchronously and only spawns the MCP server on first execute,
-        // so `on`/`list`/`off` need no Blender here. The full bridge
-        // (`blender-full`) spawns the real server binary and stays out of this
-        // hermetic suite — it is measured manually, never asserted here.
-        const bcall = action => router.execute({ action, capability: 'blender' }, { agent: handle.agent })
-        const baseSchemas = ctx.tools.schemas(scope)
-        assert.match(await bcall('on'), /activated/)
-        assert(ctx.tools.get('blender_exec', scope), 'minimal exec visible to owner')
-        assert(ctx.tools.get('blender_screenshot', scope), 'minimal screenshot visible to owner')
-        assert.equal(ctx.tools.get('blender_exec', scopeOf(sibling.agent.ctx)), undefined,
-          'minimal loop must not leak into sibling')
-        const minSchemas = ctx.tools.schemas(scope)
-        const minAdded = minSchemas.filter(tool => !baseSchemas.some(base => base.name === tool.name))
-        assert.deepEqual(minAdded.map(tool => tool.name).sort(), ['blender_exec', 'blender_screenshot'])
-        console.log(`  ok    blender minimal: +${minAdded.length} tools, +${JSON.stringify(minAdded).length} schema chars (base ${baseSchemas.length} tools)`)
-        assert.match(await bcall('list'), /tools now visible: blender_exec, blender_screenshot/)
-        // One Blender connection at a time: escalating while minimal is active
-        // is refused BEFORE any mount, so this needs no server binary either.
-        assert.match(await router.execute({ action: 'on', capability: 'blender-full' }, { agent: handle.agent }),
-          /conflicts with "blender"/, 'full escalates only once minimal is off')
-        assert.match(await bcall('off'), /deactivated/)
-        assert.equal(ctx.tools.get('blender_exec', scope), undefined, 'off removes the minimal tools')
+      if (space === 'build') {
+        const router = ctx.tools.get('bf_capability', scope)
+        const sibling = await ctx.agents.create({ sessionId: 'blockfire-mount-sibling',
+          meta: { cwd: resolve(harness, '..'), agentPreset: space },
+          setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
+        try {
+          const call = action => router.execute({ action, capability: 'probe' }, { agent: handle.agent })
+          for (let cycle = 0; cycle < 2; cycle++) {
+            assert.match(await call('on'), /activated/)
+            assert(ctx.tools.get('mcp__probe__ping', scope), 'capability tools visible to owner')
+            assert.equal(ctx.tools.get('mcp__probe__ping', scopeOf(sibling.agent.ctx)), undefined, 'capability must not leak into sibling')
+            assert.match(await call('list'), /tools now visible: mcp__probe__ping/)
+            assert.match(await call('off'), /deactivated/)
+            assert.equal(ctx.tools.get('mcp__probe__ping', scope), undefined, 'off removes tools')
+          }
+          console.log('  ok    real capability lifecycle: on/list/off twice, session isolation')
 
-        // A plugin whose start rejects: the error must surface with the original
-        // cause, nothing may stay mounted, and the slot must be free again.
-        const failCall = action => router.execute({ action, capability: 'fail' }, { agent: handle.agent })
-        const failure = await failCall('on')
-        assert.match(failure, /failed to start/)
-        assert.match(failure, /probe start failure/, 'the original startup error reaches the caller')
-        assert.equal(ctx.tools.get('mcp__fail__ping', scope), undefined,
-          'a plugin that registered a tool before failing leaves nothing behind')
-        assert.doesNotMatch(await failCall('on'), /already active/, 'the failed start freed the slot')
-        console.log('  ok    async start failure: original error surfaced, partial mount cleaned')
-      } finally { await sibling.dispose() }
-    }
+          const bcall = action => router.execute({ action, capability: 'blender' }, { agent: handle.agent })
+          const baseSchemas = ctx.tools.schemas(scope)
+          assert.match(await bcall('on'), /activated/)
+          assert(ctx.tools.get('blender_exec', scope), 'minimal exec visible to owner')
+          assert(ctx.tools.get('blender_screenshot', scope), 'minimal screenshot visible to owner')
+          assert.equal(ctx.tools.get('blender_exec', scopeOf(sibling.agent.ctx)), undefined, 'minimal loop must not leak into sibling')
+          const minSchemas = ctx.tools.schemas(scope)
+          const minAdded = minSchemas.filter(tool => !baseSchemas.some(base => base.name === tool.name))
+          assert.deepEqual(minAdded.map(tool => tool.name).sort(), ['blender_exec', 'blender_screenshot'])
+          console.log(`  ok    blender minimal: +${minAdded.length} tools, +${JSON.stringify(minAdded).length} schema chars (base ${baseSchemas.length} tools)`)
+          assert.match(await bcall('list'), /tools now visible: blender_exec, blender_screenshot/)
+          assert.match(await router.execute({ action: 'on', capability: 'blender-full' }, { agent: handle.agent }), /conflicts with "blender"/)
+          assert.match(await bcall('off'), /deactivated/)
+          assert.equal(ctx.tools.get('blender_exec', scope), undefined, 'off removes the minimal tools')
+
+          const failCall = action => router.execute({ action, capability: 'fail' }, { agent: handle.agent })
+          const failure = await failCall('on')
+          assert.match(failure, /failed to start/)
+          assert.match(failure, /probe start failure/)
+          assert.equal(ctx.tools.get('mcp__fail__ping', scope), undefined, 'failed plugin leaves nothing behind')
+          assert.doesNotMatch(await failCall('on'), /already active/)
+          console.log('  ok    async start failure: original error surfaced, partial mount cleaned')
+        } finally { await sibling.dispose() }
+      }
     } finally { await handle.dispose() }
   }
-  // Closing a session with a capability active must free the router entry: a
-  // later session with the same id starts OFF (no stale ACTIVE) and can turn it
-  // on again. agent.id === session.id, so this is the resume identity.
+
   const resumeSetup = async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'build') }
-  const first = await ctx.agents.create({ sessionId: 'blockfire-mount-resume',
-    meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
+  const first = await ctx.agents.create({ sessionId: 'blockfire-mount-resume', meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
   const router = ctx.tools.get('bf_capability', scopeOf(first.agent.ctx))
   try {
-    assert.match(await router.execute({ action: 'on', capability: 'probe' },
-      { agent: first.agent }), /activated/)
+    assert.match(await router.execute({ action: 'on', capability: 'probe' }, { agent: first.agent }), /activated/)
   } finally { await first.dispose() }
-  // Resume, not a second create: upstream 0.1.5 made session ids unique at
-  // create (SessionAlreadyExistsError) and split resuming into agents.resume.
-  // Both pinned versions (0.1.2-rc.1 and 0.1.5-alpha.2) expose this shape.
   const resumed = await ctx.agents.resume({ resumeSessionId: 'blockfire-mount-resume', setup: resumeSetup })
   try {
     const listed = await router.execute({ action: 'list' }, { agent: resumed.agent })
-    assert.match(listed, /\[off\]/, 'a session created after the owner closed must not inherit ACTIVE')
-    assert.match(await router.execute({ action: 'on', capability: 'probe' },
-      { agent: resumed.agent }), /activated/, 'the closed session freed the capability slot')
-    assert.match(await router.execute({ action: 'off', capability: 'probe' },
-      { agent: resumed.agent }), /deactivated/)
+    assert.match(listed, /\[off\]/, 'same-id resumed session must not inherit ACTIVE')
+    assert.match(await router.execute({ action: 'on', capability: 'probe' }, { agent: resumed.agent }), /activated/)
+    assert.match(await router.execute({ action: 'off', capability: 'probe' }, { agent: resumed.agent }), /deactivated/)
   } finally { await resumed.dispose() }
   console.log('  ok    session close releases the capability: same-id session starts OFF, re-activates')
 } finally {
