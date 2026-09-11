@@ -66,10 +66,15 @@ function queueFile() {
 function queuePhysicalDelete(sessionId) {
   const file = queueFile()
   let ids = []
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'))
-    if (Array.isArray(parsed)) ids = parsed.filter((id) => typeof id === 'string' && SESSION_ID_RE.test(id))
-  } catch {}
+  if (existsSync(file)) {
+    let parsed
+    try { parsed = JSON.parse(readFileSync(file, 'utf8')) }
+    catch (error) { throw new Error(`pending session-delete queue is unreadable: ${String(error?.message ?? error)}`) }
+    if (!Array.isArray(parsed)) throw new Error('pending session-delete queue is not an array')
+    const invalid = parsed.filter((id) => typeof id !== 'string' || !SESSION_ID_RE.test(id))
+    if (invalid.length > 0) throw new Error(`pending session-delete queue contains ${invalid.length} invalid session id(s)`)
+    ids = [...new Set(parsed)]
+  }
   if (!ids.includes(sessionId)) ids.push(sessionId)
   mkdirSync(dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
@@ -116,7 +121,8 @@ async function legacyDelete(ctx, header, sessionId) {
 
 /**
  * Current DSH: list() returns snapshots and persistence has no delete/locate API.
- * Hide/detach durably now, then purge physical artifacts at next launcher boot.
+ * Record durable delete intent before hiding/detaching, then purge physical
+ * artifacts at next launcher boot. A corrupt queue must fail before state moves.
  */
 async function deleteSession(ctx, sessionId) {
   const agent = ctx.get('agents')?.get(sessionId)
@@ -134,6 +140,7 @@ async function deleteSession(ctx, sessionId) {
     return legacyDelete(ctx, item?.header ?? item, sessionId)
   }
 
+  queuePhysicalDelete(sessionId)
   await registry.archiveSession(sessionId)
   const detached = []
   for (const workspace of registry.list()) {
@@ -141,7 +148,6 @@ async function deleteSession(ctx, sessionId) {
     await workspace.detachSession(sessionId)
     detached.push(String(workspace.id))
   }
-  queuePhysicalDelete(sessionId)
   return { status: 200, value: { ok: true, sessionId, detached, pendingPurge: true } }
 }
 
@@ -151,23 +157,28 @@ export function apply(ctx, config) {
   const cache = { at: 0, value: undefined }
   let job = null
   let jobSeq = 0
+  let stopping = false
 
   function spawnStep(args, onChunk) {
+    if (stopping) return Promise.resolve({ ok: false, note: 'host is shutting down; update step was not started' })
     return new Promise((settle) => {
       const child = spawn(process.execPath, [cli, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
       if (job !== null) job.child = child
       let timedOut = false
       const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, JOB_TIMEOUT_MS)
       const forward = (chunk) => onChunk(chunk.toString('utf8'))
+      const clearChild = () => { if (job?.child === child) job.child = undefined }
       child.stdout.on('data', forward)
       child.stderr.on('data', forward)
       child.on('error', (error) => {
         clearTimeout(timer)
+        clearChild()
         settle({ ok: false, note: `could not run ${cli}: ${String(error?.message ?? error)}` })
       })
       child.on('close', (code) => {
         clearTimeout(timer)
-        settle({ ok: code === 0 && !timedOut, note: timedOut ? `step killed after ${Math.round(JOB_TIMEOUT_MS / 60000)} minutes` : code === 0 ? undefined : `step exited with code ${code}` })
+        clearChild()
+        settle({ ok: code === 0 && !timedOut && !stopping, note: timedOut ? `step killed after ${Math.round(JOB_TIMEOUT_MS / 60000)} minutes` : stopping ? 'host shut down during update; no further step will run' : code === 0 ? undefined : `step exited with code ${code}` })
       })
     })
   }
@@ -178,10 +189,11 @@ export function apply(ctx, config) {
       if (running.output.length > JOB_OUTPUT_CAP) running.output = running.output.slice(-JOB_OUTPUT_CAP)
     }
     for (const step of steps) {
+      if (stopping) { append('\nupdate canceled because the host is shutting down\n'); return false }
       append(`\n── ${step.label} ──\n`)
       const result = await spawnStep(step.args, append)
       if (result.note) append(`${result.note}\n`)
-      if (!result.ok) { append('update stopped — nothing was activated\n'); return false }
+      if (!result.ok) { append('update stopped — nothing further was activated\n'); return false }
     }
     return true
   }
@@ -251,5 +263,8 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/update/action', handler: actionHandler }), 'blockfire:update-action')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/update/job', handler: jobHandler }), 'blockfire:update-job')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/session/delete', handler: deleteHandler }), 'blockfire:delete')
-  ctx.effect(() => () => { if (job?.state === 'running' && job.child !== undefined) job.child.kill('SIGKILL') }, 'blockfire:update-kill')
+  ctx.effect(() => () => {
+    stopping = true
+    if (job?.state === 'running' && job.child !== undefined) job.child.kill('SIGKILL')
+  }, 'blockfire:update-kill')
 }
