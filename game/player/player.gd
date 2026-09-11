@@ -102,32 +102,18 @@ func _physics_process(delta: float) -> void:
 		input_enabled = false
 		if weapon != null:
 			weapon.clear_combat_input()
-		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
-		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
+		_accelerate_horizontal(Vector3.ZERO, delta)
 		_apply_gravity(delta)
 		move_and_slide()
 		_update_camera_pose(delta)
 		return
 	_update_look(delta)
 	if not input_enabled:
-		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
-		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
+		_accelerate_horizontal(Vector3.ZERO, delta)
 		_apply_gravity(delta)
 		move_and_slide()
 		_update_camera_pose(delta)
 		return
-	var input_vector := _movement_input()
-	var wish_direction := _camera_relative_direction(input_vector)
-	var sprinting := Input.is_action_pressed("sprint")
-	if mobile_controls != null and mobile_controls.has_method("is_sprinting"):
-		sprinting = sprinting or mobile_controls.is_sprinting()
-	var target_speed := crouch_speed if crouched else (sprint_speed if sprinting else walk_speed)
-	velocity.x = move_toward(velocity.x, wish_direction.x * target_speed, acceleration * delta)
-	velocity.z = move_toward(velocity.z, wish_direction.z * target_speed, acceleration * delta)
-	_apply_gravity(delta)
-	if _jump_pressed() and is_on_floor():
-		velocity.y = 8.4
-		_play_feedback("jump")
 	if _crouch_pressed():
 		if crouched:
 			# No levantar la cápsula dentro de techo/cobertura baja: el visual y
@@ -138,9 +124,26 @@ func _physics_process(delta: float) -> void:
 		else:
 			crouched = true
 			_update_crouch_visual()
+	# Sample combat intent before selecting speed: ADS/fire win in the SAME tick.
+	var fire_requested := Input.is_action_pressed("fire") or _mobile_fire()
+	var aim_requested := Input.is_action_pressed("aim") or _mobile_aim()
+	var input_vector := _movement_input()
+	var wish_direction := _camera_relative_direction(input_vector)
+	var sprint_requested := Input.is_action_pressed("sprint")
+	if mobile_controls != null and mobile_controls.has_method("is_sprinting"):
+		sprint_requested = sprint_requested or mobile_controls.is_sprinting()
+	# Crouch > combat walk > sprint. Keep a held/latching sprint request intact
+	# so releasing ADS/fire resumes sprint without an extra tap.
+	var sprinting := sprint_requested and not crouched and not aim_requested and not fire_requested
+	var target_speed := crouch_speed if crouched else (sprint_speed if sprinting else walk_speed)
+	_accelerate_horizontal(wish_direction * target_speed, delta)
+	_apply_gravity(delta)
+	if _jump_pressed() and is_on_floor():
+		velocity.y = 8.4
+		_play_feedback("jump")
 	if weapon != null:
-		weapon.set_fire_held(Input.is_action_pressed("fire") or _mobile_fire())
-		weapon.set_aim_held(Input.is_action_pressed("aim") or _mobile_aim())
+		weapon.set_fire_held(fire_requested)
+		weapon.set_aim_held(aim_requested)
 		if Input.is_action_just_pressed("reload") or _mobile_reload():
 			weapon.request_reload()
 		if Input.is_action_just_pressed("previous_weapon"):
@@ -342,11 +345,18 @@ func _assist_has_line_of_sight(origin: Vector3, target_point: Vector3) -> bool:
 		return arena.has_line_of_sight(origin, target_point, excluded)
 	return true
 
+## One vector budget (m/s²) for starting, stopping and changing direction.
+## Vertical velocity is owned by gravity/jump and is never included here.
+func _accelerate_horizontal(target: Vector3, delta: float) -> void:
+	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), acceleration * delta)
+	velocity.x = horizontal.x
+	velocity.z = horizontal.y
+
 func _movement_input() -> Vector2:
 	var value := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	if mobile_controls != null and mobile_controls.has_method("get_move_vector"):
 		var touch_value: Vector2 = mobile_controls.get_move_vector()
-		if touch_value.length_squared() > 0.001:
+		if touch_value != Vector2.ZERO:
 			value = touch_value
 	return value
 
@@ -375,11 +385,11 @@ func _sync_camera_orbit() -> void:
 		camera_pivot.rotation_degrees.x = look_pitch
 
 func _camera_relative_direction(input_vector: Vector2) -> Vector3:
-	if input_vector.length_squared() < 0.001:
+	if input_vector == Vector2.ZERO:
 		return Vector3.ZERO
 	var local_direction := Vector3(input_vector.x, 0.0, input_vector.y)
 	if camera_pivot == null:
-		return local_direction.normalized()
+		return local_direction.limit_length(1.0)
 	# Movimiento TPS = heading horizontal de cámara. Multiplicar primero por
 	# la base completa incluía pitch: al mirar muy arriba/abajo el componente
 	# forward se encogía antes de normalizar y una diagonal cambiaba de ángulo.
@@ -388,17 +398,17 @@ func _camera_relative_direction(input_vector: Vector2) -> Vector3:
 	right.y = 0.0
 	back.y = 0.0
 	if right.length_squared() < 0.0001 or back.length_squared() < 0.0001:
-		return local_direction.normalized()
+		return local_direction.limit_length(1.0)
 	right = right.normalized()
 	back = back.normalized()
-	return (right * input_vector.x + back * input_vector.y).normalized()
+	return (right * input_vector.x + back * input_vector.y).limit_length(1.0)
 
 func _update_body_rotation(delta: float, movement_direction: Vector3) -> void:
 	var target_yaw := rotation.y
 	var should_face_camera := weapon != null and (weapon.aim_held or weapon.fire_held)
 	if should_face_camera:
 		target_yaw = deg_to_rad(look_yaw)
-	elif movement_direction.length_squared() > 0.01:
+	elif movement_direction.length_squared() > 0.000001:
 		target_yaw = atan2(-movement_direction.x, -movement_direction.z)
 	else:
 		return

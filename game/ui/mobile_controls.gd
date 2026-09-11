@@ -5,7 +5,13 @@ signal fire_stopped
 signal look_dragged(delta: Vector2)
 signal jump_requested
 
+## Owns raw touch geometry, radial remap and sprint requests, not gameplay speed.
+## 12% radial deadzone; remaining travel maps linearly to 0..1 in every direction.
+const MOVE_DEADZONE := 0.12
+const AUTO_SPRINT_ENTER := 0.96
+const AUTO_SPRINT_EXIT := 0.88
 const ICON_STROKE: float = 3.0
+var _auto_sprinting := false
 
 var mobile_qa: bool = false
 var move_vector: Vector2 = Vector2.ZERO
@@ -71,7 +77,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func get_move_vector() -> Vector2:
-	return move_vector
+	var magnitude := move_vector.length()
+	if magnitude <= MOVE_DEADZONE:
+		return Vector2.ZERO
+	return move_vector.normalized() * minf(1.0, (magnitude - MOVE_DEADZONE) / (1.0 - MOVE_DEADZONE))
 
 func consume_look_delta() -> Vector2:
 	var value := look_delta
@@ -108,12 +117,13 @@ func is_looking() -> bool:
 	return look_pointer >= 0 or fire_pointer >= 0 or aim_pointer >= 0
 
 func is_sprinting() -> bool:
-	# Auto-carrera: con el joystick empujado al tope el personaje corre sin
-	# exigir un segundo dedo en CORRER. El botón sigue siendo un latch
-	# independiente para medias inclinaciones.
-	if move_vector.length() >= 0.92:
-		return true
-	return sprinting
+	# Schmitt trigger uses raw travel. The button remains an independent request;
+	# Player decides whether combat/crouch permits sprint this physics tick.
+	if move_vector.length() >= AUTO_SPRINT_ENTER:
+		_auto_sprinting = true
+	elif move_vector.length() <= AUTO_SPRINT_EXIT:
+		_auto_sprinting = false
+	return sprinting or _auto_sprinting
 
 func set_edit_mode(enabled: bool) -> void:
 	edit_mode = enabled
@@ -228,6 +238,7 @@ func release_all() -> void:
 	firing = false
 	aiming = false
 	sprinting = false
+	_auto_sprinting = false
 	if was_firing:
 		fire_stopped.emit()
 	queue_redraw()
@@ -302,7 +313,7 @@ func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 
 func _update_move(position: Vector2) -> void:
 	var center := _move_center()
-	move_vector = ((position - center) / 72.0).limit_length(1.0)
+	move_vector = ((position - center) / (72.0 * _control_scale("joystick"))).limit_length(1.0)
 	queue_redraw()
 
 func _move_center() -> Vector2:

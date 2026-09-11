@@ -99,3 +99,8 @@ inspeccionados en capturas. Prueba de pan confundida por muerte a manos de bots;
 respuesta táctil física, latencia y estrés en esquinas siguen SIN VERIFICAR.
 `qa_touch` headless PASS (0 fallos), con avisos de recursos al salir registrados
 en la auditoría; no equivale a prueba de multitouch físico.
+
+Analog/dirección cerrados: deadzone radial 0.12, remap lineal; auto-sprint
+entra 0.96/sale 0.88; crouch y ADS/fuego ganan a sprint. Aceleración vectorial
+32 m/s². Prueba real de física a 30/60/120 Hz mide tiempos cardinales/diagonales
+idénticos y sin overshoot. Evidencia numérica: `docs/PLAYER_FEEL_AUDIT.md`.

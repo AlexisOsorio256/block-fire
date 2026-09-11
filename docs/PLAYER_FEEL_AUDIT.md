@@ -18,7 +18,7 @@ No asset, clip, stride metadata, gameplay speed or animation ownership changed.
    reproduced cover penetration. Near-plane corner clearance is still a ray,
    not a volume sweep; the fix does not prove every corner safe.
 
-2. **VERIFIED / remaining: movement loses analog control and depends on heading.**
+2. **VERIFIED / fixed in follow-up: movement lost analog control and depended on heading.**
    The real `Player._camera_relative_direction` returns magnitude 1 for joystick
    magnitudes 0.05, 0.25, 0.5 and 1.0. Partial thumb deflection therefore cannot
    choose a slower walk. Separate x/z acceleration gives cardinal walk start
@@ -121,3 +121,55 @@ latency. Hands-on thumb comfort, simultaneous touch/fire/ADS, sustained frame
 pacing and corner stress testing remain unverified. No claim of commercial-game
 parity is supported by these tests; the ranking of remaining feel work is an
 engineering inference from the measured defects.
+
+## Analog/directional implementation follow-up
+
+Closed in Player + MobileControls. Raw joystick travel has a 0.12 radial
+deadzone and linear remap of the remaining 0.88; visual knob remains raw.
+Auto-sprint enters at 0.96 and exits at 0.88 raw travel. Button sprint is still
+a request. Crouch takes priority, then ADS/fire walk, then sprint. Releasing
+combat resumes a held sprint request. Speeds remain 4.8/7.0/2.6. Horizontal
+acceleration is a single Vector2 budget at 32 m/s², including disabled stopping.
+
+Player-feel now asserts the roadmap's analog magnitude/speed, pitch invariance,
+hysteresis, same-tick arbitration, vector acceleration, no speed overshoot and
+direction-independent timing. Timing/displacement cases run real engine physics
+callbacks: calling `_physics_process(dt)` manually does not change Godot's
+internal move_and_slide timestep. A regression also checks distance against the
+actual tick duration to prevent misleading 30/120 Hz displacement measurements.
+
+VERIFIED output (cardinal and diagonal counts equal in every case):
+
+```text
+ANALOG walk input=0.25 speed=1.2000 expected=1.2000
+ANALOG walk input=0.50 speed=2.4000 expected=2.4000
+ANALOG walk input=0.75 speed=3.6000 expected=3.6000
+ANALOG walk input=1.00 speed=4.8000 expected=4.8000
+ANALOG sprint input=0.25 speed=1.7500 expected=1.7500
+ANALOG sprint input=0.50 speed=3.5000 expected=3.5000
+ANALOG sprint input=0.75 speed=5.2500 expected=5.2500
+ANALOG sprint input=1.00 speed=7.0000 expected=7.0000
+ANALOG crouch input=0.25 speed=0.6500 expected=0.6500
+ANALOG crouch input=0.50 speed=1.3000 expected=1.3000
+ANALOG crouch input=0.75 speed=1.9500 expected=1.9500
+ANALOG crouch input=1.00 speed=2.6000 expected=2.6000
+RESPONSE hz=30 heading=0 action=start ticks=8 ms=266.667 distance=0.488889 overshoot=0.000000
+RESPONSE hz=30 heading=0 action=stop ticks=5 ms=166.667 distance=0.284445 overshoot=0.000000
+RESPONSE hz=30 heading=0 action=resume ticks=5 ms=166.667 distance=0.515556 overshoot=0.000000
+RESPONSE hz=30 heading=0 action=turn90 ticks=7 ms=233.333 distance=0.929438 overshoot=0.000000
+RESPONSE hz=30 heading=0 action=reverse ticks=9 ms=300.000 distance=0.728889 overshoot=0.000000
+RESPONSE hz=60 heading=0 action=start ticks=9 ms=150.000 distance=0.400000 overshoot=0.000000
+RESPONSE hz=60 heading=0 action=stop ticks=9 ms=150.000 distance=0.320000 overshoot=0.000000
+RESPONSE hz=60 heading=0 action=resume ticks=9 ms=150.000 distance=0.400000 overshoot=0.000000
+RESPONSE hz=60 heading=0 action=turn90 ticks=13 ms=216.667 distance=0.848607 overshoot=0.000000
+RESPONSE hz=60 heading=0 action=reverse ticks=18 ms=300.000 distance=0.720000 overshoot=0.000000
+RESPONSE hz=120 heading=0 action=start ticks=18 ms=150.000 distance=0.380000 overshoot=0.000000
+RESPONSE hz=120 heading=0 action=stop ticks=18 ms=150.000 distance=0.340000 overshoot=0.000000
+RESPONSE hz=120 heading=0 action=resume ticks=18 ms=150.000 distance=0.380000 overshoot=0.000000
+RESPONSE hz=120 heading=0 action=turn90 ticks=26 ms=216.667 distance=0.848245 overshoot=0.000000
+RESPONSE hz=120 heading=0 action=reverse ticks=36 ms=300.000 distance=0.720000 overshoot=0.000000
+```
+
+Suite: smoke 310, regressions 29, animation_layers PASS; updated real-tick
+player-feel PASS. Touch QA PASS / zero failures (resource cleanup warnings
+remain). Thumb comfort of the new deadzone is not established by headless QA.

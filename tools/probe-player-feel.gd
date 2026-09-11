@@ -1,6 +1,12 @@
 extends SceneTree
 ## Deterministic real Player tick + physics-world camera regression.
 ## No animation or movement substitutes. --baseline reports without failing.
+class ProbePlayer extends BlockfirePlayer:
+	signal tick_done
+	func _physics_process(delta: float) -> void:
+		super._physics_process(delta)
+		tick_done.emit()
+
 var failures := 0
 
 func _init() -> void:
@@ -17,7 +23,7 @@ func heading(node: Node3D) -> float:
 func run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
-	var player := BlockfirePlayer.new()
+	var player := ProbePlayer.new()
 	world.add_child(player)
 	player.set_physics_process(false)
 	player.visual.set_process(false)
@@ -43,27 +49,7 @@ func run() -> void:
 	player.rotation = Vector3.ZERO
 	player.look_yaw = 0.0
 	player._update_look(1.0 / 60.0)
-	for magnitude: float in [0.05, 0.25, 0.5, 1.0]:
-		print("joystick %.2f -> wish magnitude %.3f" % [magnitude, player._camera_relative_direction(Vector2(magnitude, 0)).length()])
-	# Observe the public movement→visual brake path, rather than setting braking.
-	for direction: Vector2 in [Vector2(0, -0.5), Vector2(0.5, -0.5)]:
-		player.velocity = Vector3.ZERO
-		controls.qa_set_move(direction)
-		var ticks := 0
-		while Vector2(player.velocity.x, player.velocity.z).length() < 4.799 and ticks < 60:
-			player._physics_process(1.0 / 60.0)
-			player.visual._process(1.0 / 60.0)
-			ticks += 1
-		print("walk start direction=%s reaches 4.8 in %d ticks / %.1f ms" % [direction, ticks, ticks * 1000.0 / 60.0])
-		controls.release_all()
-		var brake_frames := 0
-		var stop_ticks := 0
-		while player.velocity.length() > 0.001 and stop_ticks < 60:
-			player._physics_process(1.0 / 60.0)
-			player.visual._process(1.0 / 60.0)
-			if player.visual.motion.braking: brake_frames += 1
-			stop_ticks += 1
-		print("stop %d ticks / %.1f ms; runtime brake frames=%d" % [stop_ticks, stop_ticks * 1000.0 / 60.0, brake_frames])
+	await movement_tests(player, controls)
 	player.position = Vector3.ZERO
 	player.rotation = Vector3.ZERO
 	player.look_yaw = 0.0
@@ -95,3 +81,104 @@ func run() -> void:
 	check(player.camera.position.length() > before and player.camera.position.length() < player.CAMERA_OFFSET.length(), "unobstructed arm extends smoothly")
 	world.free()
 	quit(0 if "--baseline" in OS.get_cmdline_user_args() else mini(failures, 1))
+
+func reset_case(player: BlockfirePlayer, controls: BlockfireMobileControls) -> void:
+	controls.release_all()
+	player.velocity = Vector3.ZERO
+	player.position = Vector3.ZERO
+	player.rotation = Vector3.ZERO
+	player.look_yaw = 0.0
+	player.look_pitch = 0.0
+	player.crouched = false
+	player._update_crouch_visual()
+	player._sync_camera_orbit()
+
+func movement_tests(player: ProbePlayer, controls: BlockfireMobileControls) -> void:
+	reset_case(player, controls)
+	for radius: float in [0.0, 0.06, 0.12]:
+		controls.qa_set_move(Vector2.ONE.normalized() * radius)
+		check(controls.get_move_vector().length() < 0.000001, "radial deadzone %.2f" % radius)
+	for mode: String in ["walk", "sprint", "crouch"]:
+		reset_case(player, controls)
+		controls.aiming = mode == "walk"
+		controls.sprinting = mode == "sprint"
+		player.crouched = mode == "crouch"
+		var speed := player.crouch_speed if player.crouched else (player.sprint_speed if controls.sprinting else player.walk_speed)
+		for amount: float in [0.25, 0.5, 0.75, 1.0]:
+			var raw := controls.MOVE_DEADZONE + amount * (1.0 - controls.MOVE_DEADZONE)
+			controls.qa_set_move(Vector2.ONE.normalized() * raw)
+			for i in 40: player._physics_process(1.0 / 60.0)
+			var measured := Vector2(player.velocity.x, player.velocity.z).length()
+			print("ANALOG %s input=%.2f speed=%.4f expected=%.4f" % [mode, amount, measured, amount * speed])
+			check(absf(measured - amount * speed) < 0.01 * speed, "analog speed scales with remapped magnitude")
+			for pitch: float in [-78.0, 0.0, 78.0]:
+				player.look_pitch = pitch
+				player._sync_camera_orbit()
+				check(absf(player._camera_relative_direction(controls.get_move_vector()).length() - amount) < 0.00001, "pitch preserves analog magnitude")
+	reset_case(player, controls)
+	controls.qa_set_move(Vector2(0, -1))
+	check(controls.is_sprinting(), "full travel requests sprint")
+	for i in 20:
+		controls.qa_set_move(Vector2(0, -(0.9 if i % 2 == 0 else 0.94)))
+		check(controls.is_sprinting(), "±0.02 around old threshold does not chatter after entry")
+	controls.qa_set_move(Vector2(0, -0.87))
+	check(not controls.is_sprinting(), "sprint exits below lower threshold")
+	for i in 20:
+		controls.qa_set_move(Vector2(0, -(0.9 if i % 2 == 0 else 0.94)))
+		check(not controls.is_sprinting(), "threshold noise cannot re-enter sprint")
+	controls.sprinting = true
+	controls.qa_set_move(Vector2(0, -0.5))
+	check(controls.is_sprinting(), "button latch works at partial travel")
+	controls.release_all()
+	check(not controls.is_sprinting(), "focus/pause release clears both sprint requests")
+	# Full raw input alone requests sprint, but combat and crouch win immediately.
+	for state: String in ["sprint", "aim", "fire", "crouch", "resume"]:
+		controls.qa_set_move(Vector2(0, -1))
+		controls.aiming = state == "aim"
+		controls.firing = state == "fire"
+		player.crouched = state == "crouch"
+		player._physics_process(1.0 / 60.0)
+		check(player.visual.sprinting == (state in ["sprint", "resume"]), "same-tick sprint arbitration " + state)
+		for i in 30: player._physics_process(1.0 / 60.0)
+		var expected := 7.0 if state in ["sprint", "resume"] else (2.6 if state == "crouch" else 4.8)
+		check(absf(player.velocity.length() - expected) < 0.001, "arbitrated speed " + state)
+	for hz: int in [30, 60, 120]:
+		Engine.physics_ticks_per_second = hz
+		await physics_frame
+		var dt := 1.0 / hz
+		var reference: Array[int] = []
+		for angle: float in [0.0, PI / 4.0]:
+			reset_case(player, controls)
+			controls.aiming = true
+			var initial := Vector2.UP.rotated(angle)
+			var counts: Array[int] = []
+			for action: String in ["start", "stop", "resume", "turn90", "reverse"]:
+				var target := initial
+				if action == "stop": target = Vector2.ZERO
+				if action == "turn90": target = initial.rotated(PI / 2)
+				if action == "reverse": target = -initial.rotated(PI / 2)
+				controls.qa_set_move(target)
+				var expected := Vector3(target.x, 0, target.y) * player.walk_speed
+				var ticks := 0
+				var distance := 0.0
+				var overshoot := 0.0
+				while player.velocity.distance_to(expected) > 0.001 and ticks < hz:
+					var before := player.position
+					var prior := player.velocity
+					player.set_physics_process(true)
+					await player.tick_done
+					player.set_physics_process(false)
+					check(absf(player.position.distance_to(before) - player.velocity.length() * dt) < 0.00001, "engine displacement uses the measured tick duration")
+					distance += player.position.distance_to(before)
+					overshoot = maxf(overshoot, player.velocity.length() - player.walk_speed)
+					check(player.velocity.distance_to(prior) <= player.acceleration * dt + 0.00001, "vector acceleration budget")
+					ticks += 1
+				counts.append(ticks)
+				check(ticks < hz and overshoot < 0.00001, "target reached without overshoot")
+				print("RESPONSE hz=%d heading=%.0f action=%s ticks=%d ms=%.3f distance=%.6f overshoot=%.6f" % [hz, rad_to_deg(angle), action, ticks, ticks * dt * 1000, distance, overshoot])
+			if reference.is_empty(): reference = counts
+			else:
+				for i in counts.size(): check(absi(counts[i] - reference[i]) <= 1, "direction-independent timing")
+	Engine.physics_ticks_per_second = 60
+	await physics_frame
+	reset_case(player, controls)
