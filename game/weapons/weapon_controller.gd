@@ -267,37 +267,53 @@ func _muzzle_origin() -> Vector3:
 
 
 func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
-	var origin: Vector3 = _aim_origin()
+	# La cámara decide hacia dónde quiere disparar; la boca real decide desde
+	# dónde puede salir la bala. Antes el raycast nacía en la cámara TPS, de
+	# modo que asomarse con el hombro permitía dañar a través de una cobertura
+	# que todavía bloqueaba físicamente el cañón.
+	var aim_origin: Vector3 = _aim_origin()
 	var direction: Vector3 = _aim_direction()
 	var spread := definition.spread * (1.0 + spread_heat * (0.42 if aim_held else 0.95))
 	if actor != null and actor.get("is_bot"):
 		if ai_target == null or not ai_can_see:
 			return
 		var target_point: Vector3 = ai_target.get_target_point() if ai_target.has_method("get_target_point") else ai_target.global_position + Vector3.UP
-		direction = origin.direction_to(target_point)
+		direction = aim_origin.direction_to(target_point)
 		var accuracy: float = float(actor.get("bot_accuracy")) if actor.get("bot_accuracy") != null else 0.65
 		spread *= lerpf(1.8, 0.25, accuracy)
 		direction = _spread_direction(direction, spread)
 	else:
 		direction = _spread_direction(direction, spread * (0.55 if aim_held else 1.0))
-	var end := origin + direction * definition.range
+
+	var intended_end := aim_origin + direction * definition.range
+	var origin := _muzzle_origin()
+	var muzzle_to_end := intended_end - origin
+	if muzzle_to_end.length_squared() < 0.000001:
+		return
+	var end := origin + muzzle_to_end.limit_length(definition.range)
+	var shot_direction := origin.direction_to(end)
 	var query := PhysicsRayQueryParameters3D.create(origin, end)
 	query.collision_mask = 1 | 2 | 4
 	# HeadHitbox es Area3D (capa 4). PhysicsRayQueryParameters3D ignora áreas
-	# por defecto; sin esta bandera todos los disparos a la cabeza pasaban por
-	# encima del body collider y el multiplicador de headshot era inalcanzable.
+	# por defecto; sin esta bandera el multiplicador de headshot es inalcanzable.
 	query.collide_with_areas = true
+	var excluded: Array[RID] = []
 	if actor is CollisionObject3D:
-		query.exclude = [actor.get_rid()]
+		excluded.append((actor as CollisionObject3D).get_rid())
+	if actor != null:
+		var own_head := actor.get_node_or_null("HeadHitbox") as CollisionObject3D
+		if own_head != null:
+			excluded.append(own_head.get_rid())
+	query.exclude = excluded
 	var hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(query)
 	if combat_fx != null:
 		# Una sola trazadora por disparo: en escopeta (8 perdigones) dibujar
 		# ocho beams multiplica el coste sin cambiar la lectura en pantalla.
 		if pellet_index == 0:
-			var tracer_end := origin + direction * minf(definition.range, 30.0)
+			var tracer_end := origin + shot_direction * minf(origin.distance_to(end), 30.0)
 			if not hit.is_empty():
 				tracer_end = hit.position
-			combat_fx.tracer(_muzzle_origin(), tracer_end)
+			combat_fx.tracer(origin, tracer_end)
 	if hit.is_empty():
 		return
 	var collider: Object = hit.get("collider")
@@ -429,6 +445,16 @@ func _update_muzzle_anchor() -> void:
 
 
 func _current_weapon_skin() -> String:
+	# Match.configure() ya recibió la selección del lobby/QA: esa es la verdad
+	# de esta partida. SettingsStore queda como fallback para usos aislados del
+	# controlador, evitando que un arranque QA enseñe una skin distinta a la
+	# que el match pidió explícitamente.
+	if actor != null:
+		var context: Node = actor.get("match_context")
+		if context != null:
+			var configured: Variant = context.get("weapon_skin")
+			if configured != null and not str(configured).is_empty():
+				return str(configured)
 	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 	return str(settings.get_value("weapon_skin", "Estándar") if settings != null else "Estándar")
 
