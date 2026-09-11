@@ -579,9 +579,9 @@ func _test_editor_pause_contract() -> void:
 	get_root().add_child(bot)
 	var physics_before := bot.is_physics_processing()
 	hud.match_context = bot.match_context
-	# Simula contexto mínimo con un combatiente vivo.
-	var fake := RefCounted.new()
-	hud._editor_frozen = [bot]
+	# Simula contexto mínimo con un combatiente vivo. El estado de pausa vive
+	# en el dueño del overlay (`hud_overlays.gd`), no en el HUD.
+	hud.overlays.frozen = [bot]
 	bot.set_physics_process(false)
 	_check(not bot.is_physics_processing(), "editor freeze stops bot physics")
 	hud._resume_from_editor()

@@ -43,13 +43,19 @@ acabado con una regresión de locomoción.
 `operator_wardrobe.gd`. El traslado está probado idéntico por
 `tools/probe-refactor-oracle.gd` (`1044286260` antes y después).
 
-Siguiente frontera del mismo tipo, **sin empezar**: `game/ui/hud.gd` (960
-líneas) mezcla cuatro cosas en un solo nodo y un solo espacio de estado — HUD de
-combate, panel de compra, ajustes/editor de controles (con su pausa de overlay,
-`_freeze_for_overlay`/`_overlay_input_states`) y espectador/fin de partida. Su
-riesgo no es la pose sino el LAYOUT: un split necesita capturas por pantalla
-antes/después (`qa_shot --hud`, `--settings`, `--armory`, `--editor`) además de
-la suite. No se toca sin ese plan.
+`game/ui/hud.gd` bajó de 960 a 851 líneas: los overlays interactivos (AJUSTES
++ editor de controles) y sobre todo **su estado de pausa** viven ahora en
+`game/ui/hud_overlays.gd`. Ese estado era lo más fácil de romper del HUD —si se
+pierde el snapshot de `input_enabled`, al cerrar el modal el jugador queda
+deshabilitado— y estaba repartido en el mismo archivo que el marcador y la
+mira. El HUD es la puerta (teclado, botones, suite, QA) y el overlay el dueño.
+Probado idéntico con `tools/probe-hud-contract.gd` (firma `1446467736` antes y
+después) más la suite y capturas por pantalla.
+
+Queda en `hud.gd` el HUD de combate (marcador, salud, munición, banners) y el
+panel de compra/espectador/fin de partida: 851 líneas todavía grandes, pero con
+un dueño único cada uno. No hay frontera nueva justificada por medición; el
+criterio para abrirla es el mismo (cadencias distintas o estado compartido).
 
 `game/world/arena.gd` (679) y `game/match/match.gd` (538) son grandes pero cada
 uno responde a un dueño único (geometría del mundo / reglas de partida); su

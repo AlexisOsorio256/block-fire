@@ -90,7 +90,7 @@ func _test_overlay_restores_player_input() -> void:
 	hud.match_context = game_match
 	hud.call("_freeze_for_overlay")
 	_check(not actor.input_enabled, "overlay freezes player input while open")
-	_check(bool(hud.get("_overlay_input_states").get(actor.get_instance_id(), false)), "overlay snapshots enabled input before clearing it")
+	_check(bool(hud.overlays.input_states.get(actor.get_instance_id(), false)), "overlay snapshots enabled input before clearing it")
 	_check(is_equal_approx(weapon.reload_timer, 1.25) and is_equal_approx(weapon.cooldown, 0.21), "overlay pause preserves reload/cooldown state")
 	_check(is_equal_approx(weapon.spread_heat, 1.4), "overlay pause preserves spread state")
 	_check(not weapon.fire_held, "overlay releases held fire without resetting weapon state")

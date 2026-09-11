@@ -1,7 +1,6 @@
 class_name BlockfireHud
 extends CanvasLayer
 
-const ControlEditorScript := preload("res://game/ui/control_editor.gd")
 const CrosshairScript := preload("res://game/ui/crosshair.gd")
 
 signal buy_requested(index: int)
@@ -26,10 +25,6 @@ var banner_label: Label
 var damage_label: Label
 var crosshair: Control
 var bottom_bar: HBoxContainer
-var control_editor
-var settings_panel: PanelContainer
-var settings_backdrop: ColorRect
-var return_to_settings: bool = false
 var buy_panel: PanelContainer
 var buy_title: Label
 var buy_timer: Label
@@ -40,9 +35,9 @@ var spectator_panel: PanelContainer
 var end_panel: PanelContainer
 var ui_audio: AudioStreamPlayer
 var mobile_qa: bool = false
-## Actores congelados mientras un overlay interactivo está abierto.
-var _editor_frozen: Array[Node] = []
-var _overlay_input_states: Dictionary = {}
+## Overlays interactivos (AJUSTES + editor de controles) y la pausa que
+## imponen. El estado de pausa vive ahí, no aquí: ver `hud_overlays.gd`.
+var overlays := HudOverlays.new(self)
 ## Feedback de combate (sesión FX): hit marker, números de daño flotantes,
 ## kill feed, indicador de recarga/cargador bajo y viñeta de daño recibido.
 var _hit_marker: Control
@@ -71,6 +66,7 @@ func setup(context: Node, use_mobile_qa: bool) -> void:
 	match_context = context
 	mobile_qa = use_mobile_qa
 	_build()
+	overlays.setup(root, mobile_controls)
 
 func _build() -> void:
 	root = Control.new()
@@ -670,96 +666,64 @@ func show_buy(visible: bool, seconds: float, coins: int, definitions: Array[Weap
 		if bottom_bar != null:
 			bottom_bar.visible = true
 
+## Overlays: el HUD es la PUERTA (teclado, botones, suite y QA) y
+## `HudOverlays` el dueño. Se mantienen los nombres antiguos porque los usan
+## tests/regressions.gd, tests/smoke.gd y tools/qa_shot.gd.
 func toggle_control_editor() -> void:
+	# El editor mueve controles táctiles: sin ellos no hay nada que editar.
+	# Antes esto era un guard dentro del propio toggle; vive aquí porque es
+	# decisión del HUD (quién sabe si hay mandos), no del overlay.
 	if mobile_controls == null:
 		set_status("EDITOR DISPONIBLE EN CONTROLES TÁCTILES", Color("#ffd471"))
 		return
-	if is_instance_valid(control_editor):
-		_close_control_editor()
-		return
-	_open_control_editor(false)
+	overlays.toggle_control_editor()
+
 
 func toggle_settings() -> void:
-	if is_instance_valid(control_editor):
-		return
-	if is_instance_valid(settings_panel):
-		_close_settings_panel()
-		_resume_from_overlay()
-		return
-	_freeze_for_overlay()
-	_open_settings_panel()
+	overlays.toggle_settings()
 
-func _open_control_editor(from_settings: bool) -> void:
-	return_to_settings = from_settings
-	if not from_settings:
-		_freeze_for_overlay()
-	control_editor = ControlEditorScript.new()
-	control_editor.name = "ControlEditor"
-	control_editor.setup(mobile_controls)
-	control_editor.closed.connect(_close_control_editor)
-	root.add_child(control_editor)
 
 func _freeze_for_overlay() -> void:
-	_editor_frozen.clear()
-	_overlay_input_states.clear()
-	if match_context != null and match_context.has_method("set_local_overlay_paused"):
-		match_context.set_local_overlay_paused(true)
-	# Guarda el input antes de _stop_combat_inputs(), que lo limpia para evitar
-	# que al cerrar el modal quede el jugador permanentemente deshabilitado.
-	if match_context != null and match_context.has_method("get_combatants"):
-		for actor: Node in match_context.get_combatants():
-			if is_instance_valid(actor) and bool(actor.get("is_alive")):
-				if actor.get("input_enabled") != null:
-					_overlay_input_states[actor.get_instance_id()] = bool(actor.get("input_enabled"))
-	if match_context != null and match_context.has_method("_stop_combat_inputs"):
-		match_context._stop_combat_inputs()
-	if match_context != null and match_context.has_method("get_combatants"):
-		for actor: Node in match_context.get_combatants():
-			if is_instance_valid(actor) and actor.has_method("get") and bool(actor.get("is_alive")):
-				_editor_frozen.append(actor)
-				actor.set_physics_process(false)
-	if mobile_controls != null:
-		mobile_controls.release_all()
+	overlays.freeze_for_overlay()
+
 
 func _resume_from_overlay() -> void:
-	for actor: Node in _editor_frozen:
-		if is_instance_valid(actor):
-			actor.set_physics_process(true)
-			var saved_input: Variant = _overlay_input_states.get(actor.get_instance_id(), null)
-			if saved_input != null and actor.get("input_enabled") != null:
-				actor.set("input_enabled", bool(saved_input))
-	_editor_frozen.clear()
-	_overlay_input_states.clear()
-	if match_context != null and match_context.has_method("set_local_overlay_paused"):
-		match_context.set_local_overlay_paused(false)
-	if mobile_controls != null:
-		mobile_controls.release_all()
+	overlays.resume_from_overlay()
+
 
 func _resume_from_editor() -> void:
 	# Alias de compatibilidad para la suite DEV y herramientas antiguas.
-	_resume_from_overlay()
+	overlays.resume_from_overlay()
+
+
+func _open_control_editor(from_settings: bool) -> void:
+	overlays.open_control_editor(from_settings)
+
 
 func _close_control_editor() -> void:
-	if is_instance_valid(control_editor):
-		control_editor.queue_free()
-	control_editor = null
-	if return_to_settings:
-		return_to_settings = false
-		_open_settings_panel()
-	else:
-		_resume_from_overlay()
+	overlays.close_control_editor()
+
+
+func _open_settings_panel() -> void:
+	overlays.open_settings_panel()
+
 
 func _close_settings_panel() -> void:
-	if is_instance_valid(settings_backdrop):
-		settings_backdrop.queue_free()
-		settings_backdrop = null
-	if is_instance_valid(settings_panel):
-		settings_panel.queue_free()
-		settings_panel = null
-	# Los controles, la barra de vida y la mira se ocultan al abrir ajustes (ver
-	# _open_settings_panel). Si no se restauran aquí, al pulsar CONTINUAR el
-	# juego queda sin mandos visibles ni mira aunque sigan capturando toques:
-	# bug reportado en dispositivo.
+	overlays.close_settings_panel()
+
+
+## El overlay no conoce el layout del HUD: estos dos callbacks son el contrato
+## para que oculte y restaure las piezas de juego mientras está abierto.
+func hide_for_overlay() -> void:
+	if mobile_controls != null:
+		mobile_controls.visible = false
+	if bottom_bar != null:
+		bottom_bar.visible = false
+	if crosshair != null:
+		crosshair.visible = false
+
+
+func restore_after_overlay() -> void:
 	if mobile_controls != null:
 		mobile_controls.visible = true
 	if bottom_bar != null:
@@ -767,85 +731,12 @@ func _close_settings_panel() -> void:
 	if crosshair != null:
 		crosshair.visible = true
 
-func _open_settings_panel() -> void:
-	if is_instance_valid(settings_panel):
-		return
-	if mobile_controls != null:
-		mobile_controls.visible = false
-	if bottom_bar != null:
-		bottom_bar.visible = false
-	if crosshair != null:
-		crosshair.visible = false
-	settings_backdrop = ColorRect.new()
-	settings_backdrop.name = "SettingsBackdrop"
-	settings_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	settings_backdrop.color = Color(0.01, 0.03, 0.08, 0.72)
-	settings_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	settings_backdrop.z_index = 30
-	root.add_child(settings_backdrop)
-	settings_panel = PanelContainer.new()
-	settings_panel.name = "SettingsPanel"
-	settings_panel.set_anchors_preset(Control.PRESET_CENTER)
-	settings_panel.position = Vector2(-250.0, -205.0)
-	settings_panel.size = Vector2(500.0, 410.0)
-	settings_panel.add_theme_stylebox_override("panel", BlockfireTheme.panel(Color("#08152beF"), Color("#80cfff"), 16, 2))
-	settings_panel.z_index = 31
-	root.add_child(settings_panel)
-	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 8)
-	settings_panel.add_child(stack)
-	var header := HBoxContainer.new()
-	stack.add_child(header)
-	var title := BlockfireTheme.label("AJUSTES", 22, Color.WHITE)
-	header.add_child(title)
-	var state := BlockfireTheme.label("PARTIDA EN PAUSA", 10, Color("#8ff1c5"))
-	state.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	header.add_child(state)
-	var hint := BlockfireTheme.label("Configura tu experiencia sin perder el estado de la ronda.", 11, Color("#a9c4e5"))
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	stack.add_child(hint)
-	_add_setting_slider(stack, "VOLUMEN MASTER", "master_volume", 0.0, 1.0, 0.85)
-	_add_setting_slider(stack, "VOLUMEN SFX", "sfx_volume", 0.0, 1.0, 0.9)
-	_add_setting_slider(stack, "SENSIBILIDAD", "sensitivity", 0.04, 0.25, 0.12)
-	_add_setting_slider(stack, "MULTIPLICADOR ADS", "ads_multiplier", 0.45, 1.0, 0.72)
-	_add_setting_slider(stack, "OPACIDAD TÁCTIL", "mobile_opacity", 0.35, 1.0, 0.68)
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
-	stack.add_child(actions)
-	var edit := Button.new()
-	edit.text = "EDITAR CONTROLES"
-	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	BlockfireTheme.apply_button(edit, Color("#80cfff"))
-	edit.pressed.connect(func() -> void:
-		_close_settings_panel()
-		_open_control_editor(true)
-	)
-	actions.add_child(edit)
-	var close := Button.new()
-	close.text = "CONTINUAR"
-	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	BlockfireTheme.apply_button(close, BlockfireTheme.GOLD)
-	close.pressed.connect(func() -> void:
-		_close_settings_panel()
-		_resume_from_overlay()
-	)
-	actions.add_child(close)
 
-func _add_setting_slider(stack: VBoxContainer, label_text: String, key: String, minimum: float, maximum: float, fallback: float) -> void:
-	var label := BlockfireTheme.label(label_text, 10, Color("#9db7db"))
-	stack.add_child(label)
-	var slider := HSlider.new()
-	slider.min_value = minimum
-	slider.max_value = maximum
-	slider.step = 0.01
-	var settings := get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
-	slider.value = float(settings.get_value(key, fallback) if settings != null else fallback)
-	slider.value_changed.connect(func(value: float) -> void:
-		if settings != null:
-			settings.set_value(key, value)
-	)
-	stack.add_child(slider)
+func _settings() -> Node:
+	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+
+
+
 
 func update_buy_time(seconds: float) -> void:
 	if buy_timer != null:
