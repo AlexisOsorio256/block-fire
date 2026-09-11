@@ -51,7 +51,7 @@ function readJsonBody(req, limit = BODY_LIMIT) {
     })
     req.on('end', () => {
       if (chunks.length === 0) return settle({ ok: false, error: 'empty body' })
-      try { settle({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
+      try { settle({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8')) }) }
       catch (error) { settle({ ok: false, error: `invalid JSON: ${String(error?.message ?? error)}` }) }
     })
     req.on('error', () => settle({ ok: false, error: 'request error' }))
