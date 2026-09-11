@@ -11,7 +11,7 @@
 
       Mode objective: BLOCKFIRE only, and always toward better — architecture, animation, visual quality and game feel improve or stay untouched, never sacrificed, and nothing is rewritten without a measured reason. Balanced efficiency, no over-engineering.
 
-      Visual defects: when a capture, render or frame of the running game already shows what is wrong, name it there and fix it — look at the Godot render or the live game, edit, look again, done. Building numeric or geometric proofs for something a picture already shows is prohibited; measure after the change to protect the contract, never instead of looking.
+      Visual questions: inspect the available capture, render or live-game frame before inferring from code, geometry or proxy metrics. If it already shows the defect, name it, fix it, then inspect again. Measure only when the image cannot locate the cause or to lock a regression after the visual fix; never use proxy numbers instead of looking.
 
       Close significant work with a brief look at your own trajectory; load session-retrospective only for reusable harness friction.
 
