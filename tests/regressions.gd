@@ -78,14 +78,26 @@ func _test_overlay_restores_player_input() -> void:
 	var game_match := MatchScript.new()
 	var actor := BlockfirePlayer.new()
 	actor.input_enabled = true
+	var weapon := WeaponController.new()
+	actor.weapon = weapon
+	actor.add_child(weapon)
+	weapon.reload_timer = 1.25
+	weapon.cooldown = 0.21
+	weapon.spread_heat = 1.4
+	weapon.set_fire_held(true)
 	game_match.player = actor
 	var hud := BlockfireHud.new()
 	hud.match_context = game_match
 	hud.call("_freeze_for_overlay")
 	_check(not actor.input_enabled, "overlay freezes player input while open")
 	_check(bool(hud.get("_overlay_input_states").get(actor.get_instance_id(), false)), "overlay snapshots enabled input before clearing it")
+	_check(is_equal_approx(weapon.reload_timer, 1.25) and is_equal_approx(weapon.cooldown, 0.21), "overlay pause preserves reload/cooldown state")
+	_check(is_equal_approx(weapon.spread_heat, 1.4), "overlay pause preserves spread state")
+	_check(not weapon.fire_held, "overlay releases held fire without resetting weapon state")
+	_check(not weapon.is_physics_processing(), "overlay freezes child WeaponController timers")
 	hud.call("_resume_from_overlay")
 	_check(actor.input_enabled, "closing overlay restores the player's previous input state")
+	_check(weapon.is_physics_processing(), "closing overlay resumes WeaponController processing")
 	game_match.player = null
 	actor.free()
 	hud.free()
