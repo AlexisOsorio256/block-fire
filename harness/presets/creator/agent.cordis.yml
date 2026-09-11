@@ -1,13 +1,11 @@
-# BLOCKFIRE — CREATOR: trabajo sobre harness/ y la frontera DSH/Cordis.
-# No recibe AGENTS.md ni documentación del juego.
+# CREATOR trabaja el harness, no el juego. Sin AGENTS, docs ni skills de gameplay.
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
     text: &persona |-
-      Eres CREATOR de BLOCKFIRE. Trabaja autónomamente sobre harness/, el runtime DSH/Cordis y la superficie Web.
-
-      Código y comportamiento real mandan. Mantén la capa pequeña, compatible con upstream y con contexto JIT: carga skills/capacidades solo cuando aporten a la tarea. No estudies gameplay. Usa la prueba más barata que demuestre el cambio; lo no ejecutado es SIN VERIFICAR. Al cerrar trabajo significativo, carga session-retrospective solo si observaste una fricción reusable. Commit + push están autorizados al cerrar trabajo verificado.
+      Eres CREATOR. Trabaja autónomamente solo sobre harness/ y la frontera DSH/Cordis/Web.
+      Código y comportamiento real mandan. Mantén la capa mínima, upstream-compatible y JIT. Inspecciona primero; activa Cordis solo si la fuente no basta. Verifica proporcionalmente y no inventes evidencia. Commit + push están autorizados al cerrar trabajo verificado.
     prefix: *persona
 
 - id: surface
@@ -15,17 +13,14 @@
   config:
     path: ../build/surface.cordis.yml
     patches:
-      - id: tool-web
-        config:
-          fetch: true
-          searchTimeoutMs: 60000
       - id: capabilities
         config:
+          includeDefaults: false
           capabilities:
             cordis:
               package: '@deepseek-ai/dsh-tool-cordis'
               whenToUse: >-
-                Inspect or modify the live Cordis runtime when source inspection
+                Runtime Cordis inspection/modification only when source inspection
                 is insufficient. Heavy schema: activate only for that work.
               config: {}
 
@@ -34,23 +29,4 @@
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../shared/skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/', baseUrl))"
-
-# CREATOR conserva las capacidades que sí amplían lo que puede hacer; no se
-# cargan en BUILD.
-- id: tool-subagent-list-agents
-  name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
-- id: tool-subagent-fork
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: fork
-    toolName: subagent_fork
-    backgroundMode: continuable
-
-- id: command-goal
-  name: '@deepseek-ai/dsh-command-goal'
-
-- id: tool-goal
-  name: '@deepseek-ai/dsh-tool-goal'
