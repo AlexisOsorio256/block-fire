@@ -10,12 +10,24 @@ const sessionsRoot = join(dshHome, 'sessions')
 const idShape = /^[0-9A-Za-z-]{8,64}$/
 
 function readQueue() {
+  if (!existsSync(queueFile)) return []
+  let value
   try {
-    const value = JSON.parse(readFileSync(queueFile, 'utf8'))
-    return Array.isArray(value) ? value.filter((id) => typeof id === 'string' && idShape.test(id)) : []
-  } catch {
-    return []
+    value = JSON.parse(readFileSync(queueFile, 'utf8'))
+  } catch (error) {
+    process.stderr.write(`blockfire: delete queue is unreadable at ${queueFile}: ${String(error?.message ?? error)}\n`)
+    process.exit(1)
   }
+  if (!Array.isArray(value)) {
+    process.stderr.write(`blockfire: delete queue at ${queueFile} is not an array; leaving it untouched\n`)
+    process.exit(1)
+  }
+  const invalid = value.filter((id) => typeof id !== 'string' || !idShape.test(id))
+  if (invalid.length > 0) {
+    process.stderr.write(`blockfire: delete queue at ${queueFile} contains ${invalid.length} invalid session id(s); leaving it untouched\n`)
+    process.exit(1)
+  }
+  return [...new Set(value)]
 }
 
 function writeQueue(ids) {
