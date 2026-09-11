@@ -56,6 +56,13 @@ var sprint_speed: float = 7.0
 var crouch_speed: float = 2.6
 var acceleration: float = 32.0
 var assist_break_timer: float = 0.0
+## Alcance y fuerza del agarre rotacional; el cono limita dónde se siente.
+const ASSIST_RANGE := 70.0
+const ASSIST_GRIP := 0.35
+const ASSIST_GRIP_CONE_DEG := 26.0
+## Un arrastre mayor que esto en un tick es un flick deliberado: sin agarre.
+const ASSIST_FLICK_PIXELS := 18.0
+const ASSIST_FLICK_HOLD := 0.24
 var step_timer: float = 0.0
 var last_damage_headshot: bool = false
 
@@ -107,7 +114,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		_update_camera_pose(delta)
 		return
-	_update_look(delta)
+	_update_look()
 	if not input_enabled:
 		_accelerate_horizontal(Vector3.ZERO, delta)
 		_apply_gravity(delta)
@@ -305,6 +312,10 @@ func get_mobile_assisted_direction(base_direction: Vector3, max_range: float) ->
 		assist_target = null
 		return base_direction
 	assist_target = chosen
+	# La ayuda sólo corrige un casi-fallo; sobre el objetivo el disparo conserva
+	# la parte apuntada (pecho, cabeza) en vez de doblarse al torso.
+	if _reticle_on_target(chosen, origin, base_direction, max_range):
+		return base_direction
 	var assisted_point: Vector3 = chosen.get_assist_point() if chosen.has_method("get_assist_point") else chosen.get_target_point()
 	var assisted_direction := origin.direction_to(assisted_point)
 	var angle_to_target := rad_to_deg(acos(clampf(base_direction.normalized().dot(assisted_direction), -1.0, 1.0)))
@@ -364,14 +375,17 @@ func _movement_input() -> Vector2:
 			value = touch_value
 	return value
 
-func _update_look(delta: float) -> void:
+func _update_look() -> void:
 	var look := Vector2.ZERO
 	if mobile_controls != null and mobile_controls.has_method("consume_look_delta"):
 		look = mobile_controls.consume_look_delta()
 	var sensitivity := _look_sensitivity()
+	# El agarre escala el arrastre del propio pulgar, nunca lo sustituye: con el
+	# pulgar quieto no hay movimiento de cámara y ningún arrastre deliberado se
+	# invierte, así que la cabeza sigue siendo alcanzable.
+	look *= _assist_aim_scale(look)
 	look_yaw -= look.x * sensitivity
 	look_pitch = clampf(look_pitch - look.y * sensitivity, -78.0, 78.0)
-	_apply_rotational_assist(delta, look)
 	_sync_camera_orbit()
 
 func _update_camera_pose(delta: float) -> void:
@@ -418,37 +432,59 @@ func _update_body_rotation(delta: float, movement_direction: Vector3) -> void:
 		return
 	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 11.0, 0.0, 1.0))
 
-func _apply_rotational_assist(delta: float, look_input: Vector2) -> void:
+## Asistencia rotacional = resistencia al arrastre, no imán. Mientras ADS/fuego
+## está activo, arrastrar sobre el torso visible pesa más; el giro pedido nunca
+## se sustituye ni se revierte, así que un arrastre deliberado a la cabeza no se
+## bloquea y al soltar el pulgar la mira se queda donde quedó.
+func _assist_aim_scale(look_input: Vector2) -> float:
 	if not can_use_combat() or mobile_controls == null or match_context == null or camera == null:
-		return
-	# Rotational assist is an ADS/fire aid, never a free-look magnet. The old
-	# is_looking branch pulled the camera toward every candidate while the thumb
-	# merely panned, which read as wall/cover lock-on on a phone.
+		return 1.0
+	if look_input.length_squared() < 0.0001:
+		# Sin arrastre no hay nada que escalar: cero movimiento no pedido.
+		return 1.0
 	var engaged: bool = _mobile_fire() or _mobile_aim() \
 		or Input.is_action_pressed("aim") or Input.is_action_pressed("fire")
 	if not engaged:
 		assist_target = null
-		return
-	if look_input.length() > 18.0:
-		assist_break_timer = 0.24
+		return 1.0
+	# Un flick por encima de este umbral es un giro deliberado: sin agarre.
+	if look_input.length() > ASSIST_FLICK_PIXELS:
+		assist_break_timer = ASSIST_FLICK_HOLD
 	if assist_break_timer > 0.0:
-		return
+		return 1.0
 	var origin := get_aim_origin()
-	var target := _select_assist_target(-camera.global_transform.basis.z, 70.0, origin)
+	var aim := -camera.global_transform.basis.z
+	var target := _select_assist_target(aim, ASSIST_RANGE, origin)
 	if target == null:
 		assist_target = null
-		return
+		return 1.0
 	assist_target = target
 	var target_point: Vector3 = target.get_assist_point() if target.has_method("get_assist_point") else target.get_target_point()
-	var target_direction := origin.direction_to(target_point)
-	var desired_yaw := rad_to_deg(atan2(-target_direction.x, -target_direction.z))
-	var desired_pitch := rad_to_deg(asin(clampf(target_direction.y, -1.0, 1.0)))
-	var yaw_error := wrapf(desired_yaw - look_yaw, -180.0, 180.0)
-	var pitch_error := desired_pitch - look_pitch
-	var follow_rate := 15.0 if _uses_ads() else 10.0
-	var blend := clampf(delta * follow_rate, 0.0, 0.28)
-	look_yaw = wrapf(look_yaw + yaw_error * blend, -360.0, 360.0)
-	look_pitch = clampf(look_pitch + pitch_error * blend, -78.0, 78.0)
+	var angle := rad_to_deg(aim.angle_to(origin.direction_to(target_point)))
+	var proximity := 1.0 - clampf(angle / ASSIST_GRIP_CONE_DEG, 0.0, 1.0)
+	return 1.0 - ASSIST_GRIP * proximity
+
+## Dónde está el retículo, con el mismo rayo que trazará el arma: la ayuda sólo
+## convierte un casi-fallo. Si el retículo ya cae sobre el objetivo, doblar la
+## bala hacia el torso le quitaría al jugador la parte que eligió (apuntar a la
+## cabeza terminaba en el pecho).
+func _reticle_on_target(candidate: Node, origin: Vector3, direction: Vector3, max_range: float) -> bool:
+	if not candidate is CollisionObject3D or not is_inside_tree() or direction.length_squared() < 0.0001:
+		return false
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction.normalized() * max_range)
+	query.collision_mask = 1 | 2 | 4
+	query.collide_with_areas = true
+	var excluded: Array[RID] = [get_rid()]
+	if head_hitbox != null:
+		excluded.append(head_hitbox.get_rid())
+	query.exclude = excluded
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+	var collider := hit.get("collider") as Node
+	if collider == null:
+		return false
+	return collider == candidate or candidate.is_ancestor_of(collider)
 
 func _uses_ads() -> bool:
 	return (weapon != null and weapon.aim_held) or Input.is_action_pressed("aim") or _mobile_aim()

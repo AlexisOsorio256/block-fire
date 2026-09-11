@@ -30,7 +30,7 @@ fi
 # Suites enfocadas, un proceso Godot cada una (sin reutilizar árboles):
 # producto, regresiones, pose/velocidad y cámara en mundo físico.
 STATUS=0
-for suite in tests/smoke.gd tests/regressions.gd tests/animation_layers.gd tools/probe-player-feel.gd tools/probe-player-brake.gd tools/probe-aim-coordination.gd; do
+for suite in tests/smoke.gd tests/regressions.gd tests/animation_layers.gd tools/probe-player-feel.gd tools/probe-player-brake.gd tools/probe-aim-coordination.gd tools/probe-aim-assist.gd; do
 	echo "── $suite"
 	if ! "$GODOT_BIN" --headless --path "$ROOT" --script "res://$suite"; then
 		STATUS=1

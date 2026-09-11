@@ -266,6 +266,39 @@ func _muzzle_origin() -> Vector3:
 	return _aim_origin()
 
 
+## Lo que la mira cubre: primer obstáculo del rayo de cámara, o el alcance
+## máximo del arma cuando no hay nada delante. La boca debe poder llegar a ese
+## punto, así que la cobertura frente al cañón sigue bloqueando el disparo.
+func _intended_point(aim_origin: Vector3, direction: Vector3, range_meters: float) -> Vector3:
+	if actor == null or not actor.is_inside_tree():
+		return aim_origin + direction * range_meters
+	var query := PhysicsRayQueryParameters3D.create(aim_origin, aim_origin + direction * range_meters)
+	query.collision_mask = 1 | 2 | 4
+	query.collide_with_areas = true
+	query.exclude = _shot_excludes()
+	var hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return aim_origin + direction * range_meters
+	return hit["position"]
+
+
+## Cuerpo propio y hitbox de cabeza propia nunca cuentan como obstáculo.
+func _shot_excludes() -> Array[RID]:
+	var excluded: Array[RID] = []
+	if actor is CollisionObject3D:
+		excluded.append((actor as CollisionObject3D).get_rid())
+	if actor != null:
+		var own_head := actor.get_node_or_null("HeadHitbox") as CollisionObject3D
+		if own_head != null:
+			excluded.append(own_head.get_rid())
+	return excluded
+
+
+## Margen con el que el rayo de la boca rebasa el punto de la mira: sin él, un
+## impacto que cae justo en la superficie puede quedar fuera del segmento.
+const CONVERGENCE_BACKSTOP := 0.02
+
+
 func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	# La cámara decide hacia dónde quiere disparar; la boca real decide desde
 	# dónde puede salir la bala. Antes el raycast nacía en la cámara TPS, de
@@ -285,26 +318,29 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	else:
 		direction = _spread_direction(direction, spread * (0.55 if aim_held else 1.0))
 
-	var intended_end := aim_origin + direction * definition.range
+	# Bala y mira comparten punto: la boca dispara HACIA el punto que la mira ya
+	# cubre, no paralela a la cámara. Con convergencia lejana el cañón quedaba a
+	# 0,77 m del eje de cámara y el disparo caía a esa distancia del retículo a
+	# cualquier alcance normal; con la convergencia al punto real, la cobertura
+	# sigue ganando porque el rayo completo sigue naciendo en la boca.
+	var intended_point := _intended_point(aim_origin, direction, definition.range)
 	var origin := _muzzle_origin()
-	var muzzle_to_end := intended_end - origin
-	if muzzle_to_end.length_squared() < 0.000001:
+	var muzzle_to_intended := intended_point - origin
+	var intended_distance := muzzle_to_intended.length()
+	if intended_distance < 0.0001:
 		return
-	var end := origin + muzzle_to_end.limit_length(definition.range)
+	# Terminar exactamente sobre la superficie del objetivo deja el impacto al
+	# borde numérico del rayo: 1 de cada 3 disparos no encontraba nada. El punto
+	# se rebasa CONVERGENCE_BACKSTOP para que el primer obstáculo sea el que la
+	# mira ya cubría.
+	var end := origin + (muzzle_to_intended / intended_distance) * minf(intended_distance + CONVERGENCE_BACKSTOP, definition.range)
 	var shot_direction := origin.direction_to(end)
 	var query := PhysicsRayQueryParameters3D.create(origin, end)
 	query.collision_mask = 1 | 2 | 4
 	# HeadHitbox es Area3D (capa 4). PhysicsRayQueryParameters3D ignora áreas
 	# por defecto; sin esta bandera el multiplicador de headshot es inalcanzable.
 	query.collide_with_areas = true
-	var excluded: Array[RID] = []
-	if actor is CollisionObject3D:
-		excluded.append((actor as CollisionObject3D).get_rid())
-	if actor != null:
-		var own_head := actor.get_node_or_null("HeadHitbox") as CollisionObject3D
-		if own_head != null:
-			excluded.append(own_head.get_rid())
-	query.exclude = excluded
+	query.exclude = _shot_excludes()
 	var hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(query)
 	if combat_fx != null:
 		# Una sola trazadora por disparo: en escopeta (8 perdigones) dibujar

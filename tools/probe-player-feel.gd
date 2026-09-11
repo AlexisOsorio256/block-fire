@@ -48,12 +48,12 @@ func run() -> void:
 	player.position = Vector3.ZERO
 	player.rotation = Vector3.ZERO
 	player.look_yaw = 0.0
-	player._update_look(1.0 / 60.0)
+	player._update_look()
 	await movement_tests(player, controls)
 	player.position = Vector3.ZERO
 	player.rotation = Vector3.ZERO
 	player.look_yaw = 0.0
-	player._update_look(1.0 / 60.0)
+	player._update_look()
 	# A wall appears on the new orbit after a 90 degree touch pan. Collision
 	# must be resolved against that orbit within this same Player tick.
 	var wall := StaticBody3D.new()
