@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 // Real Web host + both presets, in an ephemeral DSH_HOME. No model requests.
 //
-// Beyond "does it mount", this suite owns the two invariants of the model-facing
+// Beyond "does it mount", this suite owns the invariants of the model-facing
 // prefix that a thin layer can actually break: every registered tool still
-// reaches the model with untouched parameters, and the permanent prefix stays
-// inside its budget. The numbers behind the budget come from
-// `harness/bin/context-report.mjs`.
+// reaches the model with untouched parameters, the permanent prefix stays
+// inside budget, and the shortest-path rules survive composition.
 import assert from 'node:assert/strict'
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -23,6 +22,25 @@ const repo = resolve(harness, '..')
  * objective each persona now states, which is a standing directive, not prose.
  */
 const PREFIX_BUDGET = { build: 17500, creator: 17500 }
+
+/**
+ * Old tool payloads are paid again on later requests. Keep the configured
+ * retention materially below its trigger; a narrow reread is cheaper than
+ * dragging a large stale result through every subsequent turn.
+ */
+const surfaceText = readFileSync(join(harness, 'presets/build/surface.cordis.yml'), 'utf8')
+const surfaceNumber = (name) => {
+  const match = new RegExp(`${name}:\\s*(\\d+)`).exec(surfaceText)
+  assert.notEqual(match, null, `${name} must stay explicit in the shared surface`)
+  return Number(match[1])
+}
+const pruneThreshold = surfaceNumber('thresholdChars')
+const pruneHead = surfaceNumber('headChars')
+const pruneTail = surfaceNumber('tailChars')
+assert(pruneThreshold <= 4096, `tool-result prune threshold regressed to ${pruneThreshold}`)
+assert(pruneHead <= 2048, `tool-result retained head regressed to ${pruneHead}`)
+assert(pruneTail <= 768, `tool-result retained tail regressed to ${pruneTail}`)
+assert(pruneHead + pruneTail < pruneThreshold, 'pruned tool output must be materially smaller than its trigger')
 
 /**
  * Sections the prompt layer must have removed by the time the model sees the
@@ -103,12 +121,31 @@ export function apply(ctx) {
       const prefix = system.length + JSON.stringify(assembly.tools).length
       assert(!/[áéíóúüñ¿¡]/i.test(system), `${space}: the model-facing prompt must be English (accented characters found)`)
       assert(!/[áéíóúüñ¿¡]/i.test(JSON.stringify(assembly.tools)), `${space}: tool schemas must be English`)
+      assert.match(system, /Waste is prohibited: take the shortest decisive path/,
+        `${space}: shortest-path execution rule must reach the model`)
+      assert.match(system, /duplicate reads\/tests, speculative subagents or extra planning/,
+        `${space}: anti-churn rule must reach the model`)
       assert(assembly.tools.some(tool => tool.name === 'bash'), `${space}: bash survives the prompt budget`)
-      const bash = assembly.tools.find(tool => tool.name === 'bash').description
+      const descriptionOf = (name) => {
+        const tool = assembly.tools.find(candidate => candidate.name === name)
+        assert(tool !== undefined, `${space}: ${name} survives the prompt budget`)
+        return tool.description
+      }
+      const bash = descriptionOf('bash')
       for (const marker of ['[exit code: N]', 'workdir', 'run_in_background']) {
         assert(bash.includes(marker), `${space}: the compressed bash description must keep ${marker} so results stay recognizable`)
       }
       assert(bash.length < 1200, `${space}: the bash description must stay fitted (${bash.length} chars) — upstream wording is back, so the prompt row stopped matching`)
+      assert.match(descriptionOf('subagent'), /Do not delegate a question solvable with a few direct tool calls/,
+        `${space}: delegation must not replace direct tool use`)
+      assert.match(descriptionOf('todo_write'), /Do not create todos for straightforward work or mirror every action/,
+        `${space}: todo must remain optional rather than workflow ceremony`)
+      assert.match(descriptionOf('skill'), /Do not preload every possibly related skill/,
+        `${space}: skills must stay JIT rather than speculative context`)
+      assert.doesNotMatch(descriptionOf('skill'), /load every applicable skill before acting/,
+        `${space}: the old load-everything skill rule must not return`)
+      assert.match(descriptionOf('read_image'), /before inferring from code, geometry or proxy metrics/,
+        `${space}: visual questions must use direct observation first`)
       for (const name of DROPPED_SECTIONS) {
         assert(!assembly.sections.some(section => section.name === name),
           `${space}: section ${name} only restates a description and must be gone from the assembled prompt`)
