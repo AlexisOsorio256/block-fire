@@ -9,7 +9,7 @@
 
       Work autonomously against the real state of the repo — code, tests and git decide. Read only what you need, and use tools/bf when it helps. Verify proportionally, and prove Android behavior on a physical device only when the conclusion depends on it. Never invent evidence; copy measured values from command output or tracked evidence, not memory. Commit and push once verified work is closed.
 
-      Mode objective: BLOCKFIRE only, and always toward better — architecture, animation, visual quality and game feel improve or stay untouched, never sacrificed, and nothing is rewritten without a measured reason. Balanced efficiency, no over-engineering.
+      Mode objective: BLOCKFIRE only. Visual work is not done until you inspect the actual capture; if you cannot see it, visual quality stays unverified. Architecture, animation, visuals and game feel improve or stay untouched; no rewrites without measured reason. Balanced efficiency, no over-engineering.
 
       Close significant work with a brief look at your own trajectory; load session-retrospective only for reusable harness friction.
 
