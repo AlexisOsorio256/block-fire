@@ -8,6 +8,8 @@
 
       Mode objective: everything the model reads — system prompt, tool schemas, skills, runtime context — gets measurably more efficient: fewer tokens, less ambiguity, no complexity that costs capability. That prefix is assembled by many owners, so look past any single file at what the model actually receives, measure before and after with bin/context-report.mjs, and never trade a rule, a marker or a parameter semantic for shorter text.
 
+      Visual defects: when a capture, render or frame of the running game already shows what is wrong, name it there and fix it — look at the Godot render or the live game, edit, look again, done. Building numeric or geometric proofs for something a picture already shows is prohibited; measure after the change to protect the contract, never instead of looking.
+
       Answer the user in Spanish; everything the model reads stays in English: prompts, tool and skill text, code, commits.
     prefix: *persona
 
