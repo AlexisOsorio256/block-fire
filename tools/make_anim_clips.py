@@ -42,6 +42,9 @@ NAMES = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
 # Use the default (export) mode instead, or pass --force-rebuild on purpose.
 CRAFT_LOCKED = {'ReloadRifle', 'ReloadPistol'}
 LEG_REACH = 0.433 + 0.433  # UpperLeg + LowerLeg, measured from the rest skeleton
+# Retardo de la cadena cadera -> pecho -> cabeza, en fracción de ciclo. Es lo que
+# separa "el torso gira entero" de "la cadera lidera y el pecho llega tarde".
+CHAIN_LAG = 0.045
 ANKLE_OFFSET = Vector((0.0, -0.0039, 0.078))  # ankle above the contact point
 GROUND_Z = 0.0228  # Foot bone head z when the foot is flat on the floor
 
@@ -55,10 +58,10 @@ GROUND_Z = 0.0228  # Foot bone head z when the foot is flat on the floor
 # ---------------------------------------------------------------------------
 GAIT = {
     'WalkFwd': dict(speed=4.8, duty=0.33, front=0.36, back=0.46, lift=0.145,
-                    bob=0.022, lean=10.0, yaw=8.0, sway=0.020, pitch=( -11, 0, 8, 26, -6, -11),
+                    bob=0.030, lean=10.0, yaw=13.0, sway=0.026, pitch=( -11, 0, 8, 26, -6, -11),
                     dir=(0, -1, 0), crouch=0.0, arms=1.0),
     'SprintFwd': dict(speed=7.0, duty=0.29, front=0.42, back=0.44, lift=0.190,
-                      bob=0.030, lean=20.0, yaw=12.0, sway=0.014, pitch=(-8, 2, 12, 32, -10, -8),
+                      bob=0.040, lean=20.0, yaw=18.0, sway=0.018, pitch=(-8, 2, 12, 32, -10, -8),
                       dir=(0, -1, 0), crouch=0.0, arms=1.5),
     'BackWalk': dict(speed=4.8, duty=0.33, front=0.46, back=0.36, lift=0.130,
                      bob=0.018, lean=5.0, yaw=6.0, sway=0.022, pitch=(-6, 4, 10, 18, -8, -6),
@@ -68,10 +71,10 @@ GAIT = {
     # width. At 4.8 m/s that means a SHORT excursion and a fast cadence: the
     # declared speed is untouched, the cycle shrinks and the stance widens.
     'StrafeLeft': dict(speed=4.8, duty=0.34, front=0.28, back=0.28, lift=0.100,
-                       bob=0.018, lean=4.0, yaw=5.0, sway=0.010, stance=0.070,
+                       bob=0.024, lean=4.0, yaw=8.0, sway=0.013, stance=0.070,
                        pitch=(-6, 2, 8, 20, -8, -6), dir=(1, 0, 0), crouch=0.0, arms=0.6),
     'StrafeRight': dict(speed=4.8, duty=0.34, front=0.28, back=0.28, lift=0.100,
-                        bob=0.018, lean=4.0, yaw=5.0, sway=0.010, stance=0.070,
+                        bob=0.024, lean=4.0, yaw=8.0, sway=0.013, stance=0.070,
                         pitch=(-6, 2, 8, 20, -8, -6), dir=(-1, 0, 0), crouch=0.0, arms=0.6),
     'CrouchWalk': dict(speed=2.6, duty=0.38, front=0.26, back=0.36, lift=0.095,
                        bob=0.012, lean=15.0, yaw=5.0, sway=0.016, pitch=(-5, 2, 6, 14, -6, -5),
@@ -401,15 +404,20 @@ def gait(name, arm, controls):
         feet_key(controls, frame, positions)
         for side in ('L', 'R'):
             rot(arm, 'Foot.' + side, [(frame, (tracks[side][frame]['pitch'], 0.0, 0.0))])
-        # Pelvis yaw leads the swing leg, spine counter-rotates.
+        # Pelvis yaw leads the swing leg, spine counter-rotates. La cadena lleva
+        # RETARDO progresivo (cadera -> pecho -> cabeza): sin él todas las
+        # vértebras giran en la misma fase, el torso se lee como un bloque y el
+        # andar se siente genérico aunque el perfil vertical sea correcto.
         yaw = spec['yaw'] * math.cos(math.tau * phase)
         roll = spec['sway'] * 60.0 * math.sin(math.tau * phase)
+        yaw_mid = spec['yaw'] * math.cos(math.tau * (phase - CHAIN_LAG))
+        yaw_top = spec['yaw'] * math.cos(math.tau * (phase - CHAIN_LAG * 2.0))
         rot(arm, 'Hips', [(frame, (0.0, roll, -yaw))])
-        rot(arm, 'Abdomen', [(frame, (spec['lean'] * 0.30, 0.0, yaw * 0.45))])
-        rot(arm, 'Torso', [(frame, (spec['lean'] * 0.34, 0.0, yaw * 0.55))])
-        rot(arm, 'Chest', [(frame, (spec['lean'] * 0.26, 0.0, yaw * 0.75))])
+        rot(arm, 'Abdomen', [(frame, (spec['lean'] * 0.30, 0.0, yaw_mid * 0.45))])
+        rot(arm, 'Torso', [(frame, (spec['lean'] * 0.34, 0.0, yaw_mid * 0.55))])
+        rot(arm, 'Chest', [(frame, (spec['lean'] * 0.26, 0.0, yaw_top * 0.75))])
         rot(arm, 'Neck', [(frame, (-spec['lean'] * 0.35, 0.0, 0.0))])
-        rot(arm, 'Head', [(frame, (-spec['lean'] * 0.30, 0.0, -yaw * 0.25))])
+        rot(arm, 'Head', [(frame, (-spec['lean'] * 0.30, 0.0, -yaw_top * 0.25))])
         # Arm swing is cosmetic: runtime IK replaces both arms with the weapon.
         swing = spec['arms'] * 26.0 * math.cos(math.tau * phase)
         rot(arm, 'UpperArm.L', [(frame, (-swing * 0.55, 0.0, 0.0))])
