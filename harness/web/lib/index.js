@@ -181,7 +181,7 @@ export function apply(ctx, config) {
       append(`\n── ${step.label} ──\n`)
       const result = await spawnStep(step.args, append)
       if (result.note) append(`${result.note}\n`)
-      if (!result.ok) { append('update stopped; nothing was activated\n'); return false }
+      if (!result.ok) { append('update stopped — nothing was activated\n'); return false }
     }
     return true
   }
