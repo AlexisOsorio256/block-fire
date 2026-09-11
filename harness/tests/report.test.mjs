@@ -2,7 +2,7 @@
 /** Fixture tests for harness/bin/session-report.mjs. */
 
 import { strict as assert } from 'node:assert'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -113,4 +113,48 @@ test('--last prefers current session.v3 logs and still sees legacy logs', () => 
     const lastTwo = runJson(['--last', '2', '--json'], env)
     assert.deepEqual(lastTwo.map((r) => r.sessionId), ['v3', 'legacy'])
   } finally { rmSync(home, { recursive: true, force: true }) }
+})
+
+test('log integrity: corrupt middle lines make metrics explicitly partial and exit non-zero', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'corrupt.jsonl')
+    writeFileSync(file, [
+      JSON.stringify(sessionEvent('corrupt-middle')),
+      '{broken-json',
+      JSON.stringify({ type: 'assistant/message', data: { usage: { inputTokens: 7 }, message: { content: [] } }, time: 2 }),
+      '',
+    ].join('\n'))
+    const result = spawnSync(process.execPath, [REPORT, '--session', file, '--json'], { encoding: 'utf8' })
+    assert.equal(result.status, 1, 'corrupt evidence must not return success')
+    const [r] = JSON.parse(result.stdout)
+    assert.equal(r.evidenceComplete, false)
+    assert.deepEqual(r.malformedLines, [2])
+    assert.equal(r.inputTokens, 7, 'partial metrics remain available for diagnosis')
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('log integrity: a truncated final live line is tolerated and labelled', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'live.jsonl')
+    writeFileSync(file, `${JSON.stringify(sessionEvent('live-tail'))}\n{"type":`)
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.evidenceComplete, true)
+    assert.equal(r.truncatedTail, true)
+    assert.deepEqual(r.malformedLines, [])
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('wall time normalizes ISO timestamps instead of producing NaN', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'iso.jsonl')
+    writeLog(file, [
+      { type: 'session', id: 'iso', cwd: '/fixture', agentPreset: 'build', createdAt: '2026-01-01T00:00:00.000Z', time: '2026-01-01T00:00:00.000Z' },
+      { type: 'turn/start', time: '2026-01-01T00:00:02.000Z' },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.wallMs, 2000)
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
