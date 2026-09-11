@@ -35,6 +35,12 @@ realmente arrancó.
 `danger-full-access` sigue siendo necesario para Godot/Blender/Gradle/adb; el
 límite destructivo es `host/guard.js`, no un sandbox ficticio.
 
+`host/package.json` identifica ese plugin incluso cuando se carga mediante el
+symlink del perfil Web. El inventario de plugins de DeepSeek prepara la petición
+antes del HTTP: sin manifest propio ascendía al perfil sin versión y fallaba con
+`REQUEST_EXTENSION`. La prueba de montaje reproduce el symlink y prepara las
+extensiones para BUILD/CREATOR sin llamadas al modelo.
+
 ## Update Center
 
 La implementación es una sola:

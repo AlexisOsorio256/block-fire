@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
-import { mkdtempSync, writeFileSync, readFileSync, appendFileSync, cpSync, symlinkSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, cpSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { resolveRuntime } from '../lib/runtime.mjs'
@@ -23,6 +23,12 @@ try {
   const { provideCmdline } = await fromRuntime('@deepseek-ai/dsh-cmdline')
   writeFileSync(join(temporary, 'cordis.yml'), '[]\n')
   symlinkSync(modules, join(temporary, 'node_modules'), 'dir')
+  // Match the installed Web profile: upstream's profile manifest has no version.
+  // The guard is loaded through this symlink, not its repo-realpath.
+  const profile = join(temporary, 'profile')
+  mkdirSync(profile)
+  writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'dsh-profile-web', private: true }))
+  symlinkSync(join(harness, 'host'), join(profile, 'blockfire'), 'dir')
   cpSync(join(harness, 'presets'), join(temporary, 'presets'), { recursive: true })
   for (const space of ['build', 'creator']) symlinkSync(modules, join(temporary, 'presets', space, 'node_modules'), 'dir')
 
@@ -47,7 +53,7 @@ export function apply(ctx) {
   const load = file => loadOverlayPatches('blockfire-mount', file)
   const ownPatch = load(join(harness, 'host/patch.cordis.yml'))
   for (const patch of ownPatch) for (const row of patch.insert ?? []) {
-    if (row.id === 'blockfire-guard') row.name = pathToFileURL(join(harness, 'host/guard.js')).href
+    if (row.id === 'blockfire-guard') row.name = pathToFileURL(join(profile, 'blockfire/guard.js')).href
     if (row.id === 'blockfire-update-center') row.name = pathToFileURL(join(harness, 'web/lib/index.js')).href
   }
   const patches = [
@@ -94,6 +100,21 @@ export function apply(ctx) {
         assert.doesNotMatch(listed, /blender/, 'CREATOR capabilities are harness-only')
       }
       console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
+      // Exercise the official adapter's pre-dispatch boundary without HTTP or keys.
+      const extensions = ctx.get('deepseekLlmApiExtensions')
+      assert(extensions, 'DeepSeek request extension registry is mounted')
+      const prepared = await extensions.prepare({
+        body: { model: 'deepseek-flash', messages: [] },
+        signal: new AbortController().signal,
+        sessionId: String(handle.agent.id),
+      })
+      assert(Array.isArray(prepared.fields.dsh_plugin_packages?.packages), 'plugin inventory is prepared')
+      assert(prepared.fields.dsh_plugin_packages.packages.some(pkg =>
+        pkg.name === '@blockfire/harness-host' && pkg.version === '1.0.0'),
+      'guard contributes its own package identity through the installed symlink')
+      assert(!prepared.fields.dsh_plugin_packages.packages.some(pkg => pkg.name === 'dsh-profile-web'),
+        'profile container must not be reported as the guard package')
+      console.log(`  ok    ${space} DeepSeek request extensions prepare without HTTP`)
 
       if (space === 'build') {
         const router = ctx.tools.get('bf_capability', scope)
