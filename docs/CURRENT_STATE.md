@@ -80,33 +80,28 @@ cronometrado.
 `tools/audit-repo.mjs` tarda ~0,2 s (antes 39 s: lanzaba ~84 000 `grep` como
 subproceso). Se puede ejecutar antes de cada limpieza sin pensarlo.
 
-## Auditoría de respuesta del personaje
+## Respuesta del personaje — implementación vigente
 
-Cámara corregida: girar el cuerpo ya no desvía el rumbo mundial de cámara;
-colisión se resuelve después del movimiento y limita la interpolación. Prueba
-`tools/probe-player-feel.gd` incluida en `tools/bf test`: error de rumbo <0.001°
-a pasos 30/60/120 Hz; retracción ante muro inmediata, sin bombeo en reposo.
-Suite smoke 310 + regressions 29 + animation_layers + prueba de cámara PASS;
-oráculo `1044286260` y métricas de apoyo anteriores revalidados sin cambios.
+Cámara: error de rumbo <0.001° a pasos 30/60/120 Hz; colisión inmediata,
+sin bombeo. Analog: deadzone radial 0.12 y remap lineal; auto-sprint entra
+0.96/sale 0.88, crouch y ADS/fuego ganan. Aceleración vectorial 32 m/s²;
+cardinal y diagonal tienen tiempos idénticos, sin overshoot.
 
-Pendiente VERIFICADO: joystick parcial se normaliza a magnitud 1; inicio/parada
-cardinal 150 ms frente a diagonal 116.7 ms (60 Hz); cero frames de frenada por
-la ruta real Player→visual. No alterar clips para tapar estos defectos. Dueños,
-orden de trabajo y criterios para DeepSeek en `docs/PLAYER_FEEL_AUDIT.md`.
+Frenada: derivada planar por snapshot físico (>6 m/s²), release/reset explícitos;
+capa sólo torso, sin suprimir fase ni escribir ancestros de pies. Prueba pública
+30/60/120 y ratios 30:120/120:30: delta añadido de pies/fase 0.000000000.
+Oráculo intencional post-frenada `1863296244`. Slide/huella conservados; jitter
+idle de frenada manual 0.0037 m (antes 0.0000, contrato sin cambiar <0.02 m).
 
-APK de esta auditoría exportado e instalado en Samsung SM-S901E: lobby y FFA
-inspeccionados en capturas. Prueba de pan confundida por muerte a manos de bots;
-respuesta táctil física, latencia y estrés en esquinas siguen SIN VERIFICAR.
-`qa_touch` headless PASS (0 fallos), con avisos de recursos al salir registrados
-en la auditoría; no equivale a prueba de multitouch físico.
+FOV: Player suaviza la base sin amortiguar el punch aditivo de CameraFX.
+Prueba de recuperación hip/ADS a render 30/60/120: mínimos 68.000000/52.000000,
+error final 0.000000. No nueva fuente de verdad.
 
-Analog/dirección cerrados: deadzone radial 0.12, remap lineal; auto-sprint
-entra 0.96/sale 0.88; crouch y ADS/fuego ganan a sprint. Aceleración vectorial
-32 m/s². Prueba real de física a 30/60/120 Hz mide tiempos cardinales/diagonales
-idénticos y sin overshoot. Evidencia numérica: `docs/PLAYER_FEEL_AUDIT.md`.
+Pendiente real: coordinación de pitch pecho/montaje/IK. Candidato no publicado:
+alineaba cañones pero no cerraba contactos/alcance de manos. Diagnóstico
+`tools/probe-aim-coordination.gd --aim --baseline`; mediciones, límites y trabajo
+restante en `docs/PLAYER_FEEL_AUDIT.md`. No presentar esa prueba como verde.
 
-Frenada pública reparada: derivada planar por snapshot físico (>6 m/s²),
-release/reset explícitos; capa sólo torso y fase de locomoción sin supresión.
-Prueba pública 30/60/120 y ratios 30:120/120:30 PASS, delta añadido de pies y
-fase 0.000000000. Se conserva slide y huella; ver auditoría para el cambio
-intencional de pose y jitter idle de 0.0037 m (contrato <0.02 m).
+Latencia táctil, confort del deadzone y multitouch físico siguen SIN VERIFICAR.
+La exportación APK y pruebas headless no los prueban. QA de touch/reload sigue
+reportando avisos de recursos al salir.

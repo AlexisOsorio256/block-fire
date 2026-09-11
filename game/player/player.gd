@@ -164,7 +164,11 @@ func _physics_process(delta: float) -> void:
 		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed, sprinting)
 	if camera != null:
 		var target_fov := 52.0 if (weapon != null and weapon.aim_held) else 68.0
-		camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 12.0, 0.0, 1.0))
+		# Smooth only the base lens. CameraFX subtracts/replaces its own additive
+		# punch in render; damping that punch here makes recovery undershoot.
+		var fx := get_node_or_null("CameraFX") as CameraFX
+		var punch := fx.applied_fov_punch() if fx != null else 0.0
+		camera.fov = lerpf(camera.fov - punch, target_fov, clampf(delta * 12.0, 0.0, 1.0)) + punch
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled or is_bot:

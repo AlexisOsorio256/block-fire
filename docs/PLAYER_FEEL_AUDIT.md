@@ -1,5 +1,10 @@
 # Player feel audit — 2026-09-11
 
+Current implementation: camera, analog/directional response, runtime braking
+and FOV-punch composition are closed. Upper-body aim/mount/IK remains a measured
+visual iteration; the tested candidate was NOT shipped. Earlier findings below
+record the before-state; implementation follow-ups contain current evidence.
+
 Scope: BLOCKFIRE's own mobile TPS character, not another game's assets or motion.
 No asset, clip, stride metadata, gameplay speed or animation ownership changed.
 
@@ -81,8 +86,8 @@ Commands (use the Godot binary found by `tools/bf doctor`):
 
 | Order / owner and exact files | Work | Measurable acceptance / protect |
 |---|---|---|
-| 1 — Player: `game/player/player.gd`; MobileControls: `game/ui/mobile_controls.gd`; test: `tools/probe-player-feel.gd` | Preserve joystick magnitude through camera-relative mapping; apply a documented radial deadzone/remap in the input owner. Use vector acceleration, not per-axis rates. Decide sprint/ADS/fire arbitration in Player; keep the touch button a request. | At 25/50/75% post-deadzone input, requested speed is 25/50/75% of the selected speed (±1%). Full input stays 4.8/7.0/2.6 m/s. Cardinal/diagonal start/stop/reversal times differ by ≤1 physics tick. Record 90°/180° changes, overshoot and braking distance at 30/60/120 Hz; do not invent a faster speed to hide latency. No sprint threshold flicker during a ±0.02 input sweep; verify intended latch and ADS policy. |
-| 2 — OperatorBody: `game/characters/operator_body.gd`; director: `game/characters/operator_visual.gd`; layer: `game/characters/operator_motion.gd`; tests: `tests/animation_layers.gd`, `tools/probe-player-feel.gd` | Repair brake input's units and release lifecycle; use planar real velocity. Test the public path first. Then evaluate phase suppression while braking before enabling the layer. | Deceleration above the chosen threshold activates within one visual sample; constant speed, acceleration and vertical-only motion do not trigger. Release returns weight to zero within the declared fade. Public stop/resume/reversal at 30/60/120 Hz must keep foot baselines below; test different render/physics ratios. No root motion or velocity writes from animation. |
+| CLOSED — Player: `game/player/player.gd`; MobileControls: `game/ui/mobile_controls.gd`; test: `tools/probe-player-feel.gd` | Preserve joystick magnitude through camera-relative mapping; apply a documented radial deadzone/remap in the input owner. Use vector acceleration, not per-axis rates. Decide sprint/ADS/fire arbitration in Player; keep the touch button a request. | At 25/50/75% post-deadzone input, requested speed is 25/50/75% of the selected speed (±1%). Full input stays 4.8/7.0/2.6 m/s. Cardinal/diagonal start/stop/reversal times differ by ≤1 physics tick. Record 90°/180° changes, overshoot and braking distance at 30/60/120 Hz; do not invent a faster speed to hide latency. No sprint threshold flicker during a ±0.02 input sweep; verify intended latch and ADS policy. |
+| CLOSED — OperatorBody: `game/characters/operator_body.gd`; director: `game/characters/operator_visual.gd`; layer: `game/characters/operator_motion.gd`; tests: `tests/animation_layers.gd`, `tools/probe-player-feel.gd` | Repair brake input's units and release lifecycle; use planar real velocity. Test the public path first. Then evaluate phase suppression while braking before enabling the layer. | Deceleration above the chosen threshold activates within one visual sample; constant speed, acceleration and vertical-only motion do not trigger. Release returns weight to zero within the declared fade. Public stop/resume/reversal at 30/60/120 Hz must keep foot baselines below; test different render/physics ratios. No root motion or velocity writes from animation. |
 | 3 — OperatorBody/OperatorVisual; `game/characters/operator_body.gd`, `game/characters/operator_visual.gd`; camera feedback: `game/fx/camera_fx.gd`; `game/player/player.gd` | Capture four weapons at aim pitch −45/0/+45°, strafe, sprint→ADS, reload and firing. Coordinate upper-body pitch, weapon mounting and IK in existing frame order. Separately measure FOV composition/recoil before fixing it. | Settled barrel follows intended aim within 2° outside authored recoil; support grip ≤5 mm where reachable, no elbow flip. Shot feedback only on confirmed shots; empty/reload/switch do not kick. After recoil finishes, hip/ADS FOV returns within 0.1° of 68/52 with no undershoot caused by punch subtraction, at 30/60/120 render rates. Preserve cadence, ammo and reload timers. |
 | 4 — Physical Android verification, same owners | Hold movement + drag look + fire, toggle ADS, reverse at cover, pause/resume. Record and watch video on the supported phone; use high-speed external capture for latency. | Record median/p95 touch-to-camera and touch-to-motion latency plus frame-time p95; proposed target ≤2 displayed frames for visible first response, to validate against device capability. No stuck pointers, unrequested aim motion, cover flashes or sprint chatter. Scripted adb swipes cannot establish thumb comfort or multitouch latency. |
 
@@ -222,3 +227,76 @@ Reload-hand probe PASS; it still emits resource cleanup warnings. Rendered
 sequence QA inspected for character/weapon continuity.
 
 Measured post-brake oracle: `1863296244` (old camera-only `1044286260`).
+
+## FOV composition closed; aim candidate rejected
+
+Player now excludes `CameraFX.applied_fov_punch()` from base-FOV smoothing and
+re-adds it. CameraFX retains the existing additive-effect bookkeeping: no new
+FOV state, manager, cadence or recoil policy. `tools/probe-aim-coordination.gd`
+is in the default test gate, checking hip/ADS recovery at 30/60/120 render rates
+against Player's actual physics FOV update. Before/after command output:
+
+```text
+FOV ads=false render=30 minimum=67.186882 target=68.0 final_error=0.000015
+FOV ads=false render=60 minimum=67.020699 target=68.0 final_error=0.000015
+FOV ads=false render=120 minimum=67.020699 target=68.0 final_error=0.000015
+FOV ads=true render=30 minimum=51.186878 target=52.0 final_error=0.000008
+FOV ads=true render=60 minimum=51.020691 target=52.0 final_error=0.000008
+FOV ads=true render=120 minimum=51.020691 target=52.0 final_error=0.000008
+FOV ads=false render=30 minimum=68.000000 target=68.0 final_error=0.000000
+FOV ads=false render=60 minimum=68.000000 target=68.0 final_error=0.000000
+FOV ads=false render=120 minimum=68.000000 target=68.0 final_error=0.000000
+FOV ads=true render=30 minimum=52.000000 target=52.0 final_error=0.000000
+FOV ads=true render=60 minimum=52.000000 target=52.0 final_error=0.000000
+FOV ads=true render=120 minimum=52.000000 target=52.0 final_error=0.000000
+```
+
+The optional `--aim --baseline` diagnostic now measures grounded Player poses,
+actual wrist targets (not the fist mesh placed directly at its goal), strafe,
+sprint→ADS, reload and a confirmed shot. It exposes existing unreachable grips:
+
+```text
+AIM weapon=rifle pitch=-45 error_deg=44.999996 socket_mm=6.853417
+AIM weapon=rifle pitch=0 error_deg=0.000000 socket_mm=7.643435
+AIM weapon=rifle pitch=45 error_deg=44.999996 socket_mm=7.669152
+AIM_TRANSITION weapon=rifle state=reload max_grip_mm=11.671482 elbow_step_deg=3.047225
+AIM_TRANSITION weapon=pistol state=reload max_grip_mm=2.481977 elbow_step_deg=2.643824
+AIM weapon=shotgun pitch=-45 error_deg=44.999996 socket_mm=32.227248
+AIM weapon=shotgun pitch=0 error_deg=0.000000 socket_mm=31.669054
+AIM weapon=shotgun pitch=45 error_deg=44.999996 socket_mm=32.056596
+AIM_TRANSITION weapon=shotgun state=reload max_grip_mm=44.084974 elbow_step_deg=3.410706
+AIM_TRANSITION weapon=smg state=reload max_grip_mm=33.480547 elbow_step_deg=2.801140
+```
+
+Candidate chest/mount pitch aligned all four barrels (0.000000° at −45/0/+45),
+but the half-chest rotation increased the rifle's down-aim wrist gap to
+29.339433 mm and shotgun's to 55.368405 mm. A full-chest variant reduced this
+to 7.095776 / 32.502919 mm but did not close the existing grip/contact defects.
+Both candidates were reverted; only the verified FOV correction ships. This
+is genuine required visual/IK iteration, not a completed aim feature.
+
+### What DeepSeek still owns
+
+1. `operator_body.gd` + `operator_visual.gd`: solve chest/mount pitch together
+   with reachable weapon grips. Use `probe-aim-coordination.gd --aim --baseline`
+   as the starting measurements, then promote the diagnostic to assertions
+   only after barrel error <2°, reachable grip error <5 mm and no elbow flips
+   pass for all four weapons through movement/reload/fire. Inspect front/side
+   captures at ±45° and extreme pitch before accepting a candidate. Do not
+   alter locomotion clips or stretch arm bones to conceal reach limits.
+2. Physical thumb/device iteration: validate the 0.12 radial deadzone, sprint
+   hysteresis, simultaneous fire/ADS and response latency. Desktop scheduled
+   render samples and adb taps do not prove touch-to-photon latency.
+3. Low-risk follow-up: existing QA shutdown resource warnings, with gameplay
+   and animation contracts unchanged.
+
+Keep the now-enforced analog/vector/brake/FOV gates green, along with the
+tightened foot-slide limits. No pending implementation remains for analog
+response, sprint arbitration, public brake triggering or FOV composition.
+
+Final verification: `tools/bf test` exited 0: smoke 310, regressions 29,
+animation_layers, player-feel, public brake and FOV gates passed. Regression
+fixture `_test_ffa_spawn_ignores_corpses` still logs an out-of-tree transform
+error at tests/regressions.gd:66; assertions pass, but stderr is not clean.
+Final Android debug export exited 0. This follow-up did not install or inspect
+the final APK on the phone; physical comfort/latency claims remain unverified.

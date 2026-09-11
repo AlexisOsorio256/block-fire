@@ -63,6 +63,13 @@ func punch_fov(degrees: float) -> void:
 	fov_punch = clampf(fov_punch + degrees, 0.0, 6.0)
 
 
+## Player excludes this already-applied effect while smoothing its base lens.
+## The camera holds base + punch; this is the existing effect bookkeeping,
+## not a second base-FOV state or a new camera owner.
+func applied_fov_punch() -> float:
+	return _fov_applied
+
+
 func _process(delta: float) -> void:
 	if camera == null or not is_instance_valid(camera):
 		return

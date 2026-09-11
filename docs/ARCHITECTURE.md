@@ -148,3 +148,8 @@ Auditoría y siguientes pasos medibles: `docs/PLAYER_FEEL_AUDIT.md`.
 no vuelve a derivarla por cada render. `OperatorMotion` sólo reacciona con
 columna/cabeza: ni ancestros de pies ni reloj de zancada reciben el peso de
 frenada. `OperatorVisual.revive` limpia el historial derivado.
+
+`Player` excluye `CameraFX.applied_fov_punch()` al suavizar FOV base y vuelve a
+sumarlo; `CameraFX` conserva su estado aditivo existente. Gate de recuperación:
+`tools/probe-aim-coordination.gd` (por defecto FOV; `--aim --baseline` es el
+diagnóstico de montaje/IK pendiente, no una prueba declarada verde).
