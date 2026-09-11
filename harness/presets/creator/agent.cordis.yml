@@ -1,92 +1,35 @@
-# BLOCKFIRE — CREATOR space.
-#
-# CREATOR is work on the harness itself: this layer, the runtime, the presets.
-# It is the second and last space the user chooses between. It mounts the same
-# shared surface as BUILD (included below, one owner) and adds ONLY what harness
-# work needs: the delegation rows parallel audits use, goal continuity across
-# long autonomous rounds, web fetch, the composition-authoring skills, and the
-# Cordis runtime toolset as a JIT capability.
-#
-# TRUST: activating the `cordis` capability evaluates model-written JavaScript
-# against the live runtime, and a preset this agent writes becomes one another
-# session mounts. Treat a CREATOR session as shell access.
+# BLOCKFIRE — CREATOR: work on harness/ and the DSH/Cordis boundary only.
+# It intentionally receives no AGENTS.md, game docs or BUILD/shared game skills.
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    # Harness-only identity: CREATOR carries no project card (AGENTS.md is
-    # BUILD's) and no game context. Operating detail (layout, install/test
-    # cycle, measurement) lives in the blockfire-harness skill, JIT.
     text: &persona |-
-      Eres el agente CREATOR de BLOCKFIRE. Trabajas sobre el propio harness: la capa harness/ de este repo (presets, host, web, bin, lib, tests), el runtime DeepSeek Harness/Cordis sobre el que corre y su superficie Web. No recibes contexto del juego ni de sus documentos.
+      Eres CREATOR. Trabajas exclusivamente sobre harness/, su runtime DSH/Cordis y su superficie Web.
 
-      CONTRATO
-      - Cambia el harness por evidencia, no por gusto; el repositorio es la fuente. harness/install.sh materializa la capa y harness/test.sh la prueba; lo no ejecutado es SIN VERIFICAR.
-      - Contexto JIT: carga una skill cuando la tarea encaje, no antes; las capacidades pesadas (bf_capability) están apagadas a propósito.
-      - Antes de escribir o cambiar una composición carga editing-cordis-compositions; antes de escribir un plugin, cordis-plugin-development.
-      - commit + push están autorizados al cerrar una sesión verificada. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
-      - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
+      Parte del código real, cambia por evidencia y mantén la capa pequeña/upgradable. Carga skills de autoría o bf_capability solo cuando la tarea los necesite. No estudies gameplay ni documentación del juego. Verifica con la prueba más barata que demuestre el cambio; lo no ejecutado es SIN VERIFICAR. Commit + push están autorizados al cerrar trabajo verificado.
     prefix: *persona
 
-# Shared permanent surface — the same file BUILD mounts. Deltas are declared as
-# patches here, so the surface still has exactly one owner.
 - id: surface
   name: cordis:include
   config:
     path: ../build/surface.cordis.yml
     patches:
-      # A patch replaces the row's whole config, so restate every key it owns.
-      # The `blender` capability is the plugin's default and survives this
-      # merge; `cordis` is CREATOR-only.
-      - id: tool-web
-        config:
-          fetch: true
-          searchTimeoutMs: 60000
-
       - id: capabilities
         config:
           capabilities:
             cordis:
               package: '@deepseek-ai/dsh-tool-cordis'
               whenToUse: >-
-                Inspect and modify the live harness: read the runtime's services,
-                events, slots and tools, mount a temporary Cordis plugin, and
-                author compositions. Activates ~7.5k chars of tool schema, so
-                turn it on only for work that actually touches the runtime, and
-                off when that work is done.
+                Inspect or modify the live Cordis runtime when source inspection
+                is insufficient. Heavy schema: activate only for that work.
               config: {}
 
-# CREATOR's own harness-authoring skill, the two space-agnostic closing skills
-# (shared home), and the shipped composition-authoring skills. The game skills
-# (blockfire-android-qa, blockfire-animation-craft) stay BUILD-only. Shipped
-# skills are read from the installed preset package (never edited); test.sh
-# fails loudly if that path moves.
+# CREATOR sees one BLOCKFIRE harness skill plus upstream Cordis authoring skills.
+# No ../shared/skills: those contain BUILD/project workflow.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../shared/skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/', baseUrl))"
-
-# ── delegation, complete ────────────────────────────────────────────────────
-# BUILD keeps only the pair that measured real use. Harness work is where
-# parallel audits and long-lived children pay for the extra rows.
-- id: tool-subagent-list-agents
-  name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
-- id: tool-subagent-fork
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: fork
-    toolName: subagent_fork
-    backgroundMode: continuable
-
-# ── goal continuity ─────────────────────────────────────────────────────────
-# The goal service and round driver stay host-plane; these rows are the human
-# command and the model-facing tool.
-- id: command-goal
-  name: '@deepseek-ai/dsh-command-goal'
-
-- id: tool-goal
-  name: '@deepseek-ai/dsh-tool-goal'
