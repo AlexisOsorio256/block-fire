@@ -36,7 +36,8 @@ SOURCE_DIR = os.path.join(ROOT, 'assets/animation_sources')
 FPS = 60
 NAMES = ['WalkFwd', 'SprintFwd', 'StrafeLeft', 'StrafeRight', 'BackWalk',
          'CrouchIdle', 'CrouchWalk', 'CrouchLeft', 'CrouchRight', 'CrouchBack',
-         'ReloadRifle', 'ReloadPistol', 'JumpStart', 'AirLoop', 'Land', 'Flinch']
+         'ReloadRifle', 'ReloadPistol', 'JumpStart', 'AirLoop', 'Land', 'Flinch',
+         'Brake']
 # Hand-authored sources. --rebuild REFUSES to touch these: regenerating them
 # from the formulas below would silently destroy the interactive Blender craft.
 # Use the default (export) mode instead, or pass --force-rebuild on purpose.
@@ -586,6 +587,62 @@ def air(name, arm, controls):
 # --------------------------------------------------------------------------- #
 # Reload / Flinch: the body has to sell the action, not just the hand
 # --------------------------------------------------------------------------- #
+def brake(arm, controls):
+    """Frenada: absorción encima del paso, sin recolocar los pies.
+
+    Soltar el stick apagaba la marcha y el personaje llegaba al idle sin fase de
+    absorción. Este clip NO pisa adelante: la pierna de apoyo la elige el ciclo
+    de locomoción que está saliendo, y recolocar el pie desde el clip pelearía
+    con él (medido: 0.33 m de huella, el pie derrapaba al desaparecer el paso).
+    Lo que hace es lo que sí manda el clip: caer el centro de masas, doblar las
+    rodillas y echar el torso atrás para aguantar. Los pies quedan donde el
+    gait los tenía, así que al entrar y salir no arrastra nada.
+    """
+    frames = int(0.38 * FPS)
+    com_z = [(0.00, -0.005), (0.09, -0.105), (0.20, -0.070), (0.30, -0.015), (0.38, 0.000)]
+    com_y = [(0.00, 0.000), (0.09, -0.045), (0.22, -0.025), (0.38, 0.000)]
+    lean = [(0.00, 2.0), (0.09, -7.0), (0.20, -4.5), (0.30, 1.0), (0.38, 0.0)]
+    knee = [(0.00, 0.0), (0.09, 13.0), (0.22, 8.0), (0.38, 0.0)]
+
+    def track(table, when):
+        for (a, av), (b, bv) in zip(table, table[1:]):
+            if when <= b:
+                return av + (bv - av) * ease((when - a) / max(b - a, 1e-6))
+        return table[-1][1]
+
+    for frame in range(frames + 1):
+        t = frame / FPS
+        # Centro de masas: baja y va ligeramente atrás (el peso cae al frenar).
+        body_key(arm, frame, (0.0, track(com_y, t), track(com_z, t)), True)
+        # Los pies se quedan en su apoyo de reposo: el clip no los recoloca.
+        positions = {}
+        for side in ('L', 'R'):
+            rest = arm.data.bones['Foot.' + side].head_local.copy()
+            rest.z = GROUND_Z
+            positions[side] = rest
+        feet_key(controls, frame, positions)
+        bend = track(knee, t)
+        rot(arm, 'UpperLeg.L', [(frame, (bend, 0.0, 0.0))])
+        rot(arm, 'UpperLeg.R', [(frame, (bend, 0.0, 0.0))])
+        rot(arm, 'LowerLeg.L', [(frame, (-bend * 1.6, 0.0, 0.0))])
+        rot(arm, 'LowerLeg.R', [(frame, (-bend * 1.6, 0.0, 0.0))])
+        rot(arm, 'Foot.L', [(frame, (bend * 0.6, 0.0, 0.0))])
+        rot(arm, 'Foot.R', [(frame, (bend * 0.6, 0.0, 0.0))])
+        lean_now = track(lean, t)
+        rot(arm, 'Abdomen', [(frame, (lean_now * 1.1, 0.0, 0.0))])
+        rot(arm, 'Torso', [(frame, (lean_now, 0.0, 0.0))])
+        rot(arm, 'Chest', [(frame, (lean_now * 0.8, 0.0, 0.0))])
+        rot(arm, 'Neck', [(frame, (-lean_now * 0.7, 0.0, 0.0))])
+        rot(arm, 'Head', [(frame, (-lean_now * 0.6, 0.0, 0.0))])
+        # Brazos cosméticos: el IK de runtime los reemplaza por el arma.
+        swing = -lean_now * 0.8
+        rot(arm, 'UpperArm.L', [(frame, (swing, 0.0, 0.0))])
+        rot(arm, 'UpperArm.R', [(frame, (swing * 0.8, 0.0, 0.0))])
+        rot(arm, 'LowerArm.L', [(frame, (0.0, 0.0, 0.0))])
+        rot(arm, 'LowerArm.R', [(frame, (0.0, 0.0, 0.0))])
+    return frames
+
+
 def upper(arm, name):
     # ReloadRifle/ReloadPistol are CRAFT_LOCKED: this formula path only exists
     # for a forced --force-rebuild, never for the normal pipeline.
@@ -689,6 +746,10 @@ def build(name, export=True):
         planted = None
     elif name in ('JumpStart', 'AirLoop', 'Land'):
         frames = air(name, arm, controls)
+        speed = None
+        planted = None
+    elif name == 'Brake':
+        frames = brake(arm, controls)
         speed = None
         planted = None
     elif name == 'CrouchIdle':

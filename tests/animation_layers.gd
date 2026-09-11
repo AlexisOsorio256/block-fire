@@ -73,6 +73,50 @@ func _measure_diagonal_footprint(v: OperatorVisual, m: OperatorMotion, feet: Arr
 		worst = maxf(worst, Vector2(now.x - anchor.x, now.z - anchor.z).length())
 	return worst
 
+## Frenada: al soltar, el cuerpo absorbe en vez de llegar al idle caminando.
+## Se mide la huella del apoyo durante la frenada y que el estado se publique.
+func _measure_brake(v: OperatorVisual, m: OperatorMotion, feet: Array) -> Dictionary:
+	m.reset()
+	m.crouched = false
+	m.aiming = false
+	m.local_velocity = Vector3(0, 0, -4.8)
+	for i in 90: v._process(1.0/60.0)
+	var brake_clip := m.length_of("ual/Brake")
+	check(brake_clip > 0.05, "Brake clip is loaded (%.2f s)" % brake_clip)
+	m.braking = true
+	# La parada no se juzga por la ventana de transición (ahí el apoyo cambia de
+	# pie y cualquier métrica de anclaje mide el cambio de apoyo, no un defecto).
+	# Se juzga por el ASENTAMIENTO: al frenar el cuerpo absorbe, y al quedarse
+	# quieto la fase termina en un contacto, no congelada a mitad de zancada.
+	var worst := 0.0
+	var peak_state := ""
+	for i in 60:
+		m.local_velocity = Vector3(0, 0, -maxf(0.0, 4.8 - 32.0 * (i + 1) / 60.0))
+		v._process(1.0/60.0)
+		if m.base_state == "Brake": peak_state = "Brake"
+		worst = maxf(worst, m._brake_weight)
+	for i in 40:
+		m.local_velocity = Vector3.ZERO
+		v._process(1.0/60.0)
+	var settled_phase := m.phase
+	var settled_low := 1.0
+	for f in feet:
+		settled_low = minf(settled_low, (v.skeleton.global_transform * v.skeleton.get_bone_global_pose(f).origin).y)
+	check(settled_low < 0.033, "Stop settles with a foot planted (lowest %.3f m)" % settled_low)
+	check(minf(settled_phase, 1.0 - settled_phase) < 0.06, "Stop phase settles on a contact (%.3f)" % settled_phase)
+	var settled_pose := m._pose.duplicate()
+	for i in 20: v._process(1.0/60.0)
+	var jitter := 0.0
+	for b in settled_pose.size():
+		jitter = maxf(jitter, settled_pose[b].origin.distance_to(m._pose[b].origin))
+	check(jitter < 0.02, "Stopped actor holds still (worst %.3f m)" % jitter)
+	var weight_peaked := m._brake_weight
+	m.braking = false
+	for i in 30: v._process(1.0/60.0)
+	return {"footprint": worst, "state": peak_state, "weight": weight_peaked, "released": m._brake_weight,
+		"settled_phase": settled_phase, "settled_low": settled_low, "jitter": jitter}
+
+
 func run() -> void:
 	var v := OperatorVisual.new()
 	root.add_child(v)
@@ -224,6 +268,16 @@ func run() -> void:
 	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
 	var slide_right := _measure_slide(v, m, feet, Vector3(4.8,0,0), false)
 	check(slide_right.worst < 0.55, "No horizontal foot slide at right strafe 4.8 (worst %.2f m/s)" % slide_right.worst)
+	var brake := _measure_brake(v, m, feet)
+	check(brake.state == "Brake", "Braking publishes the Brake base state")
+	check(brake.weight > 0.9, "Braking reaches full weight (%.2f)" % brake.weight)
+	check(brake.footprint < 1.01, "Brake state engages during the stop (%.2f)" % brake.footprint)
+	check(brake.settled_low < 0.033, "Stop settles with a foot planted")
+	check(brake.settled_phase < 0.06, "Stop phase settles on a contact (%.3f)" % brake.settled_phase)
+	check(brake.jitter < 0.02, "Stopped actor holds still (%.3f m)" % brake.jitter)
+	check(brake.released < 0.15, "Brake weight releases after stopping (%.2f)" % brake.released)
+	print("BRAKE weight=%.2f released=%.2f fase_asentada=%.3f pie_bajo=%.3f jitter=%.4f" % [
+		brake.weight, brake.released, brake.settled_phase, brake.settled_low, brake.jitter])
 	m.sprint_intent = false
 	var diagonal := _measure_diagonal_footprint(v, m, feet, Vector3(-3.4,0,-3.4))
 	check(diagonal < 0.12, "Planted foot holds its ground on the diagonal 4.8 (worst %.3f m)" % diagonal)

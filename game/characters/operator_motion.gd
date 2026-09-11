@@ -17,6 +17,9 @@ extends RefCounted
 enum Action { READY, RELOAD, SWITCH }
 const UPPER := ["Abdomen", "Torso", "Chest", "Neck", "Head", "Shoulder.L", "Shoulder.R", "UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R", "Wrist.L", "Wrist.R"]
 const REACTION := ["Abdomen", "Torso", "Chest", "Neck", "Head"]
+## Frenada: clip de absorción, no locomoción. Se pide por intención (gameplay o
+## laboratorio) y no declara velocidad de suelo: sólo acompaña la parada.
+const BRAKE := "ual/Brake"
 const LOCO_WALK := "ual/WalkFwd"
 const LOCO_SPRINT := "ual/SprintFwd"
 const LOCO_BACK := "ual/BackWalk"
@@ -48,6 +51,8 @@ var crouched := false
 var aiming := false
 ## Gameplay declara intención de sprint; la animación sólo la consume.
 var sprint_intent := false
+## Gameplay declara que el actor está frenando (venía con velocidad y la pierde).
+var braking := false
 var reload_remaining := 0.0
 var reload_duration := 1.6
 ## El arma activa manda QUÉ lenguaje corporal de recarga se reproduce, pero no
@@ -75,6 +80,10 @@ var _grounded_before := true
 var _move_weight := 0.0
 var _sprint_weight := 0.0
 var _crouch_weight := 0.0
+var _brake_weight := 0.0
+## Huesos que la frenada SÍ manda: cadera, columna y brazos cosméticos. Las
+## piernas quedan fuera para no arrastrar el apoyo que sostiene el paso.
+var _brake_mask: Array[int] = []
 var _direction := Vector2(0, -1)
 var _skel: Skeleton3D
 var _clips: Dictionary = {}
@@ -85,7 +94,7 @@ var _pose: Array[Transform3D] = []
 var _death_from: Array[Transform3D] = []
 ## Buffers reutilizados: samplear un clip cuesta ~20 interpolaciones de pista y
 ## 8 actores a 60 fps no perdonan una asignación por capa y por fotograma.
-const _SLOT_COUNT := 8
+const _SLOT_COUNT := 9
 var _slots: Array = []
 var _slot_written: Array = []
 var _position_bones: Array[int] = [0]
@@ -139,6 +148,7 @@ func setup(skel: Skeleton3D, player: AnimationPlayer) -> void:
 		_rest.append(skel.get_bone_rest(i))
 		if skel.get_bone_name(i) in UPPER: _upper.append(i)
 		if skel.get_bone_name(i) in REACTION: _reaction.append(i)
+		if skel.get_bone_name(i) in ["Hips", "Body", "Root"] + REACTION: _brake_mask.append(i)
 	_pose = _rest.duplicate()
 	for i in _SLOT_COUNT:
 		_slots.append(_rest.duplicate())
@@ -169,8 +179,10 @@ func reset() -> void:
 	crouched = false
 	aiming = false
 	sprint_intent = false
+	braking = false
 	local_velocity = Vector3.ZERO
 	_crouch_weight = 0.0
+	_brake_weight = 0.0
 	action = Action.READY
 	reload_remaining = 0.0
 	switch_remaining = 0.0
@@ -302,8 +314,13 @@ func evaluate(delta: float) -> void:
 	aim_weight = move_toward(aim_weight, 1.0 if aiming and action == Action.READY else 0.0, delta / (0.09 if aiming else 0.14))
 	recoil *= exp(-recoil_recovery * delta)
 	var speed := Vector2(local_velocity.x, local_velocity.z).length()
-	_move_weight = move_toward(_move_weight, smoothstep(0.08, 0.65, speed), delta / (0.11 if speed > 0.15 else 0.18))
+	# La salida de la marcha es RÁPIDA: si la pose se desvanece hacia el idle
+	# mientras el pie sigue plantado, el apoyo se arrastra a la velocidad del
+	# cuerpo (medido: 2.5 m/s de derrape). Mejor resolver la parada que fundirla.
+	_move_weight = move_toward(_move_weight, smoothstep(0.08, 0.65, speed), delta / (0.11 if speed > 0.15 else 0.05))
 	_crouch_weight = move_toward(_crouch_weight, 1.0 if crouched else 0.0, delta / (0.19 if crouched else 0.24))
+	# La frenada entra rápido (el peso cae de golpe) y sale más lento (recupera).
+	_brake_weight = move_toward(_brake_weight, 1.0 if braking else 0.0, delta / (0.16 if braking else 0.18))
 	if speed > 0.15:
 		var wanted := Vector2(local_velocity.x, local_velocity.z).normalized()
 		var turn := wrapf(wanted.angle() - _direction.angle(), -PI, PI)
@@ -365,7 +382,18 @@ func evaluate(delta: float) -> void:
 	var low_reach := _stride_reach(crouch_entries, heading3)
 	if low_reach <= 0.0001: low_reach = low_implied
 	var stride := lerpf(walk_reach * walk_cycle, low_reach * low_cycle, _crouch_weight)
-	phase = fposmod(phase + delta * speed / maxf(stride, 0.01), 1.0)
+	if speed > 0.15:
+		# Con la frenada encima el paso DEJA de avanzar: si el reloj siguiera
+		# girando a velocidad plena mientras el cuerpo para, el pie plantado
+		# derrapara contra el suelo a esa velocidad.
+		phase = fposmod(phase + delta * speed * (1.0 - _brake_weight) / maxf(stride, 0.01), 1.0)
+	else:
+		# Parado: la fase ASIENTA en un contacto en vez de congelarse a mitad de
+		# zancada. Un pie en el aire y quieto se lee como maniquí; se elige el
+		# contacto más cercano hacia adelante y se llega en ~0.2 s.
+		var settle := fposmod(0.0 - phase, 1.0)
+		if settle > 0.0 and settle <= 0.5:
+			phase = fposmod(phase + minf(settle, delta * 2.5), 1.0)
 	# Idle_Gun se samplea UNA vez por fotograma y sirve de base y de capa de arma.
 	var idle := _sample_into(0, "Idle_Gun", _clock, true)
 	_pose.assign(idle)
@@ -376,7 +404,18 @@ func evaluate(delta: float) -> void:
 		var crouch_move := _blend_clips(crouch_entries, 6)
 		_blend(low, crouch_move, _move_weight)
 		_blend(_pose, low, _crouch_weight)
-	base_state = "Crouch" if crouched else ("Move" if speed > 0.15 else "Idle")
+	# La frenada va DESPUÉS de la base: absorbe sobre la pose que ya existe. NO
+	# escribe piernas: el clip baja el centro de masas y echa el torso atrás, y
+	# quien decide dónde está el apoyo sigue siendo el ciclo de locomoción que
+	# está saliendo. Mezclar aquí la pose de piernas del clip arrastraba el pie
+	# plantado 0.37 m hacia la postura neutra antes de que el paso desapareciera.
+	if _brake_weight > 0.0 and _clips.has(BRAKE):
+		# Ancla en el fotograma de máxima absorción (0.09 s del clip): con menos
+		# peso el clip avanza desde ahí hacia la recuperación, no al revés.
+		var brake_peak := minf(0.09, length_of(BRAKE))
+		var brake_time := brake_peak + (1.0 - _brake_weight) * maxf(length_of(BRAKE) - brake_peak, 0.0)
+		_blend(_pose, _sample_into(8, BRAKE, brake_time), _brake_weight, _brake_mask)
+	base_state = "Crouch" if crouched else ("Brake" if _brake_weight > 0.5 else ("Move" if speed > 0.15 else "Idle"))
 	if not grounded:
 		var air := _sample_into(4, "ual/JumpStart", _air_time)
 		_blend(air, _sample_into(5, "ual/AirLoop", _air_time, true), smoothstep(0.12, 0.26, _air_time))

@@ -42,7 +42,8 @@ const EXTRA_CLIP_PATHS := [
 	"res://assets/models/animation_library/CrouchRight.glb",
 	"res://assets/models/animation_library/CrouchBack.glb",
 	"res://assets/models/animation_library/JumpStart.glb",
-	"res://assets/models/animation_library/AirLoop.glb"
+	"res://assets/models/animation_library/AirLoop.glb",
+	"res://assets/models/animation_library/Brake.glb"
 ]
 ## Clips que deben repetir en bucle (glTF no lleva el metadato).
 const LOOPING_CLIPS := ["WalkFwd", "SprintFwd", "StrafeLeft", "StrafeRight", "CrouchIdle", "CrouchWalk", "BackWalk", "CrouchLeft", "CrouchRight", "CrouchBack", "AirLoop"]
@@ -166,6 +167,9 @@ var ik_enabled := true
 ## Congela el clip para inspeccionar un instante exacto (laboratorio).
 var debug_hold_animation := false
 var debug_manual_state := false
+## Velocidad del fotograma anterior: la frenada se detecta como pérdida de
+## velocidad, no como un evento que el gameplay tenga que anunciar.
+var _previous_speed := 0.0
 ## Fuerza la pose de recarga en el laboratorio (no tiene arma padre).
 var debug_force_reload := false
 ## Laboratorio: yaw/pitch de mirada sin actor padre (grados).
@@ -323,6 +327,14 @@ func _read_motion_inputs(delta: float) -> void:
 	motion.crouched = crouched
 	motion.aiming = aiming or firing
 	motion.sprint_intent = sprinting
+	# Frenada: venía con velocidad y la está perdiendo. Se mide aquí porque este
+	# es el único punto que ve la velocidad real por fotograma; el gameplay no
+	# necesita saber nada de animación para que la parada se lea.
+	var speed_now := float(motion.local_velocity.length()) if motion.local_velocity != Vector3.ZERO else locomotion_speed_scale
+	speed_now = locomotion_speed_scale if speed_now <= 0.0 else speed_now
+	if delta > 0.0 and _previous_speed - speed_now > 6.0 * delta and speed_now > 0.25:
+		motion.braking = true
+	_previous_speed = speed_now
 	var actor := get_parent()
 	motion.local_velocity = Vector3(0, 0, -locomotion_speed_scale) if moving else Vector3.ZERO
 	if actor is CharacterBody3D:
