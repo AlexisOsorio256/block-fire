@@ -38,6 +38,8 @@ const RELOAD_CLIP_BY_WEAPON := {
 ## Velocidad implícita declarada por el pipeline de Blender. Sin el archivo se
 ## usan los valores de gameplay para no calibrar a ciegas.
 static var DECLARED_SPEEDS: Dictionary = _load_declared_speeds()
+## Eje de avance (espacio del actor) que el pipeline declara para cada clip.
+static var DECLARED_DIRECTIONS: Dictionary = _load_declared_directions()
 var action := Action.READY
 var dead := false
 var grounded := true
@@ -92,6 +94,18 @@ static func _load_declared_speeds() -> Dictionary:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/models/animation_library/locomotion_speeds.json"))
 	return parsed if parsed is Dictionary else {}
 
+
+static func _load_declared_directions() -> Dictionary:
+	var directions: Dictionary = {}
+	for name: String in DECLARED_SPEEDS:
+		var entry: Variant = DECLARED_SPEEDS[name]
+		if not entry is Dictionary: continue
+		var declared: Variant = entry.get("direction")
+		if not declared is Array or (declared as Array).size() < 2: continue
+		var vector := Vector2(float(declared[0]), float(declared[1]))
+		if vector.length_squared() > 0.0001: directions[name] = vector.normalized()
+	return directions
+
 ## Clip visual de recarga que corresponde al arma equipada. Sólo presentación.
 func reload_clip() -> String:
 	return RELOAD_CLIP_BY_WEAPON.get(reload_weapon_id, RELOAD_CLIP_BY_WEAPON["rifle"])
@@ -110,6 +124,13 @@ func declared_speed(clip: String) -> float:
 	if entry is Dictionary:
 		return float(entry.get("speed", 0.0))
 	return 0.0
+
+
+## Eje de avance declarado del clip, en espacio del actor (x = derecha, y = atrás).
+func declared_direction(clip: String) -> Vector2:
+	var short := clip.get_slice("/", 1) if clip.contains("/") else clip
+	var entry: Variant = DECLARED_DIRECTIONS.get(short)
+	return entry if entry is Vector2 else Vector2(0.0, -1.0)
 
 func setup(skel: Skeleton3D, player: AnimationPlayer) -> void:
 	_skel = skel
@@ -195,6 +216,22 @@ func shot(strength: float, recovery: float) -> void:
 
 func length_of(name: String) -> float:
 	return (_clips[name].clip as Animation).length if _clips.has(name) else 1.0
+
+
+## Retroceso del apoyo que aporta la mezcla, proyectado sobre el rumbo de
+## avance. Cada clip sólo retrocede por SU eje declarado en espacio del actor
+## (x derecha, z atrás): en una diagonal los dos clips ortogonales aportan cada
+## uno |eje·rumbo|, no una media de magnitudes escalares (que acortaba el paso
+## y dejaba al apoyo patinando ~1.5 m/s).
+func _stride_reach(entries: Array, heading: Vector3) -> float:
+	var reach := 0.0
+	for entry: Array in entries:
+		var weight: float = entry[1]
+		if weight <= 0.0001 or not _clips.has(entry[0]): continue
+		var axis: Vector2 = declared_direction(entry[0])
+		var along: float = absf(Vector3(axis.x, 0.0, axis.y).dot(heading))
+		reach += weight * maxf(declared_speed(entry[0]), 0.1) * along
+	return reach
 
 ## Samplea un clip en un buffer reutilizado (sin asignar memoria por capa).
 ## Sólo se resetean los huesos que el clip toca: el resto del buffer ya está en
@@ -292,8 +329,10 @@ func evaluate(delta: float) -> void:
 		side /= total
 	var walk_weight := fwd * (1.0 - _sprint_weight)
 	var sprint_weight := fwd * _sprint_weight
-	var implied := 0.0
-	var cycle := 0.0
+	var walk_cycle := 0.0
+	var walk_implied := 0.0
+	var low_cycle := 0.0
+	var low_implied := 0.0
 	# La base sigue de pie mientras la capa baja entra/sale; seleccionar aquí
 	# por el booleano crouched saltaba directamente al clip bajo en un frame.
 	var entries: Array = [[LOCO_WALK, walk_weight], [LOCO_SPRINT, sprint_weight], [LOCO_BACK, back],
@@ -303,15 +342,29 @@ func evaluate(delta: float) -> void:
 	for entry: Array in entries:
 		var weight: float = entry[1]
 		if weight <= 0.0001 or not _clips.has(entry[0]): continue
-		implied += weight * maxf(declared_speed(entry[0]), 0.1)
-		cycle += weight * length_of(entry[0])
-	if implied <= 0.0001:
-		implied = walk_speed
-		cycle = length_of(LOCO_WALK)
-	var crouch_stride := 0.0
+		walk_implied += weight * maxf(declared_speed(entry[0]), 0.1)
+		walk_cycle += weight * length_of(entry[0])
 	for entry: Array in crouch_entries:
-		crouch_stride += entry[1] * declared_speed(entry[0]) * length_of(entry[0])
-	var stride := lerpf(implied * cycle, crouch_stride, _crouch_weight)
+		var weight: float = entry[1]
+		if weight <= 0.0001 or not _clips.has(entry[0]): continue
+		low_implied += weight * maxf(declared_speed(entry[0]), 0.1)
+		low_cycle += weight * length_of(entry[0])
+	if walk_implied <= 0.0001:
+		walk_implied = walk_speed
+		walk_cycle = length_of(LOCO_WALK)
+	if low_implied <= 0.0001:
+		low_implied = walk_speed
+		low_cycle = length_of(LOCO_WALK)
+	# Alcance real del apoyo: el pie del clip sólo retrocede por SU eje, así que
+	# los clips perpendiculares de una diagonal no suman distancia de zancada
+	# (magnitud escalar promedio acortaba el paso y el pie patinaba 1.5 m/s).
+	# La ruta de pie y la de crouch comparten la proyección y el ciclo mezclado.
+	var heading3 := Vector3(_direction.x, 0.0, _direction.y)
+	var walk_reach := _stride_reach(entries, heading3)
+	if walk_reach <= 0.0001: walk_reach = walk_implied
+	var low_reach := _stride_reach(crouch_entries, heading3)
+	if low_reach <= 0.0001: low_reach = low_implied
+	var stride := lerpf(walk_reach * walk_cycle, low_reach * low_cycle, _crouch_weight)
 	phase = fposmod(phase + delta * speed / maxf(stride, 0.01), 1.0)
 	# Idle_Gun se samplea UNA vez por fotograma y sirve de base y de capa de arma.
 	var idle := _sample_into(0, "Idle_Gun", _clock, true)

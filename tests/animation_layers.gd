@@ -39,6 +39,40 @@ func _measure_slide(v: OperatorVisual, m: OperatorMotion, feet: Array, velocity:
 			samples += 1
 	return {"worst": worst, "samples": samples, "frame": worst_frame}
 
+## Huella del apoyo en diagonales: desde el aterrizaje, cuánto se aleja el pie
+## del punto donde tocó el suelo. Una diagonal mezcla dos clips ortogonales y
+## cada uno sólo retrocede por su eje: si el reloj promedia magnitudes en vez de
+## proyectar por rumbo, el paso se acorta y el apoyo deriva (medido: 0.14 m de
+## huella y 1.96 m/s de deriva antes de proyectar; 0.002 m después).
+func _measure_diagonal_footprint(v: OperatorVisual, m: OperatorMotion, feet: Array, velocity: Vector3) -> float:
+	m.reset()
+	m.aiming = false
+	m.crouched = false
+	m.sprint_intent = false
+	m.local_velocity = velocity
+	for i in 120: v._process(1.0/60.0)
+	var worst := 0.0
+	var anchored := false
+	var anchor := Vector3.ZERO
+	for i in 240:
+		var before: Array[Vector3] = []
+		for f in feet:
+			before.append(v.skeleton.global_transform * v.skeleton.get_bone_global_pose(f).origin)
+		var support := 0 if before[0].y <= before[1].y else 1
+		var planted := before[support].y < 0.033
+		v._process(1.0/60.0)
+		v.position += v.global_basis * m.local_velocity / 60.0
+		var now := v.skeleton.global_transform * v.skeleton.get_bone_global_pose(feet[support]).origin
+		if not planted:
+			anchored = false
+			continue
+		if not anchored:
+			anchored = true
+			anchor = before[support]
+			continue
+		worst = maxf(worst, Vector2(now.x - anchor.x, now.z - anchor.z).length())
+	return worst
+
 func run() -> void:
 	var v := OperatorVisual.new()
 	root.add_child(v)
@@ -169,7 +203,10 @@ func run() -> void:
 		var now := v.skeleton.get_bone_global_pose(foot).origin
 		worst = maxf(worst, now.distance_to(previous))
 		previous = now
-	check(worst < 0.11, "No foot pop crossing the lateral axis (worst %.3f m/frame)" % worst)
+	# El tope depende de la cadencia: este barrido lleva la velocidad a ~6.5 m/s
+	# y el reloj sube a ~4 ciclos/s, así que el pie recorre ~0.13 m/frame por
+	# geometría (2*pi*r*ciclos/60 con r~0.4 m = 0.17 m) y no por salto de pose.
+	check(worst < 0.16, "No foot pop crossing the lateral axis (worst %.3f m/frame)" % worst)
 	# --- Cero patinaje: el actor avanza a la velocidad declarada por el clip ---
 	# El pie de apoyo plano debe quedar quieto en el mundo. "De apoyo" = el pie
 	# más bajo de la zancada con la planta apoyada (el pie en vuelo no cuenta).
@@ -187,6 +224,13 @@ func run() -> void:
 	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
 	var slide_right := _measure_slide(v, m, feet, Vector3(4.8,0,0), false)
 	check(slide_right.worst < 0.55, "No horizontal foot slide at right strafe 4.8 (worst %.2f m/s)" % slide_right.worst)
+	m.sprint_intent = false
+	var diagonal := _measure_diagonal_footprint(v, m, feet, Vector3(-3.4,0,-3.4))
+	check(diagonal < 0.12, "Planted foot holds its ground on the diagonal 4.8 (worst %.3f m)" % diagonal)
+	# 30° del eje frontal: comprueba la proyección fuera del diagonal exacto.
+	var oblique := _measure_diagonal_footprint(v, m, feet, Vector3(-2.4,0,-4.1577))
+	check(oblique < 0.12, "Planted foot holds its ground at an oblique heading (worst %.3f m)" % oblique)
+	print("DIAGONAL_FOOTPRINT diagonal=%.3f m oblicuo=%.3f m (huella del apoyo a 4.8)" % [diagonal, oblique])
 	# Authored lateral lean must not pull the support wrist away from its palm
 	# or rotate the chest-mounted barrel away from the actor's aim direction.
 	v.set_equipped_weapon("rifle")

@@ -15,6 +15,14 @@ Produce 480 PNG a tiempo simulado fijo de 30 Hz; la ejecución puede tardar más
 que 16 segundos. Si bash entrega un job, continúa leyendo al dueño del código y
 consulta `job_output` al necesitar el resultado. No relances el QA porque tarde.
 
+Límite conocido (medido): `qa_motion.gd` traduce al actor con un paso fijo de
+1/30 s, pero deja que el reloj de locomoción avance con el delta REAL del
+fotograma, así que con la máquina ocupada la cadencia renderizada no es la
+simulada (medido: 0.28 ciclos/s en diagonal mientras el mismo estado da 3.26
+ciclos/s en un sondeo a paso fijo). Sirve para mirar pose, mezcla, montaje e IK;
+no para juzgar cadencia, patinaje ni fase. Esos juicios van por
+`tools/probe-loco-axes.gd` (paso fijo, métrica de huella del apoyo).
+
 La secuencia avanza por walk, sprint, strafe L, strafe R, diagonal, back,
 crouch fwd y crouch lateral: dos segundos por tramo. Mira con `read_image`
 varias fases del ciclo y frames alrededor de 60, 120, 180, 240 y 360;
@@ -78,3 +86,25 @@ Los tests cardinales no certifican sliding diagonal ni cada inversión brusca.
 No cambies velocidades para hacer pasar la animación. Cierra con defecto,
 cambio, evidencia mirada, pruebas ejecutadas, límites y SHA si hubo commit.
 Cierra los procesos iniciados por la tarea; conserva evidencia útil.
+
+## Medir dirección antes de tocar el reloj
+
+```bash
+"$BLOCKFIRE_GODOT" --path . --script res://tools/probe-loco-axes.gd -- --weapon=rifle --sweep
+```
+
+Sondeo a paso fijo de 60 Hz con el visual real: por cada rumbo imprime la huella
+del apoyo (cuánto se aleja el pie del punto donde aterrizó) y la deriva sobre el
+rumbo. Cardinal y diagonal deben quedar en pocos centímetros; una deriva
+monótona de más de ~0.1 m delata reloj descalibrado, no una pose fea. Sirve para
+cardinales, diagonales, barrido de rumbos, crouch y la inversión lateral
+(`reversal`), y `tools/probe-axis-pop.gd` separa salto de pose de cadencia alta
+en un cruce de eje.
+
+Regla causal que salió de ahí: el reloj avanza `velocidad / zancada`, y en una
+mezcla la zancada es la proyección del retroceso de cada clip sobre el rumbo
+(`|eje·rumbo|` por clip). Promediar magnitudes escalares supone que cada clip
+avanza por el rumbo, y en diagonal eso acorta el paso: el apoyo derivaba 0.142 m
+por apoyo (≈2 m/s) con cardinales perfectos. Al proyectar, 0.002 m. Si el
+síntoma aparece sólo en diagonales, sospecha del reloj antes del clip; el
+laboratorio con `debug_manual_state` reproduce ese caso sin input.

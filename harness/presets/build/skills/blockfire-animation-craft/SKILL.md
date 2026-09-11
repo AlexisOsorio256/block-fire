@@ -19,6 +19,9 @@ Primero identifica dónde nace el defecto:
 - Input, velocidad o intención no llega: `game/player/player.gd` y
   `OperatorVisual.set_combat_state()` / `_read_motion_inputs()`.
 - Clip correcto aislado, pero transición/torso falla: `operator_motion.gd`.
+- Pose correcta pero cadencia o patinaje: el reloj de fase en
+  `operator_motion.gd` (avanza `velocidad / zancada`), no el clip. Mídelo antes
+  de tocar fórmulas con `tools/probe-loco-axes.gd` como dice la receta.
 - Pose final, montaje de arma o agarre: orden de capas/IK en `operator_visual.gd`.
 - El defecto existe en el clip aislado: edita su `.blend` en Blender.
 

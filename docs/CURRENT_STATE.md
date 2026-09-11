@@ -5,9 +5,15 @@ dueños/contratos en `docs/ARCHITECTURE.md`. No contiene estado del harness.
 
 ## Verde conocido
 
-- `tools/bf test`: smoke 296 + animation_layers PASS en la última verificación
-  de locomoción.
-- Foot slide medido walk/sprint/strafe L/R: 0.12 / 0.01 / 0.17 / 0.109 m/s.
+- `tools/bf test`: smoke 296 + regressions 29 + animation_layers PASS en la
+  última verificación de locomoción.
+- Foot slide medido walk/sprint/strafe L/R: 0.01 / 0.13 / 0.01 / 0.005 m/s.
+- Huella del apoyo (paso fijo, `tools/probe-loco-axes.gd`): cardinales 0.000 m,
+  diagonal 4.8 0.078 m, oblicuo 30° 0.065 m, crouch diagonal 0.051 m; en el
+  barrido de rumbos la deriva sobre el eje queda ≤ 0.028 m.
+- El reloj de fase proyecta el retroceso de cada clip sobre el rumbo
+  (`|eje·rumbo|`); promediar magnitudes escalares descalibraba las diagonales
+  (deriva 0.142 m y ~2 m/s de patinaje por apoyo) con los cardinales perfectos.
 - Rifle strafe: socket de apoyo ~0 mm y alineación de cañón 1.0.
 - Audio: `CombatAudio` es dueño del catálogo/cache; `SettingsStore` gobierna
   buses SFX/UI.
