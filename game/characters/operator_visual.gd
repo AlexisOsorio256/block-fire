@@ -36,6 +36,8 @@ extends Node3D
 ## arbitrarias de cada modelo descargado.
 ## static var (no const) para poder calibrar en el laboratorio sin editar
 ## el archivo en cada iteración.
+# Ready/ADS offsets are calibrated against real wrist reach (probe-aim-coordination).
+# Keep the weapon inside both arms' reach; never stretch bones to fix a mount.
 static var WEAPON_CONFIG := {
 	"rifle": {
 		"body_kick": 1.0, "recovery": 17,
@@ -45,8 +47,8 @@ static var WEAPON_CONFIG := {
 		"length": 0.92,
 		"pivot": Vector3(0.0, -0.10, -0.21),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(-0.10, -0.06, 0.10),
-		"aim": Vector3(-0.08, -0.025, 0.17),
+		"ready": Vector3(-0.10, -0.06, 0.07),
+		"aim": Vector3(-0.08, -0.025, 0.14),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		# Underside of the rifle handguard, measured in the normalized mesh.
@@ -77,8 +79,8 @@ static var WEAPON_CONFIG := {
 		"length": 1.05,
 		"pivot": Vector3(-0.264, 0.10, 0.0),
 		"asset_rot": Vector3(0.0, -90.0, 0.0),
-		"ready": Vector3(-0.10, -0.06, 0.20),
-		"aim": Vector3(-0.08, 0.05, 0.26),
+		"ready": Vector3(-0.10, -0.06, 0.13),
+		"aim": Vector3(-0.08, 0.05, 0.19),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.22),
@@ -92,7 +94,7 @@ static var WEAPON_CONFIG := {
 		"length": 0.62,
 		"pivot": Vector3(0.0, -0.08, 0.08),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(-0.10, -0.06, 0.18),
+		"ready": Vector3(-0.10, -0.06, 0.14),
 		"aim": Vector3(-0.08, 0.05, 0.24),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
@@ -400,7 +402,8 @@ func _update_weapon_mount(delta: float) -> void:
 	var aim_offset: Vector3 = config.get("aim", ready_offset)
 	var offset := ready_offset.lerp(aim_offset, aim_blend)
 	if reload_blend > 0.001:
-		offset += Vector3(0.03, -0.13, -0.05) * reload_blend
+		# Lower by 8 cm: 13 cm made the authored reload target unreachable.
+		offset += Vector3(0.03, -0.08, -0.05) * reload_blend
 	if switch_blend > 0.001:
 		offset += Vector3(0.0, -0.10, -0.04) * switch_blend
 	if not _mount_initialized:
@@ -410,10 +413,10 @@ func _update_weapon_mount(delta: float) -> void:
 	offset = _mount_offset
 	if motion != null: offset.z -= motion.recoil * 0.018
 	var chest_global := skeleton.global_transform * skeleton.get_bone_global_pose(chest)
-	# Orientación del arma = ejes del personaje, no del hueso Chest (el hueso
-	# lleva su propio roll y dejaba el arma vertical). La posición sí sigue al
-	# pecho para que acompañe el balanceo de la animación.
-	var basis := model_root.global_transform.basis.orthonormalized()
+	# Model orientation + the aim turn published by OperatorBody. Do not use
+	# the animated chest basis: its roll would rotate the barrel away from aim.
+	# Position follows the chest; the shared turn preserves shoulder/grip reach.
+	var basis := model_root.global_transform.basis.orthonormalized() * _body.aim_basis
 	if reload_blend > 0.001:
 		basis = basis * Basis(Vector3.RIGHT, deg_to_rad(-16.0 * reload_blend))
 	if switch_blend > 0.001:

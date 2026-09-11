@@ -150,6 +150,13 @@ columna/cabeza: ni ancestros de pies ni reloj de zancada reciben el peso de
 frenada. `OperatorVisual.revive` limpia el historial derivado.
 
 `Player` excluye `CameraFX.applied_fov_punch()` al suavizar FOV base y vuelve a
-sumarlo; `CameraFX` conserva su estado aditivo existente. Gate de recuperación:
-`tools/probe-aim-coordination.gd` (por defecto FOV; `--aim --baseline` es el
-diagnóstico de montaje/IK pendiente, no una prueba declarada verde).
+sumarlo; `CameraFX` conserva su estado aditivo existente. Gate de recuperación,
+pitch y contactos: `tools/probe-aim-coordination.gd` (por defecto toda la prueba;
+`--capture` añade vistas de pose renderizadas).
+
+En la etapa mirada, `OperatorBody` aplica el giro de pecho en espacio mundial
+y publica `aim_basis` en espacio de modelo. El montaje consume ese mismo giro
+antes del IK. La cabeza usa sólo la mirada residual. `OperatorMotion.aim_weight`
+sigue siendo el único blend de entrada/salida; ningún ancestro de pies recibe
+el giro. Los offsets de `WEAPON_CONFIG` se verifican contra alcance real de
+muñecas, no sólo contra los puños dibujados en el arma.

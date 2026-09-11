@@ -97,11 +97,18 @@ FOV: Player suaviza la base sin amortiguar el punch aditivo de CameraFX.
 Prueba de recuperación hip/ADS a render 30/60/120: mínimos 68.000000/52.000000,
 error final 0.000000. No nueva fuente de verdad.
 
-Pendiente real: coordinación de pitch pecho/montaje/IK. Candidato no publicado:
-alineaba cañones pero no cerraba contactos/alcance de manos. Diagnóstico
-`tools/probe-aim-coordination.gd --aim --baseline`; mediciones, límites y trabajo
-restante en `docs/PLAYER_FEEL_AUDIT.md`. No presentar esa prueba como verde.
+Torso/montaje/IK vertical IMPLEMENTADOS: giro compartido en espacio mundial,
+cabeza residual y offsets dentro del alcance del rig. Prueba por defecto:
+`tools/probe-aim-coordination.gd`, 20 casos de pitch/arma más strafe/sprint→ADS/
+crouch/recarga/disparo. Error angular máximo 0.000000°, error de muñeca máximo
+0.009204 mm; pies sin desplazamiento añadido. Capturas desktop inspeccionadas.
 
-Latencia táctil, confort del deadzone y multitouch físico siguen SIN VERIFICAR.
-La exportación APK y pruebas headless no los prueban. QA de touch/reload sigue
-reportando avisos de recursos al salir.
+Oráculo válido actual: `3900121176`; el fixture ahora construye nodos después
+de entrar al árbol. Firmas históricas de `_init` no son comparación fiable.
+Los montajes y la pose sí cambiaron intencionalmente.
+
+APK final instalado en SM-S901E; lobby y una pose ADS en partida inspeccionados.
+Confort táctil/latencia/multitouch y fluidez sostenida siguen SIN VERIFICAR.
+Pendiente: pulido visual de transiciones/extremos, asistencia fuerte al pecho
+sin bloquear arrastre a cabeza y presentación de mira/óptica ADS. Continuar
+sobre lo implementado; ver `docs/PLAYER_FEEL_AUDIT.md` para pruebas y dueños.

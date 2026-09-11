@@ -26,6 +26,9 @@ const PALM_OFFSET := 0.075
 ## El cuerpo se hunde al morir; el montaje lee este desplazamiento para
 ## acompañarlo (el arma no puede quedarse flotando sobre el cadáver).
 var base_offset := 0.0
+## Output in model space for OperatorVisual's mount, computed after clips.
+## Torso and weapon rotate around the same chest point; no gameplay aim owner.
+var aim_basis := Basis.IDENTITY
 
 ## Derivative sampled once per observed physics snapshot, not once per render.
 ## 6 m/s² rejects steady-state float noise. No animation writes gameplay state.
@@ -92,12 +95,13 @@ func read_motion_inputs(actor: OperatorVisual, delta: float) -> void:
 func reset_motion_history() -> void:
 	_previous_speed = -1.0
 	_previous_physics_frame = -1
+	aim_basis = Basis.IDENTITY
 
 
-
-## La cabeza sigue el punto de mira sin girar el cuerpo: el torso lo controla
-## el gameplay y una cabeza rígida delataba que el personaje era un maniquí.
+## Combat look after clips: rotate chest and publish the same turn to the
+## weapon mount; the head takes only the remaining look. Feet stay untouched.
 func update_head_look(actor: OperatorVisual, delta: float) -> void:
+	aim_basis = Basis.IDENTITY
 	var skeleton := actor.skeleton
 	if skeleton == null:
 		return
@@ -114,8 +118,26 @@ func update_head_look(actor: OperatorVisual, delta: float) -> void:
 		aim_yaw = wrapf(aim_yaw - body_yaw, -180.0, 180.0)
 	elif body != null:
 		return
-	_head_look_yaw = lerpf(_head_look_yaw, clampf(aim_yaw, -62.0, 62.0), clampf(delta * 7.0, 0.0, 1.0))
-	_head_look_pitch = lerpf(_head_look_pitch, clampf(aim_pitch * 0.45, -22.0, 22.0), clampf(delta * 7.0, 0.0, 1.0))
+	var weight := actor.motion.aim_weight if actor.motion != null else 0.0
+	var yaw := deg_to_rad(clampf(aim_yaw, -70.0, 70.0)) * weight
+	var pitch := deg_to_rad(clampf(aim_pitch, -78.0, 78.0)) * weight
+	aim_basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch)
+	var chest := skeleton.find_bone(CharacterAsset.CHEST_BONE)
+	if chest >= 0 and weight > 0.0 and (yaw != 0.0 or pitch != 0.0):
+		# Rotate the chest in WORLD axes, then convert back to its parent bone.
+		# Applying model axes directly to the chest's local pose changes reach
+		# because its animated parent is tilted. The weapon uses this same turn.
+		var model_basis := actor.model_root.global_basis.orthonormalized()
+		var world_turn := model_basis * aim_basis * model_basis.inverse()
+		var chest_world := skeleton.global_transform * skeleton.get_bone_global_pose(chest)
+		chest_world.basis = world_turn * chest_world.basis
+		var posed := skeleton.global_transform.affine_inverse() * chest_world
+		var parent := skeleton.get_bone_parent(chest)
+		if parent >= 0:
+			posed = skeleton.get_bone_global_pose(parent).affine_inverse() * posed
+		skeleton.set_bone_pose_rotation(chest, posed.basis.get_rotation_quaternion())
+	_head_look_yaw = lerpf(_head_look_yaw, clampf(aim_yaw - rad_to_deg(yaw), -62.0, 62.0), clampf(delta * 7.0, 0.0, 1.0))
+	_head_look_pitch = lerpf(_head_look_pitch, clampf((aim_pitch - rad_to_deg(pitch)) * 0.45, -22.0, 22.0), clampf(delta * 7.0, 0.0, 1.0))
 	var local := skeleton.get_bone_pose(head)
 	var yaw_basis := Basis(Vector3.UP, deg_to_rad(_head_look_yaw))
 	var pitch_basis := Basis(Vector3.RIGHT, deg_to_rad(-_head_look_pitch))

@@ -15,6 +15,9 @@ extends SceneTree
 var _lines: Array[String] = []
 
 func _init() -> void:
+	call_deferred("_report")
+
+func _report() -> void:
 	print("ORACLE_POSE_SIGNATURE %d" % _run())
 	for line in _lines:
 		print(line)

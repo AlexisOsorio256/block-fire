@@ -1,9 +1,10 @@
 # Player feel audit — 2026-09-11
 
-Current implementation: camera, analog/directional response, runtime braking
-and FOV-punch composition are closed. Upper-body aim/mount/IK remains a measured
-visual iteration; the tested candidate was NOT shipped. Earlier findings below
-record the before-state; implementation follow-ups contain current evidence.
+Current implementation: camera, analog/directional response, runtime braking,
+FOV-punch composition AND vertical chest/weapon/IK coordination are implemented.
+The first aim candidates were rejected; the shared world-space chest/mount
+rotation below supersedes them. Remaining work is visual/device polish, scope
+presentation and chest-assist tuning; do not restart the completed runtime work.
 
 Scope: BLOCKFIRE's own mobile TPS character, not another game's assets or motion.
 No asset, clip, stride metadata, gameplay speed or animation ownership changed.
@@ -275,28 +276,117 @@ to 7.095776 / 32.502919 mm but did not close the existing grip/contact defects.
 Both candidates were reverted; only the verified FOV correction ships. This
 is genuine required visual/IK iteration, not a completed aim feature.
 
+## Shared chest/weapon aim implemented (supersedes rejected candidates)
+
+`OperatorBody.update_head_look` rotates the chest in world space around its
+existing origin and publishes the same model-space `aim_basis` to
+`OperatorVisual._update_weapon_mount`. Local bone axes were the earlier error:
+the animated parent was already tilted, so the chest and gun rotated around
+different axes. The corrected operation preserves shoulder-to-grip reach.
+The head consumes residual look so it does not pitch twice. The existing
+`OperatorMotion.aim_weight` blends entry/exit; reload/switch retain their layers.
+No new animation clock, manager, root motion or gameplay aim source exists.
+
+Weapon mounts were measured too far forward for the rig. Ready/ADS forward
+offsets now: rifle 0.07/0.14 m, shotgun 0.13/0.19 m, SMG 0.14/0.24 m; pistol
+unchanged. Reload lowers the gun 0.08 m instead of 0.13 m, keeping the authored
+hand path reachable. No source clip or generated hand path was edited.
+
+### VERIFIED evidence
+
+`tools/probe-aim-coordination.gd` now runs aim AND FOV assertions by default.
+Its public Player ticks run in actual physics callbacks with measured 1/60 s
+steps; accelerated test wall time is not a latency or device-FPS measurement.
+Calling move_and_slide outside physics had used render delta and let the old
+capture fixture walk off its floor. The repaired fixture asserts groundedness
+and tick duration. `--capture` adds inspected desktop pose views.
+
+```text
+AIM weapon=rifle pitch=-78 error_deg=0.000000 socket_mm=0.000269 position=(0.0, -0.099759, 0.0) grounded=true
+AIM weapon=rifle pitch=-45 error_deg=0.000000 socket_mm=0.000138 position=(0.0, -0.099759, 0.0) grounded=true
+AIM weapon=rifle pitch=0 error_deg=0.000000 socket_mm=0.000060 position=(0.0, -0.099759, 0.0) grounded=true
+AIM weapon=rifle pitch=45 error_deg=0.000000 socket_mm=0.000111 position=(0.0, -0.099759, 0.0) grounded=true
+AIM weapon=rifle pitch=78 error_deg=0.000000 socket_mm=0.000192 position=(0.0, -0.099759, 0.0) grounded=true
+AIM_TRANSITION weapon=rifle state=strafe max_grip_mm=0.000968 elbow_step_deg=1.455084
+AIM_TRANSITION weapon=rifle state=sprint_ads max_grip_mm=0.001922 elbow_step_deg=8.613062
+AIM_TRANSITION weapon=rifle state=crouch max_grip_mm=0.002185 elbow_step_deg=0.807698
+AIM_TRANSITION weapon=rifle state=reload max_grip_mm=0.002146 elbow_step_deg=8.074237
+AIM_TRANSITION weapon=rifle state=shot max_grip_mm=0.002214 elbow_step_deg=6.295755
+AIM weapon=pistol pitch=-78 error_deg=0.000000 socket_mm=0.000119 position=(22.36067, -0.099759, -15.0576) grounded=true
+AIM weapon=pistol pitch=-45 error_deg=0.000000 socket_mm=0.001125 position=(22.36067, -0.099759, -15.0576) grounded=true
+AIM weapon=pistol pitch=0 error_deg=0.000000 socket_mm=0.000119 position=(22.36067, -0.099759, -15.0576) grounded=true
+AIM weapon=pistol pitch=45 error_deg=0.000000 socket_mm=0.000358 position=(22.36067, -0.099759, -15.0576) grounded=true
+AIM weapon=pistol pitch=78 error_deg=0.000000 socket_mm=0.000961 position=(22.36067, -0.099759, -15.0576) grounded=true
+AIM_TRANSITION weapon=pistol state=strafe max_grip_mm=0.003939 elbow_step_deg=0.953471
+AIM_TRANSITION weapon=pistol state=sprint_ads max_grip_mm=0.004428 elbow_step_deg=3.952898
+AIM_TRANSITION weapon=pistol state=crouch max_grip_mm=0.004580 elbow_step_deg=0.855923
+AIM_TRANSITION weapon=pistol state=reload max_grip_mm=0.004370 elbow_step_deg=4.498408
+AIM_TRANSITION weapon=pistol state=shot max_grip_mm=0.004625 elbow_step_deg=7.073572
+AIM weapon=shotgun pitch=-78 error_deg=0.000000 socket_mm=0.000358 position=(44.72177, -0.099759, -30.1152) grounded=true
+AIM weapon=shotgun pitch=-45 error_deg=0.000000 socket_mm=0.001911 position=(44.72177, -0.099759, -30.1152) grounded=true
+AIM weapon=shotgun pitch=0 error_deg=0.000000 socket_mm=0.000119 position=(44.72177, -0.099759, -30.1152) grounded=true
+AIM weapon=shotgun pitch=45 error_deg=0.000000 socket_mm=0.001073 position=(44.72177, -0.099759, -30.1152) grounded=true
+AIM weapon=shotgun pitch=78 error_deg=0.000000 socket_mm=0.000358 position=(44.72177, -0.099759, -30.1152) grounded=true
+AIM_TRANSITION weapon=shotgun state=strafe max_grip_mm=0.004498 elbow_step_deg=1.124658
+AIM_TRANSITION weapon=shotgun state=sprint_ads max_grip_mm=0.005525 elbow_step_deg=7.510317
+AIM_TRANSITION weapon=shotgun state=crouch max_grip_mm=0.008630 elbow_step_deg=0.575053
+AIM_TRANSITION weapon=shotgun state=reload max_grip_mm=0.008597 elbow_step_deg=8.268046
+AIM_TRANSITION weapon=shotgun state=shot max_grip_mm=0.008613 elbow_step_deg=6.942011
+AIM weapon=smg pitch=-78 error_deg=0.000000 socket_mm=0.000715 position=(67.0831, -0.099759, -45.17308) grounded=true
+AIM weapon=smg pitch=-45 error_deg=0.000000 socket_mm=0.001788 position=(67.0831, -0.099759, -45.17308) grounded=true
+AIM weapon=smg pitch=0 error_deg=0.000000 socket_mm=0.000000 position=(67.0831, -0.099759, -45.17308) grounded=true
+AIM weapon=smg pitch=45 error_deg=0.000000 socket_mm=0.003997 position=(67.0831, -0.099759, -45.17308) grounded=true
+AIM weapon=smg pitch=78 error_deg=0.000000 socket_mm=0.000358 position=(67.0831, -0.099759, -45.17308) grounded=true
+AIM_TRANSITION weapon=smg state=strafe max_grip_mm=0.008571 elbow_step_deg=0.968336
+AIM_TRANSITION weapon=smg state=sprint_ads max_grip_mm=0.008857 elbow_step_deg=5.987102
+AIM_TRANSITION weapon=smg state=crouch max_grip_mm=0.008649 elbow_step_deg=0.777329
+AIM_TRANSITION weapon=smg state=reload max_grip_mm=0.008649 elbow_step_deg=6.868899
+AIM_TRANSITION weapon=smg state=shot max_grip_mm=0.009204 elbow_step_deg=2.984391
+AIM_COORDINATION: failures=0
+```
+
+20 stationary weapon/pitch cases (4 weapons × −78/−45/0/+45/+78°): maximum
+barrel error 0.000000°. Across strafe, sprint→ADS, crouch, reload and confirmed
+shot: maximum wrist error 0.009204 mm, maximum per-sample elbow-plane change
+8.613062°. Assertions enforce <2°, <5 mm and no >90° elbow flip. The aim layer
+also asserts that both feet match the pre-aim clip pose within 0.000001 m.
+
+Full suite: smoke 310, regressions 29, animation_layers, public movement/brake
+and aim/FOV gates PASS. The added crouch coverage separately passed. Foot-slide
+still 0.01/0.13/0.01/0.005 m/s, diagonal 0.078 m, oblique 0.065 m, rifle socket
+0.000 mm / barrel alignment 1.000000. Reload-hand probe PASS: rifle drop 0.266 m,
+travel 0.290 m; pistol drop 0.157 m, travel 0.187 m. Cleanup warnings in that QA
+remain unaddressed.
+
+The pose oracle now defers node construction until the tree is active, fixing
+its out-of-tree transform errors. Its valid current signature is 3900121176.
+Historical init-time signatures are not a reliable direct comparison to the
+repaired fixture; mounts/aim/settling are also intentional pose changes. Use
+this valid signature for future no-behavior-change refactors.
+
+Desktop rendered pose captures were inspected for rifle, shotgun and SMG at
+up/down aim. The final Android APK exported and installed on the SM-S901E;
+lobby and live ADS capture were inspected (`captures/aim-coordination/`). This
+verifies device launch and a displayed ADS pose, not latency or subjective feel.
+The test app and adb daemon started for this task were stopped.
+
 ### What DeepSeek still owns
 
-1. `operator_body.gd` + `operator_visual.gd`: solve chest/mount pitch together
-   with reachable weapon grips. Use `probe-aim-coordination.gd --aim --baseline`
-   as the starting measurements, then promote the diagnostic to assertions
-   only after barrel error <2°, reachable grip error <5 mm and no elbow flips
-   pass for all four weapons through movement/reload/fire. Inspect front/side
-   captures at ±45° and extreme pitch before accepting a candidate. Do not
-   alter locomotion clips or stretch arm bones to conceal reach limits.
-2. Physical thumb/device iteration: validate the 0.12 radial deadzone, sprint
-   hysteresis, simultaneous fire/ADS and response latency. Desktop scheduled
-   render samples and adb taps do not prove touch-to-photon latency.
-3. Low-risk follow-up: existing QA shutdown resource warnings, with gameplay
-   and animation contracts unchanged.
+1. **Animation polish:** inspect running→aim, lateral reversals, stop/resume and
+   extreme upper-body pitch on device; tune presentation only where visible
+   evidence warrants it. The runtime aim/IK connection is implemented—do not
+   replace it or reintroduce hip/root edits that move feet. Existing authored
+   arm/hand silhouettes can be polished with all numerical gates intact.
+2. **Chest assist and head dragging:** tune existing Player assist toward the
+   visible torso; preserve deliberate upward drag to the head. Stronger assist
+   is a pending product tuning request, not an implemented change here. Keep
+   cone/line-of-sight and no-auto-fire contracts.
+3. **ADS sight presentation:** the current shoulder zoom is implemented; an
+   explicit weapon-appropriate scope/sight presentation is pending. Keep the
+   camera aim and weapon gameplay owners; do not hide an aim mismatch in HUD.
+4. **Physical feel:** quantify touch latency, thumb comfort, simultaneous
+   move/fire/ADS and frame pacing. Screenshots and offline physics probes do
+   not establish commercial-game parity.
 
-Keep the now-enforced analog/vector/brake/FOV gates green, along with the
-tightened foot-slide limits. No pending implementation remains for analog
-response, sprint arbitration, public brake triggering or FOV composition.
-
-Final verification: `tools/bf test` exited 0: smoke 310, regressions 29,
-animation_layers, player-feel, public brake and FOV gates passed. Regression
-fixture `_test_ffa_spawn_ignores_corpses` still logs an out-of-tree transform
-error at tests/regressions.gd:66; assertions pass, but stderr is not clean.
-Final Android debug export exited 0. This follow-up did not install or inspect
-the final APK on the phone; physical comfort/latency claims remain unverified.
+Start with existing code/tests, not another broad audit. Commit each verified
+polish. Preserve speeds 4.8/7.0/2.6 and all foot/phase/FOV gates above.
