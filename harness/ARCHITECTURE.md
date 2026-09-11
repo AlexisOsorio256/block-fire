@@ -33,6 +33,8 @@ BUILD guarda su baseline mínimo dentro de la persona del preset: no monta
 `agent-instructions`, no depende de `AGENTS.md` y no obliga lecturas al iniciar.
 Sus skills de proyecto son JIT. Blender también es JIT: `blender` expone solo
 `blender_exec` + `blender_screenshot`; `blender-full` escala al MCP completo.
+Trabajo visual no se declara terminado sin inspeccionar la captura real; un
+export exitoso o una ruta de fichero no sustituyen evidencia visual.
 
 CREATOR mantiene las mismas 18 tools base. No carga shared/game skills ni
 Blender; solo su skill de harness, las skills shipped de autoría Cordis y la
@@ -42,7 +44,8 @@ sin pagar goals, fork, list-agents o web-fetch en cada request.
 El costo de ese prefijo se mide sin llamadas al modelo con
 `bin/context-report.mjs` (host aislado, `--details` por dueño) y se congela como
 techo en `tests/mount.mjs`. `bin/session-report.mjs` sigue siendo la lectura real
-de una sesión ya ocurrida.
+de una sesión ya ocurrida: acepta la última línea truncada de una sesión viva,
+pero corrupción JSONL en medio hace la evidencia parcial y devuelve error.
 
 ## Runtime
 
@@ -52,7 +55,8 @@ completa deletes encolados antes de boot y exporta al host la versión DSH que
 realmente arrancó.
 
 `danger-full-access` sigue siendo necesario para Godot/Blender/Gradle/adb; el
-límite destructivo es `host/guard.js`, no un sandbox ficticio.
+límite destructivo es `host/guard.js`, no un sandbox ficticio. Las rutas
+protegidas se reconocen también escritas como `~`, `$HOME` o `${HOME}`.
 
 `host/package.json` identifica ese plugin incluso cuando se carga mediante el
 symlink del perfil Web. El inventario de plugins de DeepSeek prepara la petición
@@ -69,7 +73,10 @@ La implementación es una sola:
 La Web invoca `bin/update.mjs`; no duplica lógica. Re-stage borra cualquier
 veredicto anterior. `verify` confirma que la suite corrió contra el árbol staged.
 Rollback valida que su árbol aún exista. Activate/rollback afectan el siguiente
-arranque; el proceso vivo no cambia.
+arranque; el proceso vivo no cambia. Versiones/tags se validan antes de formar
+rutas de staging. Si el host entra en teardown durante una operación, el hijo
+actual se cancela y no puede arrancar el siguiente paso (en particular,
+`verify` nunca continúa a `activate` después del cierre).
 
 ## Web
 
@@ -87,12 +94,15 @@ host puede conservar handles sería incorrecto.
 
 Por eso:
 
-1. se rechaza una sesión RUNNING;
-2. Web valida el snapshot y usa `workspaceRegistry.archiveSession()` +
-   `Workspace.detachSession()` para desaparecerla durablemente de la UI;
-3. el id se encola en `$DSH_HOME/.blockfire-harness/`;
+1. se rechaza una sesión RUNNING y se valida que el snapshot exista;
+2. **primero** se persiste el id en
+   `$DSH_HOME/.blockfire-harness/pending-session-deletes.json`; si esa cola está
+   corrupta, el delete falla sin archivar/detachar ni sobrescribirla;
+3. Web usa `workspaceRegistry.archiveSession()` + `Workspace.detachSession()`
+   para desaparecerla durablemente de la UI;
 4. el próximo `harness/bin/blockfire` ejecuta `purge-sessions.mjs` **antes** de
-   abrir DSH y elimina log + projection cache.
+   abrir DSH y elimina log + projection cache. Una cola inválida se conserva y
+   falla fuerte en vez de fingirse vacía.
 
 Runtimes antiguos con header/`locate()` conservan un fallback legacy. Attachments
 compartidos no se borran: requieren GC propio upstream.
@@ -101,6 +111,19 @@ El id archivado permanece en `archivedSessionIds` tras el purge/restart:
 upstream no ofrece `unarchive` ni ninguna seam para retirarlo, y el set solo
 guarda ids (bytes, sin logs ni adjuntos). No se tocan los internals del
 storage domain para limpiarlo.
+
+## Evidencia de compatibilidad
+
+`harness/test.sh` monta BUILD/CREATOR en un `DSH_HOME` efímero y prueba la
+superficie real sin llamadas al modelo. El modo `--live` reconoce tanto
+`session.v3.jsonl.zstd` (DSH actual) como el nombre legacy y compara contra la
+sesión que realmente montó cada espacio. El contrato acepta el prompt dinámico
+actual en `system/message` además del `header.system` legacy; no confunde un
+cambio de representación soportado con una incompatibilidad.
+
+Los límites baratos (guard, updater, purger, integridad de logs y lifecycle Web)
+tienen fixtures sin red en `tests/safety.test.mjs`, antes de depender de QA del
+modelo o de Android.
 
 ## Riesgos abiertos
 
