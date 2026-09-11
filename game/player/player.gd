@@ -20,6 +20,9 @@ var camera_pivot: Node3D
 var weapon: WeaponController
 var visual: OperatorVisual
 var feedback_audio: AudioStreamPlayer3D
+var body_collision: CollisionShape3D
+var head_hitbox: Area3D
+var head_collision: CollisionShape3D
 var look_yaw: float = 0.0
 var look_pitch: float = 0.0
 var jump_requested: bool = false
@@ -31,6 +34,15 @@ const CAMERA_OFFSET := Vector3(0.55, 0.20, 3.25)
 const CAMERA_ADS_OFFSET := Vector3(0.72, 0.24, 2.35)
 ## Por debajo de esta distancia el avatar se oculta para no tapar la pantalla.
 const CAMERA_BODY_HIDE_DISTANCE := 1.75
+## Geometría autoritativa del actor. Agacharse debe bajar también colisión y
+## headshot, no solo el clip/cámara.
+const BODY_RADIUS := 0.38
+const BODY_HEIGHT_STAND := 1.80
+const BODY_HEIGHT_CROUCH := 1.35
+const BODY_CENTER_STAND := 1.00
+const BODY_CENTER_CROUCH := 0.775
+const HEAD_Y_STAND := 2.16
+const HEAD_Y_CROUCH := 1.55
 var gravity: float = 22.0
 ## Velocidades calibradas con la zancada real del rig (Walk = 1,32 m/s,
 ## Run_Gun = 2,48 m/s): por encima de 7,1 m/s el clip no da más de sí y los
@@ -111,8 +123,15 @@ func _physics_process(delta: float) -> void:
 		velocity.y = 8.4
 		_play_feedback("jump")
 	if _crouch_pressed():
-		crouched = not crouched
-		_update_crouch_visual()
+		if crouched:
+			# No levantar la cápsula dentro de techo/cobertura baja: el visual y
+			# la física conservan la misma postura hasta que exista espacio real.
+			if _can_stand():
+				crouched = false
+				_update_crouch_visual()
+		else:
+			crouched = true
+			_update_crouch_visual()
 	if weapon != null:
 		weapon.set_fire_held(Input.is_action_pressed("fire") or _mobile_fire())
 		weapon.set_aim_held(Input.is_action_pressed("aim") or _mobile_aim())
@@ -199,6 +218,7 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	velocity = Vector3.ZERO
 	health = max_health
 	is_alive = true
+	crouched = false
 	if visual != null: visual.revive()
 	input_enabled = true
 	visible = true
@@ -208,12 +228,11 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	health_changed.emit(health, max_health)
 	look_pitch = 0.0
 	look_yaw = rotation_degrees.y
-	if camera_pivot != null:
-		camera_pivot.position.y = 1.58
 	assist_target = null
 	assist_break_timer = 0.0
 	camera_recoil = 0.0
 	last_damage_headshot = false
+	_update_crouch_visual()
 	_play_feedback("respawn")
 
 func break_spawn_immunity() -> void:
@@ -446,27 +465,50 @@ func _mobile_next_weapon() -> bool:
 	return mobile_controls != null and mobile_controls.has_method("consume_switch") and mobile_controls.consume_switch()
 
 func _create_collision() -> void:
-	var collision := CollisionShape3D.new()
+	body_collision = CollisionShape3D.new()
+	body_collision.name = "BodyCollision"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.38
-	capsule.height = 1.8
-	collision.shape = capsule
-	collision.position.y = 1.0
-	add_child(collision)
-	var head := Area3D.new()
-	head.name = "HeadHitbox"
-	head.collision_layer = 4
-	head.collision_mask = 0
-	head.set_meta("damage_zone", "head")
-	var head_shape := CollisionShape3D.new()
+	capsule.radius = BODY_RADIUS
+	capsule.height = BODY_HEIGHT_STAND
+	body_collision.shape = capsule
+	add_child(body_collision)
+	head_hitbox = Area3D.new()
+	head_hitbox.name = "HeadHitbox"
+	head_hitbox.collision_layer = 4
+	head_hitbox.collision_mask = 0
+	head_hitbox.set_meta("damage_zone", "head")
+	head_collision = CollisionShape3D.new()
+	head_collision.name = "HeadCollision"
 	var head_sphere := SphereShape3D.new()
 	head_sphere.radius = 0.2
-	head_shape.shape = head_sphere
-	# Keep the head above the body capsule so a head ray resolves the Area3D
-	# instead of being swallowed by the full-height body collider.
-	head_shape.position.y = 2.16
-	head.add_child(head_shape)
-	add_child(head)
+	head_collision.shape = head_sphere
+	head_hitbox.add_child(head_collision)
+	add_child(head_hitbox)
+	_apply_collision_profile()
+
+func _apply_collision_profile() -> void:
+	if body_collision != null:
+		var capsule := body_collision.shape as CapsuleShape3D
+		if capsule != null:
+			capsule.radius = BODY_RADIUS
+			capsule.height = BODY_HEIGHT_CROUCH if crouched else BODY_HEIGHT_STAND
+		body_collision.position.y = BODY_CENTER_CROUCH if crouched else BODY_CENTER_STAND
+	if head_collision != null:
+		head_collision.position.y = HEAD_Y_CROUCH if crouched else HEAD_Y_STAND
+
+func _can_stand() -> bool:
+	if not is_inside_tree():
+		return true
+	var shape := CapsuleShape3D.new()
+	shape.radius = BODY_RADIUS
+	shape.height = BODY_HEIGHT_STAND
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	query.transform = Transform3D(global_transform.basis,
+		global_position + global_transform.basis * Vector3(0.0, BODY_CENTER_STAND, 0.0))
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
 func _create_visual() -> void:
 	visual = OperatorVisual.new()
@@ -540,8 +582,9 @@ func _update_camera_collision(delta: float) -> void:
 
 
 func _update_crouch_visual() -> void:
-	# Sin squash de escala: el agachado usa clips reales (CrouchIdle/CrouchWalk)
-	# y el clip ya baja el Root. Aplastar la malla deformaba todo el personaje.
+	# Pose, cámara y colisión cambian juntas. Sin esto el jugador podía verse
+	# agachado pero conservar cabeza/cápsula de pie y recibir headshots en aire.
+	_apply_collision_profile()
 	if visual != null:
 		visual.set_crouch_state(crouched)
 	if camera_pivot != null:
