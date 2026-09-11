@@ -55,17 +55,31 @@ function expand(path) {
   return path
 }
 
-/** Split a command into path-like tokens, dropping quotes and redirections. */
-function tokensOf(text) {
-  return text
-    .split(/[\s;|&()]+/)
-    .map((token) => token.replace(/^['"]+|['"]+$/g, ''))
+/** Shell permits adjacent quoted/unquoted pieces (`"$HOME"/.ssh`); paths here contain no spaces. */
+function cleanToken(token) {
+  return token.replace(/['"]/g, '')
+}
+
+function segments(text) {
+  return text.split(/[;|&()`\n]+/).map((segment) => segment.trim()).filter((segment) => segment !== '')
+}
+
+/** Tokens after leading VAR=value assignments, enough to identify a direct command safely. */
+function commandTokens(segment) {
+  return segment
+    .trim()
+    .split(/\s+/)
+    .map(cleanToken)
     .filter((token) => token !== '')
+    .filter((token, index, all) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) return true
+      return all.slice(0, index).some((before) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(before))
+    })
 }
 
 /** One path's protected-prefix test. */
 function protectedPath(rawPath) {
-  const expanded = expand(rawPath)
+  const expanded = expand(cleanToken(rawPath))
   for (const raw of PROTECTED_PATHS) {
     const path = expand(raw)
     if (expanded === path || expanded.startsWith(`${path}/`)) return raw
@@ -73,16 +87,17 @@ function protectedPath(rawPath) {
   return undefined
 }
 
-function protectedHit(text) {
-  for (const token of tokensOf(text)) {
+function protectedHit(tokens) {
+  for (const token of tokens) {
     const hit = protectedPath(token)
     if (hit !== undefined) return hit
   }
   return undefined
 }
 
-function catastrophicHit(text) {
-  for (const token of tokensOf(text)) {
+function catastrophicHit(tokens) {
+  for (const rawToken of tokens) {
+    const token = cleanToken(rawToken)
     const expanded = expand(token)
     for (const target of CATASTROPHIC_TARGETS) {
       if (token === target || expanded === expand(target)) return target
@@ -92,24 +107,13 @@ function catastrophicHit(text) {
 }
 
 /**
- * The first command word of every shell segment. Checking the COMMAND POSITION
- * rather than the whole string is what keeps `grep -rn "sudo" game/` working
- * while `sudo rm -rf /` is denied.
+ * The first command word of every shell segment. Checking COMMAND POSITION is
+ * what lets docs/grep mention dangerous strings without turning them into a
+ * policy denial.
  */
-function commandWords(text) {
-  const words = []
-  for (const segment of text.split(/[;|&()`\n]+/)) {
-    const tokens = segment
-      .trim()
-      .split(/\s+/)
-      .filter((token) => token !== '' && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token))
-    if (tokens.length > 0) words.push(tokens[0].replace(/^['"]+|['"]+$/g, ''))
-  }
-  return words
-}
-
-function segments(text) {
-  return text.split(/[;|&()`\n]+/).map((segment) => segment.trim()).filter((segment) => segment !== '')
+function commands(text) {
+  return segments(text).map((segment) => ({ segment, tokens: commandTokens(segment) }))
+    .filter((entry) => entry.tokens.length > 0)
 }
 
 /** Deny reasons, in order. Each is a synchronous, cheap test on the command text. */
@@ -117,33 +121,35 @@ function bashReason(command) {
   const text = command.trim()
   if (text === '') return undefined
 
-  const words = commandWords(text)
-  for (const privilege of ['sudo', 'doas', 'pkexec']) {
-    if (words.includes(privilege)) return `privilege escalation (${privilege}) is outside the harness boundary`
-  }
-
-  for (const word of words) {
+  const entries = commands(text)
+  for (const { tokens } of entries) {
+    const word = tokens[0]
+    if (['sudo', 'doas', 'pkexec'].includes(word)) {
+      return `privilege escalation (${word}) is outside the harness boundary`
+    }
     if (word === 'mkfs' || word.startsWith('mkfs.') || word === 'wipefs' || word === 'shred') {
       return 'writing to a block device or creating a filesystem'
     }
-    if (word === 'dd' && segments(text).some((segment) => segment.startsWith('dd ') && segment.includes('of=/dev/'))) {
+    if (word === 'dd' && tokens.slice(1).some((token) => token.startsWith('of=/dev/'))) {
       return 'writing to a block device or creating a filesystem'
+    }
+    if (word === 'rm') {
+      const targets = tokens.slice(1).filter((token) => token !== '--' && !token.startsWith('-'))
+      const catastrophic = catastrophicHit(targets)
+      if (catastrophic !== undefined) return `delete of ${catastrophic}`
+      const hit = protectedHit(targets)
+      if (hit !== undefined) return `delete under ${hit}`
+    }
+    if ((word === 'chmod' || word === 'chown') && tokens.includes('-R') && tokens.includes('/')) {
+      return 'recursive ownership/permission change at the filesystem root'
+    }
+    if ((word === 'tee' || word === '>' || word === '>>') && tokens.slice(1).some((token) => /^\/dev\/(?:sd|nvme|vd)/.test(token))) {
+      return 'redirecting output onto a block device'
     }
   }
 
-  const recursiveDelete = /\brm\b[^|;]*(?:-[a-z]*[rf][a-z]*|--recursive|--force)/.test(text)
-  if (recursiveDelete) {
-    const catastrophic = catastrophicHit(text)
-    if (catastrophic !== undefined) return `recursive delete of ${catastrophic}`
-    const hit = protectedHit(text)
-    if (hit !== undefined) return `recursive delete under ${hit}`
-  }
-
-  if (/\b(chmod|chown)\b[^|;]*-R[^|;]*\s\/(?:\s|$)/.test(text)) {
-    return 'recursive ownership/permission change at the filesystem root'
-  }
-
-  if (/(?:^|[\s;|&])(?:>|>>|tee)\s*\/dev\/(?:sd|nvme|vd)/.test(text)) {
+  // Redirection operators are not always command words (`echo x > /dev/sda`).
+  if (/(?:^|[\s;|&])(?:>|>>)\s*\/dev\/(?:sd|nvme|vd)/.test(text)) {
     return 'redirecting output onto a block device'
   }
 
