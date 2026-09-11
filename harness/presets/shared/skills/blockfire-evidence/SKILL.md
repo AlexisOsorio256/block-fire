@@ -13,11 +13,16 @@ Prove the behavior that changed; do not run a global checklist out of habit.
 
 - Logic/rules: a targeted test, or `tools/bf test` when that suite covers the change.
 - Scene/input/runtime: QA of the affected area.
-- Presentation/animation: visual evidence you actually looked at, plus the relevant runtime.
+- Presentation/animation: inspect the current capture first; visual evidence you actually looked at, plus the relevant runtime.
 - Android/platform: a physical device when the conclusion depends on it.
 - Performance: a before/after measurement.
 - Docs: consistency with the code that owns the behavior.
 - Assets: origin and license in `CREDITS.md`.
+
+For a visual question, a current capture is the primary evidence. Use geometry or
+metrics only when they are needed to locate a cause the image does not reveal or
+to lock a regression after the visual fix; they never substitute for seeing the
+result. Inspect again after the change.
 
 A test that does not touch the change is not evidence. Neither is a screenshot
 nobody looked at. The full suite, `qa touch` and an Android build are gates for
