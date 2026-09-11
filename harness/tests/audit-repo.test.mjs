@@ -39,7 +39,14 @@ try {
   writeFileSync(path.join(fixture, 'assets', 'used.glb.import'), '[remap]\n');
   writeFileSync(path.join(fixture, 'game', 'borrado.gd.uid'), 'uid://x\n');
   execFileSync('git', ['init', '-q'], { cwd: fixture });
+  execFileSync('git', ['config', 'user.email', 'audit-test@blockfire.local'], { cwd: fixture });
+  execFileSync('git', ['config', 'user.name', 'BLOCKFIRE audit test'], { cwd: fixture });
   execFileSync('git', ['add', '-A'], { cwd: fixture });
+  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: fixture });
+  // Las refs de agentes/snapshots deben seguir siendo visibles al auditor. La
+  // suite prueba esa capacidad en aislamiento en vez de depender de qué refs
+  // privadas tenga el clon del usuario que ejecuta harness/test.sh.
+  execFileSync('git', ['update-ref', 'refs/agents/test-snapshot', 'HEAD'], { cwd: fixture });
 
   const report = runAudit(fixture);
   const orphans = report.orphans.map((f) => f.path);
@@ -61,16 +68,22 @@ try {
     !report.metadata.some((m) => m.path === 'assets/used.glb.import'),
     'no marca el .import de un asset vivo',
   );
+  check(
+    report.refs.unusual.some((r) => r.ref === 'refs/agents/test-snapshot'),
+    'detecta una ref de herramienta que puede anclar historia',
+  );
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }
 
-// --- Caso 2: el repo real no debe tener basura probada ----------------------
+// --- Caso 2: el árbol real no debe tener basura de producto probada ----------
+// Assets/metadata/caché rastreada sí pertenecen al checkout. Las refs no: stash,
+// snapshots y refs privadas son estado local legítimamente distinto por clon y
+// no pueden convertir una prueba de compatibilidad del harness en roja.
 const root = path.resolve('.');
 const real = runAudit(root);
 check(real.orphans.length === 0, `repo real sin assets huérfanos (hay ${real.orphans.length})`);
 check(real.metadata.length === 0, `repo real sin metadata huérfana (hay ${real.metadata.length})`);
-check(real.refs.unusual.length === 0, `repo real sin refs de herramienta (hay ${real.refs.unusual.length})`);
 const risky = real.caches.filter((cache) => cache.tracked > 0);
 check(risky.length === 0, `ninguna caché contiene ficheros rastreados (${risky.map((c) => c.path).join(', ')})`);
 
