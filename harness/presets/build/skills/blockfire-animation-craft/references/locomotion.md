@@ -87,6 +87,40 @@ No cambies velocidades para hacer pasar la animación. Cierra con defecto,
 cambio, evidencia mirada, pruebas ejecutadas, límites y SHA si hubo commit.
 Cierra los procesos iniciados por la tarea; conserva evidencia útil.
 
+## Parada y arranque: quien manda en el apoyo
+
+Una parada no necesita "un clip de parada" y ya. Medido en este proyecto, al
+soltar el stick fallaban tres cosas a la vez, cada una con su dueño:
+
+1. El ciclo de piernas seguía girando a velocidad plena mientras el cuerpo
+   frenaba: el pie plantado se arrastra contra el suelo a la velocidad del
+   cuerpo. Dueño: el reloj de fase (se apaga con la frenada).
+2. La marcha se desvanecía hacia el idle en 0.18 s con el pie apoyado: 2.5 m/s
+   de derrape. Dueño: la salida de `_move_weight` a baja velocidad (0.05 s).
+3. La fase se congelaba a mitad de zancada: un pie plantado y otro colgando,
+   quietos, que se lee como maniquí. Dueño: la fase (asienta en un contacto).
+
+Regla que salió de ahí: **un clip de absorción no recoloca los pies**. La primera
+versión del clip de frenada daba un paso adelante y arrastraba el apoyo 0.37 m
+hacia la postura neutra antes de que el paso desapareciera — peor que el
+defecto. El que decide dónde está el apoyo es el ciclo de locomoción que está
+saliendo; el clip de frenada sólo manda centro de masas, columna y brazos, y por
+eso su máscara excluye las piernas.
+
+Al medir una parada, no midas la ventana de transición: ahí el apoyo cambia de
+pie y cualquier métrica de anclaje mide el cambio, no un defecto. Mide el
+asentamiento (fase en un contacto, pie apoyado, sin jitter residual).
+
+## Assets: una textura junto a un GLB no se juzga por grep
+
+Al limpiar, `rifle.glb` carga sus texturas por ruta **externa** (`rifle_0.png`
+…), aunque el GLB las embeba: el `.import` de Godot las resuelve al importar y
+un borrado "probado por grep" rompió el showcase. El smoke test lo cazó; el
+auditor no. Regla: para binarios (`.glb`, `.bin`, `.ttf`, `.blend`) se puede
+afirmar que nada los referencia; para texturas y audio, no — se comprueba
+borrando una copia, reimportando y corriendo `tools/bf test`. El auditor de
+`tools/audit-repo.mjs` aplica esa distinción y avisa de cuántos no juzga.
+
 ## Medir dirección antes de tocar el reloj
 
 ```bash

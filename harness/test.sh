@@ -163,6 +163,15 @@ else
 	bad "session-report fixture tests fail — see /tmp/blockfire-report-tests.log"
 	tail -20 /tmp/blockfire-report-tests.log | sed 's/^/        /'
 fi
+# El auditor de repositorio se prueba contra un repo fabricado con basura a
+# propósito: un auditor que no detecta no sirve, y uno que grita en falso hace
+# borrar producto.
+if node "$HERE/tests/audit-repo.test.mjs" >/tmp/blockfire-audit-tests.log 2>&1; then
+	ok "repo audit detects dead files without false positives"
+else
+	bad "repo audit test fails — see /tmp/blockfire-audit-tests.log"
+	tail -20 /tmp/blockfire-audit-tests.log | sed 's/^/        /'
+fi
 
 # Exercise actual services, session-scoped tools and skills in the selected tree.
 echo "isolated runtime mount"

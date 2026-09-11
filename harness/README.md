@@ -63,7 +63,17 @@ anterior y rollback falla si su árbol ya no existe.
 harness/test.sh
 node harness/tests/delete-current.test.mjs
 node harness/bin/session-report.mjs --last 5
+node tools/audit-repo.mjs
 ```
+
+`tools/audit-repo.mjs` audita el repositorio del juego antes de limpiar nada:
+assets que nada referencia, metadata huérfana de Godot, refs de herramienta que
+anclan objetos muertos y caché regenerable, cada hallazgo con su tamaño y su
+prueba. No borra: propone. Existe porque una limpieza a mano (2.7 GB → 201 MB)
+se hizo tres veces con grep y `du`, y porque borrar sin prueba es lo que casi
+rompe el repo. Su test se ejecuta dentro de `harness/test.sh` contra un repo
+fabricado con basura a propósito, en las dos direcciones: que detecte y que no
+grite en falso.
 
 `--live`, `--network` y `--self-test` añaden evidencia cuando corresponde. La
 ausencia de evidencia nunca se presenta como PASS.

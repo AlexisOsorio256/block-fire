@@ -5,7 +5,7 @@ extends SceneTree
 ##
 ## USO: godot --path . --script res://tools/probe-loco-axes.gd -- [--speed=4.8]
 ##      [--sprint] [--weapon=rifle] [--settle=120] [--frames=180]
-##      [--stride-debug] [--stance-profile]
+##      [--stride-debug] [--stance-profile] [--sweep]
 ##
 ## Métrica principal: durante un apoyo, el pie aterriza y el mundo se mueve
 ## debajo. Si el reloj está bien, la huella (desviación máxima desde el
@@ -15,6 +15,7 @@ extends SceneTree
 ## barrido de rumbos hereda `crouched` del bloque anterior y mide la zancada de
 ## crouch creyendo que mide la de pie (pasó: cadencia 4.8 en vez de 3.26 y
 ## números creíbles pero falsos). El estado heredado no avisa.
+
 var _speed := 4.8
 var _sprint := false
 var _weapon := "rifle"
@@ -79,7 +80,13 @@ func _reset_case(v: OperatorVisual, m: OperatorMotion, velocity: Vector3, crouch
 	m.switch_remaining = 0.0
 	v.position = Vector3.ZERO
 	m.local_velocity = velocity
-	for i in _settle: v._process(1.0 / 60.0)
+	for i in _settle:
+		v._process(1.0 / 60.0)
+		# El actor AVANZA mientras asienta: si el reloj gira y el cuerpo no se
+		# mueve, el pie de apoyo retrocede contra un cuerpo quieto y cualquier
+		# medida de deslizamiento sale a la velocidad del clip (medido: 4.8 m/s
+		# de "derrape" con la animación correcta).
+		v.position += v.global_basis * m.local_velocity / 60.0
 
 
 func _measure(v: OperatorVisual, m: OperatorMotion, feet: Array, label: String, velocity: Vector3, axis: Vector3) -> void:
