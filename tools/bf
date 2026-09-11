@@ -50,10 +50,11 @@ usage() {
 }
 
 cmd_doctor() {
-	local head godot_v blender_v adb_state mcp
+	local head godot_v blender_v adb_state mcp dirty
 	head="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+	dirty="$(git status --porcelain --untracked-files=normal 2>/dev/null || true)"
 	echo "BLOCKFIRE"
-	echo "  HEAD              ${head}$(git diff --quiet 2>/dev/null && echo '' || echo ' (+cambios sin commit)')"
+	echo "  HEAD              ${head}$([ -z "$dirty" ] && echo '' || echo ' (+cambios sin commit)')"
 	if [ -n "$GODOT_BIN" ]; then
 		godot_v="$("$GODOT_BIN" --version 2>/dev/null | head -1)"
 		echo "  Godot             OK  $GODOT_BIN ($godot_v)"

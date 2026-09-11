@@ -2,6 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Tooling regressions are shell-only and cheap. Run them before requiring Godot so
+# repo-state/evidence bugs fail even on a machine that cannot launch the game.
+bash "$ROOT/tools/test-bf-doctor.sh"
+
 find_godot() {
 	if [ -n "${BLOCKFIRE_GODOT:-}" ] && [ -x "$BLOCKFIRE_GODOT" ]; then
 		echo "$BLOCKFIRE_GODOT"
