@@ -27,7 +27,11 @@ const PALM_OFFSET := 0.075
 ## acompañarlo (el arma no puede quedarse flotando sobre el cadáver).
 var base_offset := 0.0
 
-var _previous_speed := 0.0
+## Derivative sampled once per observed physics snapshot, not once per render.
+## 6 m/s² rejects steady-state float noise. No animation writes gameplay state.
+const BRAKE_DECELERATION := 6.0
+var _previous_speed := -1.0
+var _previous_physics_frame := -1
 var _head_look_yaw := 0.0
 var _head_look_pitch := 0.0
 var _debug_reload_time := 0.0
@@ -37,7 +41,7 @@ var _death_hand_local := Transform3D.IDENTITY
 
 ## Traduce el estado de gameplay del actor a intención para `OperatorMotion`.
 ## Se llama ANTES de `motion.evaluate()`.
-func read_motion_inputs(actor: OperatorVisual, delta: float, speed: float) -> void:
+func read_motion_inputs(actor: OperatorVisual, delta: float) -> void:
 	var motion := actor.motion
 	if motion == null:
 		return
@@ -71,15 +75,24 @@ func read_motion_inputs(actor: OperatorVisual, delta: float, speed: float) -> vo
 	else:
 		motion.reload_remaining = 0.0
 		motion.switch_remaining = 0.0
-	# Frenada: venía con velocidad y la está perdiendo. Se mide aquí porque este
-	# es el único punto que ve la velocidad real por fotograma; el gameplay no
-	# necesita saber nada de animación para que la parada se lea. Ojo: el
-	# `delta` de la línea siguiente es la ÚLTIMA velocidad vista por el
-	# evaluador, no el tiempo de fotograma (así lo lee `_process`).
-	var speed_now := float(motion.local_velocity.length()) if motion.local_velocity != Vector3.ZERO else actor.locomotion_speed_scale
-	if speed > 0.0 and _previous_speed - speed_now > 6.0 * speed and speed_now > 0.25:
-		motion.braking = true
+	var speed_now := Vector2(motion.local_velocity.x, motion.local_velocity.z).length()
+	var elapsed := delta
+	if body is CharacterBody3D:
+		var frame := Engine.get_physics_frames()
+		if frame == _previous_physics_frame:
+			return # Preserve this snapshot's intent across multiple render samples.
+		if _previous_physics_frame >= 0:
+			elapsed = (frame - _previous_physics_frame) * body.get_physics_process_delta_time()
+		_previous_physics_frame = frame
+	motion.braking = motion.grounded and _previous_speed > 0.25 and elapsed > 0.0 \
+		and (_previous_speed - speed_now) / elapsed > BRAKE_DECELERATION
 	_previous_speed = speed_now
+
+## Respawn must not compare a new actor's rest state with pre-death motion.
+func reset_motion_history() -> void:
+	_previous_speed = -1.0
+	_previous_physics_frame = -1
+
 
 
 ## La cabeza sigue el punto de mira sin girar el cuerpo: el torso lo controla

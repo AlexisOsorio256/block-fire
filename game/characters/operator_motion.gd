@@ -81,8 +81,8 @@ var _move_weight := 0.0
 var _sprint_weight := 0.0
 var _crouch_weight := 0.0
 var _brake_weight := 0.0
-## Huesos que la frenada SÍ manda: cadera, columna y brazos cosméticos. Las
-## piernas quedan fuera para no arrastrar el apoyo que sostiene el paso.
+## Brake owns only spine/head. Hips/Body/Root are ancestors of the feet:
+## changing them moves the support even when leg tracks are excluded.
 var _brake_mask: Array[int] = []
 var _direction := Vector2(0, -1)
 var _skel: Skeleton3D
@@ -148,7 +148,7 @@ func setup(skel: Skeleton3D, player: AnimationPlayer) -> void:
 		_rest.append(skel.get_bone_rest(i))
 		if skel.get_bone_name(i) in UPPER: _upper.append(i)
 		if skel.get_bone_name(i) in REACTION: _reaction.append(i)
-		if skel.get_bone_name(i) in ["Hips", "Body", "Root"] + REACTION: _brake_mask.append(i)
+		if skel.get_bone_name(i) in REACTION: _brake_mask.append(i)
 	_pose = _rest.duplicate()
 	for i in _SLOT_COUNT:
 		_slots.append(_rest.duplicate())
@@ -383,17 +383,15 @@ func evaluate(delta: float) -> void:
 	if low_reach <= 0.0001: low_reach = low_implied
 	var stride := lerpf(walk_reach * walk_cycle, low_reach * low_cycle, _crouch_weight)
 	if speed > 0.15:
-		# Con la frenada encima el paso DEJA de avanzar: si el reloj siguiera
-		# girando a velocidad plena mientras el cuerpo para, el pie plantado
-		# derrapara contra el suelo a esa velocidad.
-		phase = fposmod(phase + delta * speed * (1.0 - _brake_weight) / maxf(stride, 0.01), 1.0)
+		# The actor is still travelling: its real speed always drives stride.
+		# Brake is an upper-body reaction, never a second locomotion clock.
+		phase = fposmod(phase + delta * speed / maxf(stride, 0.01), 1.0)
 	else:
 		# Parado: la fase ASIENTA en un contacto en vez de congelarse a mitad de
 		# zancada. Un pie en el aire y quieto se lee como maniquí; se elige el
-		# contacto más cercano hacia adelante y se llega en ~0.2 s.
-		var settle := fposmod(0.0 - phase, 1.0)
-		if settle > 0.0 and settle <= 0.5:
-			phase = fposmod(phase + minf(settle, delta * 2.5), 1.0)
+		# contacto de fase cero por el camino más corto en ≤0.2 s.
+		var settle := wrapf(-phase, -0.5, 0.5)
+		phase = fposmod(phase + clampf(settle, -delta * 2.5, delta * 2.5), 1.0)
 	# Idle_Gun se samplea UNA vez por fotograma y sirve de base y de capa de arma.
 	var idle := _sample_into(0, "Idle_Gun", _clock, true)
 	_pose.assign(idle)
@@ -405,7 +403,7 @@ func evaluate(delta: float) -> void:
 		_blend(low, crouch_move, _move_weight)
 		_blend(_pose, low, _crouch_weight)
 	# La frenada va DESPUÉS de la base: absorbe sobre la pose que ya existe. NO
-	# escribe piernas: el clip baja el centro de masas y echa el torso atrás, y
+	# escribe piernas ni sus ancestros: sólo absorbe con el torso, y
 	# quien decide dónde está el apoyo sigue siendo el ciclo de locomoción que
 	# está saliendo. Mezclar aquí la pose de piernas del clip arrastraba el pie
 	# plantado 0.37 m hacia la postura neutra antes de que el paso desapareciera.

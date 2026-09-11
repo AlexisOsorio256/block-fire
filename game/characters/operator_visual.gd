@@ -241,6 +241,7 @@ func confirmed_shot(_definition: WeaponDefinition = null) -> void:
 
 func revive() -> void:
 	dead = false
+	_body.reset_motion_history()
 	if model_root != null:
 		model_root.position.y = 0.0
 	if motion != null:
@@ -267,7 +268,7 @@ func _process(delta: float) -> void:
 	# Contract: inputs → clips/layers → head → mount → IK → hands. No other
 	# process callback writes this skeleton, including while paused/dead.
 	if not debug_hold_animation:
-		if not debug_manual_state: _body.read_motion_inputs(self, delta, locomotion_speed_scale)
+		if not debug_manual_state: _body.read_motion_inputs(self, delta)
 		motion.evaluate(delta)
 		if not dead: _body.update_head_look(self, delta)
 	_update_weapon_mount(delta)

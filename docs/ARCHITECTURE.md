@@ -85,7 +85,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | antes de publicar | `tools/bf test` + `tools/bf qa touch` + `tools/bf build android` |
 
 La suite (`tests/smoke.gd`, `tests/regressions.gd`, `tests/animation_layers.gd`
-y `tools/probe-player-feel.gd`) es la puerta; los
+`tools/probe-player-feel.gd` y `tools/probe-player-brake.gd`) es la puerta; los
 `tools/qa_*` son las comprobaciones de experiencia y `tools/probe-*` son
 mediciones de diagnóstico. Punto de entrada único: `tools/bf`.
 
@@ -143,3 +143,8 @@ velocidad/giro del cuerpo → `move_and_slide` → órbita/colisión de cámara.
 pivote hijo se compensa después del giro; la colisión limita tanto el destino
 del brazo como la posición interpolada. `CameraFX` conserva la sacudida.
 Auditoría y siguientes pasos medibles: `docs/PLAYER_FEEL_AUDIT.md`.
+
+`OperatorBody` deriva frenada de velocidad planar real por snapshot físico;
+no vuelve a derivarla por cada render. `OperatorMotion` sólo reacciona con
+columna/cabeza: ni ancestros de pies ni reloj de zancada reciben el peso de
+frenada. `OperatorVisual.revive` limpia el historial derivado.

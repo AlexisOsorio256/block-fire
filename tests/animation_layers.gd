@@ -260,14 +260,14 @@ func run() -> void:
 	var feet := [v.skeleton.find_bone("Foot.L"), v.skeleton.find_bone("Foot.R")]
 	var slide_walk := _measure_slide(v, m, feet, Vector3(0,0,-4.8), false)
 	check(slide_walk.samples > 20, "Planted foot sampled at walk (%d frames)" % slide_walk.samples)
-	check(slide_walk.worst < 0.40, "No horizontal foot slide at walk 4.8 (worst %.2f m/s)" % slide_walk.worst)
+	check(slide_walk.worst < 0.02, "No horizontal foot slide at walk 4.8 (worst %.2f m/s)" % slide_walk.worst)
 	var slide_sprint := _measure_slide(v, m, feet, Vector3(0,0,-7.0), true)
-	check(slide_sprint.worst < 1.20, "No horizontal foot slide at sprint 7.0 (worst %.2f m/s)" % slide_sprint.worst)
+	check(slide_sprint.worst < 0.14, "No horizontal foot slide at sprint 7.0 (worst %.2f m/s)" % slide_sprint.worst)
 	var slide_side := _measure_slide(v, m, feet, Vector3(-4.8,0,0), false)
 	print("FOOT_SLIDE walk=%.2f (f%d) sprint=%.2f (f%d) strafe=%.2f (f%d) m/s (peor fotograma de aterrizaje)" % [slide_walk.worst, slide_walk.frame, slide_sprint.worst, slide_sprint.frame, slide_side.worst, slide_side.frame])
-	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
+	check(slide_side.worst < 0.02, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
 	var slide_right := _measure_slide(v, m, feet, Vector3(4.8,0,0), false)
-	check(slide_right.worst < 0.55, "No horizontal foot slide at right strafe 4.8 (worst %.2f m/s)" % slide_right.worst)
+	check(slide_right.worst < 0.007, "No horizontal foot slide at right strafe 4.8 (worst %.2f m/s)" % slide_right.worst)
 	var brake := _measure_brake(v, m, feet)
 	check(brake.state == "Brake", "Braking publishes the Brake base state")
 	check(brake.weight > 0.9, "Braking reaches full weight (%.2f)" % brake.weight)
@@ -280,7 +280,7 @@ func run() -> void:
 		brake.weight, brake.released, brake.settled_phase, brake.settled_low, brake.jitter])
 	m.sprint_intent = false
 	var diagonal := _measure_diagonal_footprint(v, m, feet, Vector3(-3.4,0,-3.4))
-	check(diagonal < 0.12, "Planted foot holds its ground on the diagonal 4.8 (worst %.3f m)" % diagonal)
+	check(diagonal < 0.080, "Planted foot holds its ground on the diagonal 4.8 (worst %.3f m)" % diagonal)
 	# 30° del eje frontal: comprueba la proyección fuera del diagonal exacto.
 	var oblique := _measure_diagonal_footprint(v, m, feet, Vector3(-2.4,0,-4.1577))
 	check(oblique < 0.12, "Planted foot holds its ground at an oblique heading (worst %.3f m)" % oblique)

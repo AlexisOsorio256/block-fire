@@ -30,7 +30,7 @@ No asset, clip, stride metadata, gameplay speed or animation ownership changed.
    larger feel limitations than more locomotion assets. Appropriate deadzone,
    sprint rules and response timings require thumb testing.
 
-3. **VERIFIED / remaining: runtime braking is disconnected from its lab proof.**
+3. **VERIFIED / fixed in follow-up: runtime braking was disconnected from its lab proof.**
    Public Player→OperatorVisual stops produced zero `motion.braking` frames.
    `OperatorVisual._process` passes locomotion speed as the third argument to
    `OperatorBody.read_motion_inputs`; that method compares speed loss against
@@ -176,3 +176,49 @@ remain). Thumb comfort of the new deadzone is not established by headless QA.
 
 The rate-transition test now drains queued old-rate ticks before measurement.
 The corrected real-callback probe exited 0 with no failed assertions.
+
+## Runtime braking implementation follow-up
+
+Closed in OperatorBody/Visual/Motion. Removed the speed-as-time argument.
+Planar deceleration >6 m/s² activates the reaction; physics-frame sampling
+prevents multiple renders of one velocity from clearing it prematurely.
+Steady/accelerating/airborne motion clears intent; respawn resets history.
+The brake mask excludes foot ancestors (Hips/Body/Root) and no longer suppresses
+locomotion phase. Rest phase now settles to zero from either half of the cycle.
+No clips, generated speeds, gameplay displacement or weapon timers changed.
+
+`tools/probe-player-brake.gd` is in `tools/bf test`. It runs public movement on
+a real floor, validates per-snapshot activation/release and vertical-only
+rejection, and compares both foot transforms and phase to a no-brake reference
+with identical locomotion inputs. Mixed render rates are scheduled visual
+samples, not device performance measurements. Verified output:
+
+```text
+BRAKE_INVARIANT physics=30 render=30 added_foot_delta=0.000000000 phase_delta=0.000000000 peak_weight=1.000000
+BRAKE_INVARIANT physics=60 render=60 added_foot_delta=0.000000000 phase_delta=0.000000000 peak_weight=0.937500
+BRAKE_INVARIANT physics=120 render=120 added_foot_delta=0.000000000 phase_delta=0.000000000 peak_weight=0.937500
+BRAKE_INVARIANT physics=30 render=120 added_foot_delta=0.000000000 phase_delta=0.000000000 peak_weight=1.000000
+BRAKE_INVARIANT physics=120 render=30 added_foot_delta=0.000000000 phase_delta=0.000000000 peak_weight=1.000000
+PLAYER_BRAKE: PASS failures=0
+```
+
+FOOT_SLIDE walk=0.01 (f156) sprint=0.13 (f42) strafe=0.01 (f152) m/s (peor fotograma de aterrizaje)
+BRAKE weight=1.00 released=0.00 fase_asentada=0.000 pie_bajo=0.023 jitter=0.0037
+DIAGONAL_FOOTPRINT diagonal=0.078 m oblicuo=0.065 m (huella del apoyo a 4.8)
+STRAFE_GRIP socket_mm=0.000 barrel_alignment=1.000000 right_slide=0.005 m/s
+ANIMATION_LAYERS: PASS failures=0
+
+Steady-slide ceilings tightened to 0.02/0.14/0.02/0.007 m/s and diagonal
+footprint to 0.080 m. Axis sweep remains ≤0.028 m drift; reversal diagnostic
+remains 0.121 m/frame / 0.370 m footprint. The manual held-brake pose now has
+0.0037 m idle jitter (previously 0.0000): removing the hip/root override exposes
+authored idle motion. This is below the unchanged 0.02 m settling contract; it
+is not hidden or represented as an identical pose. Public brake adds exactly
+zero foot or phase displacement relative to the unbraked pose.
+
+The pose oracle intentionally changes: it exercises the formerly broken
+trigger and the corrected idle settling. It is not an unchanged refactor.
+Reload-hand probe PASS; it still emits resource cleanup warnings. Rendered
+sequence QA inspected for character/weapon continuity.
+
+Measured post-brake oracle: `1863296244` (old camera-only `1044286260`).

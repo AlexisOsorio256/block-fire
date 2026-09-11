@@ -104,3 +104,9 @@ Analog/dirección cerrados: deadzone radial 0.12, remap lineal; auto-sprint
 entra 0.96/sale 0.88; crouch y ADS/fuego ganan a sprint. Aceleración vectorial
 32 m/s². Prueba real de física a 30/60/120 Hz mide tiempos cardinales/diagonales
 idénticos y sin overshoot. Evidencia numérica: `docs/PLAYER_FEEL_AUDIT.md`.
+
+Frenada pública reparada: derivada planar por snapshot físico (>6 m/s²),
+release/reset explícitos; capa sólo torso y fase de locomoción sin supresión.
+Prueba pública 30/60/120 y ratios 30:120/120:30 PASS, delta añadido de pies y
+fase 0.000000000. Se conserva slide y huella; ver auditoría para el cambio
+intencional de pose y jitter idle de 0.0037 m (contrato <0.02 m).
