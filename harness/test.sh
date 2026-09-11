@@ -109,6 +109,7 @@ for file in \
 	"$HERE/lib/runtime.sh" \
 	"$HERE/tests/plugins.test.mjs" \
 	"$HERE/tests/report.test.mjs" \
+	"$HERE/tests/safety.test.mjs" \
 	"$HERE/tests/mount.mjs" \
 	"$HERE/ARCHITECTURE.md"; do
 	if [ -f "$file" ]; then ok "${file#"$REPO"/}"; else bad "missing ${file#"$REPO"/}"; fi
@@ -151,7 +152,7 @@ fi
 
 # ── our own code ────────────────────────────────────────────────────────────
 echo "plugins"
-for file in "$PRESETS/build/plugins/capabilities.js" "$PRESETS/build/plugins/prompt.js" "$PRESETS/build/plugins/blender-min.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs" "$HERE/lib/isolated-host.mjs" "$HERE/bin/context-report.mjs"; do
+for file in "$PRESETS/build/plugins/capabilities.js" "$PRESETS/build/plugins/prompt.js" "$PRESETS/build/plugins/blender-min.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs" "$HERE/lib/isolated-host.mjs" "$HERE/bin/context-report.mjs" "$HERE/bin/update.mjs" "$HERE/bin/session-report.mjs"; do
 	if node --check "$file" 2>/dev/null; then ok "${file#"$REPO"/} parses"; else bad "${file#"$REPO"/} has a syntax error"; fi
 done
 if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; then
@@ -165,6 +166,12 @@ if node "$HERE/tests/report.test.mjs" >/tmp/blockfire-report-tests.log 2>&1; the
 else
 	bad "session-report fixture tests fail — see /tmp/blockfire-report-tests.log"
 	tail -20 /tmp/blockfire-report-tests.log | sed 's/^/        /'
+fi
+if node "$HERE/tests/safety.test.mjs" >/tmp/blockfire-safety-tests.log 2>&1; then
+	ok "safety boundary tests pass ($(grep -c '^ok ' /tmp/blockfire-safety-tests.log) tests)"
+else
+	bad "safety boundary tests fail — see /tmp/blockfire-safety-tests.log"
+	tail -20 /tmp/blockfire-safety-tests.log | sed 's/^/        /'
 fi
 # El auditor de repositorio se prueba contra un repo fabricado con basura a
 # propósito: un auditor que no detecta no sirve, y uno que grita en falso hace
@@ -326,16 +333,20 @@ const { join } = require("node:path")
 const root = join(process.env.DSH_HOME || join(process.env.HOME, ".dsh"), "sessions")
 const space = process.argv[1]
 const found = []
+const names = ["session.v3.jsonl.zstd", "session.jsonl.zstd"]
 for (const project of readdirSync(root)) {
   let entries = []
   try { entries = readdirSync(join(root, project)) } catch { continue }
   for (const entry of entries) {
     const dir = join(root, project, entry)
-    try {
-      const log = join(dir, "session.jsonl.zstd")
-      statSync(log)
-      found.push({ log, mtime: statSync(log).mtimeMs })
-    } catch {}
+    for (const name of names) {
+      try {
+        const log = join(dir, name)
+        const stat = statSync(log)
+        found.push({ log, mtime: stat.mtimeMs })
+        break
+      } catch {}
+    }
   }
 }
 found.sort((a, b) => b.mtime - a.mtime)
