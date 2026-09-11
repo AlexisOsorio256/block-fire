@@ -16,6 +16,8 @@ const UPDATE = join(HARNESS, 'bin', 'update.mjs')
 const PURGER = join(HARNESS, 'bin', 'purge-sessions.mjs')
 const REPORT = join(HARNESS, 'bin', 'session-report.mjs')
 const CONTRACT = join(HARNESS, 'lib', 'contract_check.mjs')
+const DELETE_CURRENT = join(HARNESS, 'tests', 'delete-current.test.mjs')
+const VISUAL_BOOT = join(HARNESS, 'tests', 'visual-boot.mjs')
 
 async function guardFor() {
   const module = await import(GUARD)
@@ -63,29 +65,36 @@ async function callRoute(route, request) {
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
 
 test('auxiliary harness programs exist and parse before runtime-dependent tests', () => {
-  for (const file of [UPDATE, PURGER, REPORT, CONTRACT]) {
+  for (const file of [UPDATE, PURGER, REPORT, CONTRACT, DELETE_CURRENT, VISUAL_BOOT]) {
     assert.equal(existsSync(file), true, `${file} must exist`)
     const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
     assert.equal(checked.status, 0, `${file} must parse: ${checked.stderr}`)
   }
 })
 
-test('guard: HOME-expanded protected paths are denied but normal cache cleanup stays allowed', async () => {
+test('guard: protected HOME paths are denied without blocking harmless mentions', async () => {
   const guard = await guardFor()
   for (const command of [
     'rm -rf "$HOME/.ssh"',
+    'rm -rf "$HOME"/.ssh/known_hosts',
     'rm -rf "${HOME}/.gnupg"',
-    'rm -rf "$HOME/.config/gh"',
+    'rm "$HOME/.config/gh/hosts.yml"',
   ]) {
     const reason = guard({ name: 'bash', arguments: { command } })
     assert.equal(typeof reason, 'string', `${command} must be denied`)
     assert.match(reason, /BLOCKFIRE policy blocked/)
   }
-  assert.equal(
-    guard({ name: 'bash', arguments: { command: 'rm -rf "$HOME/.cache/blockfire"' } }),
-    undefined,
-    'normal user cache cleanup must not be over-blocked',
-  )
+  for (const command of [
+    'rm -rf "$HOME/.cache/blockfire"',
+    'echo "example: rm -rf /etc"',
+    'grep -R "rm -rf /etc" harness/',
+  ]) {
+    assert.equal(
+      guard({ name: 'bash', arguments: { command } }),
+      undefined,
+      `${command} must not be over-blocked`,
+    )
+  }
 })
 
 test('updater: path-shaped versions are rejected before staging touches disk or npm', () => {
@@ -129,6 +138,12 @@ test('session purger: corrupt delete queue fails without rewriting or discarding
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('current delete integration: archive/detach + preboot purge stays green', () => {
+  const result = spawnSync(process.execPath, [DELETE_CURRENT], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(result.stdout, /current DSH delete records intent/)
 })
 
 test('Web snapshot delete: durable queue is written before archive/detach, and corruption blocks mutation', async () => {
