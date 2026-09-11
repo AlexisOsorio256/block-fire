@@ -45,9 +45,13 @@ const CATASTROPHIC_TARGETS = [
 
 const HOME = process.env.HOME ?? ''
 
-/** Expand a leading `~` so one comparison covers both spellings. */
+/** Expand common HOME spellings so protected paths cannot be bypassed by shell syntax. */
 function expand(path) {
-  if (HOME !== '' && (path === '~' || path.startsWith('~/'))) return HOME + path.slice(1)
+  if (HOME !== '') {
+    if (path === '~' || path.startsWith('~/')) return HOME + path.slice(1)
+    if (path === '$HOME' || path.startsWith('$HOME/')) return HOME + path.slice(5)
+    if (path === '${HOME}' || path.startsWith('${HOME}/')) return HOME + path.slice(7)
+  }
   return path
 }
 
