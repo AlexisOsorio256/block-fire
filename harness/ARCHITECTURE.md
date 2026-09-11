@@ -11,11 +11,17 @@
 5. Evidencia proporcional; lo no ejecutado no se llama verificado.
 6. Un dueño por mecanismo: runtime, updater, surface y Web no se duplican.
 7. `harness/test.sh` + `contract/contract.json` son la frontera con upstream.
+8. Camino decisivo más corto: una tool/plugin/captura directa gana a scripts,
+   auditorías, proxies, lecturas/pruebas duplicadas o delegación especulativa.
+   Cuando la causa y la evidencia requerida ya están resueltas, se termina.
 
 ## Superficie y contexto
 
-`presets/build/surface.cordis.yml` posee las **18 tools base**. Ambos espacios la
-reutilizan.
+`presets/build/surface.cordis.yml` posee las **17 tools base**. Ambos espacios la
+reutilizan. `todo_write` no forma parte del producto: el repo y la trayectoria ya
+son estado durable y BLOCKFIRE no paga schema ni llamadas para mantener una
+checklist paralela. Delegación y skills siguen disponibles, pero JIT y solo si
+resuelven algo que unas pocas tools directas no resuelven mejor.
 
 El prefijo permanente tiene un dueño explícito: `presets/build/plugins/prompt.js`
 se une al waterfall `system-prompt/assemble` dentro del scope de la sesión y
@@ -29,23 +35,38 @@ pasa intacto, así que un rename upstream degrada a "texto upstream", no a una
 regla perdida. `presets/build/plugins/prompt.js` es también el único lugar donde
 vive la política de idioma: el modelo lee inglés, el usuario recibe español.
 
+La semántica de eficiencia también se prueba sobre el **assembly real** en
+`tests/mount.mjs`: ambas personas deben recibir la regla de camino corto;
+`read_image` debe mandar observación antes de proxies; `skill` no puede volver a
+"cargar todo"; y `subagent` no puede sustituir unas pocas tool calls directas.
+Eso evita que una futura compresión de prompt reintroduzca churn silenciosamente.
+
 BUILD guarda su baseline mínimo dentro de la persona del preset: no monta
 `agent-instructions`, no depende de `AGENTS.md` y no obliga lecturas al iniciar.
 Sus skills de proyecto son JIT. Blender también es JIT: `blender` expone solo
 `blender_exec` + `blender_screenshot`; `blender-full` escala al MCP completo.
 Trabajo visual no se declara terminado sin inspeccionar la captura real; un
-export exitoso o una ruta de fichero no sustituyen evidencia visual.
+export exitoso, geometría auxiliar o una ruta de fichero no sustituyen verla.
 
-CREATOR mantiene las mismas 18 tools base. No carga shared/game skills ni
+CREATOR mantiene las mismas 17 tools base. No carga shared/game skills ni
 Blender; solo su skill de harness, las skills shipped de autoría Cordis y la
 capacidad `cordis` JIT. Shell, búsqueda y el subagente base cubren fetch/delegación
 sin pagar goals, fork, list-agents o web-fetch en cada request.
 
-El costo de ese prefijo se mide sin llamadas al modelo con
+La conversación es working set, no archivo. `compaction-basic` compacta a
+`thresholdRatio: 0.55` y conserva `retainRatio: 0.10`: cuando detalle antiguo
+vuelve a importar, se relee su dueño real en el repo. El pruner corta tool results
+a partir de 4096 caracteres y conserva 2048 de cabeza + 768 de cola. Esos límites
+están congelados por `tests/mount.mjs`; subirlos requiere una razón medida.
+
+El costo del prefijo se mide sin llamadas al modelo con
 `bin/context-report.mjs` (host aislado, `--details` por dueño) y se congela como
 techo en `tests/mount.mjs`. `bin/session-report.mjs` sigue siendo la lectura real
 de una sesión ya ocurrida: acepta la última línea truncada de una sesión viva,
-pero corrupción JSONL en medio hace la evidencia parcial y devuelve error.
+pero corrupción JSONL en medio hace la evidencia parcial y devuelve error. Además
+expone promedio de prompt por usage, multiplicación acumulada respecto del primer
+request, llamadas exactas repetidas y recargas de skills para que el churn sea
+visible sin revisar la trayectoria a mano.
 
 ## Runtime
 
@@ -132,6 +153,6 @@ modelo o de Android.
 - `danger-full-access` no es aislamiento completo.
 - Browser/Blender/Android necesitan evidencia real solo cuando la conclusión
   depende de ellos.
-- Lo que queda caro en el prefijo son los `parameters` de las tools (~8,7k) y las
-  descripciones del catálogo de skills shipped de Cordis (~775): comprimirlos
-  exige tocar schema o contenido upstream, no prosa propia.
+- Los `parameters` de tools y el catálogo de skills shipped siguen siendo costo
+  permanente que no se recorta alterando semántica upstream; cualquier reducción
+  futura debe medirse sobre el assembly real.
