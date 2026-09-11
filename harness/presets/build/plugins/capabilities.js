@@ -45,10 +45,13 @@ export function apply(ctx, config) {
     return value
   }
 
-  async function schemaNames(scope) {
+  // In DSH the Agent itself is the scope key (scopeOf(agent.ctx) === agent).
+  // We already receive that Agent on every tool execution, so importing
+  // dsh-scope here only to recover the same object adds a dependency and makes
+  // repo-side unit tests need the installed bridge for no reason.
+  function schemaNames(scopeKey) {
     try {
-      const scoped = scope === undefined ? undefined : (await import('@deepseek-ai/dsh-scope')).scopeOf(scope)
-      return ctx.tools.schemas(scoped).map((schema) => schema?.name).filter((name) => typeof name === 'string')
+      return ctx.tools.schemas(scopeKey).map((schema) => schema?.name).filter((name) => typeof name === 'string')
     } catch { return undefined }
   }
   const toolPrefixOf = (spec) => {
@@ -56,14 +59,14 @@ export function apply(ctx, config) {
     const server = spec?.config?.serverName
     return typeof server === 'string' && server !== '' ? `mcp__${server}__` : undefined
   }
-  async function registeredNames(spec, entry, scope) {
-    const names = await schemaNames(scope)
+  function registeredNames(spec, entry, scopeKey) {
+    const names = schemaNames(scopeKey)
     if (names === undefined) return undefined
     const prefix = toolPrefixOf(spec)
     return names.filter((name) => (prefix !== undefined && name.startsWith(prefix)) || entry?.discovered?.has(name) === true).sort()
   }
 
-  async function describeAll(exec) {
+  function describeAll(exec) {
     const ownerKey = ownerKeyOf(exec)
     const owner = ownerKey === undefined ? undefined : mounted.get(ownerKey)
     const keys = Object.keys(specs)
@@ -75,7 +78,7 @@ export function apply(ctx, config) {
       const state = entry === undefined ? 'off' : entry.state === 'starting' ? 'starting' : entry.state === 'stuck' ? 'active; release failed' : 'active'
       lines.push(`- ${key} [${state}] — ${spec?.whenToUse ?? ''}`)
       if (entry !== undefined && entry.state !== 'starting') {
-        const names = await registeredNames(spec, entry, ownerCtxOf(exec) ?? ctx)
+        const names = registeredNames(spec, entry, ownerOf(exec))
         if (names?.length > 0) lines.push(`    tools now visible: ${names.join(', ')}`)
       }
     }
@@ -93,7 +96,7 @@ export function apply(ctx, config) {
     if (existing !== undefined) return existing.state === 'starting' ? `Capability "${key}" is already starting.` : `Capability "${key}" is already active.`
     if (typeof spec.package !== 'string' || spec.package === '') return `Capability "${key}" has no package.`
     for (const other of Array.isArray(spec.conflictsWith) ? spec.conflictsWith : []) {
-      if (owner.get(other) !== undefined) return `Capability "${key}" conflicts with "${other}". Turn "${other}" off first.`
+      if (owner.get(other) !== undefined) return `Capability "${key}" conflicts with "${other}". Use action "off" on "${other}" first.`
     }
 
     const entry = { state: 'starting', discovered: undefined }
@@ -112,7 +115,7 @@ export function apply(ctx, config) {
       let before
       let fiber
       try {
-        before = await schemaNames(host)
+        before = schemaNames(ownerOf(exec))
         fiber = host.plugin(plugin, spec.config ?? {})
         await fiber.await()
       } catch (error) {
@@ -124,7 +127,7 @@ export function apply(ctx, config) {
         return `Capability "${key}" failed to start: ${String(error?.message ?? error)}.${cleanup}`
       }
       if (before !== undefined) {
-        const after = await schemaNames(host)
+        const after = schemaNames(ownerOf(exec))
         if (after !== undefined) {
           const added = new Set(after.filter((name) => !before.includes(name)))
           if (added.size > 0) entry.discovered = added
