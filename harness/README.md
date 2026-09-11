@@ -21,9 +21,30 @@ a sesiones nuevas.
   solo al escalar).
 - CREATOR no carga contexto, skills ni Blender del juego; conserva solo skills
   de autoría del harness y `cordis` JIT.
+- El prefijo permanente es el producto: `presets/build/plugins/prompt.js` se une
+  al waterfall `system-prompt/assemble` y ajusta lo que el modelo recibe —
+  descripciones cortas en inglés, ninguna sección que solo repita una
+  descripción, y el texto de sandbox coherente con la política real de la
+  sesión. Parámetros y semántica no se tocan: solo prosa.
+- Todo lo que lee el modelo es inglés; la respuesta al usuario es español.
 - `harness/lib/runtime.mjs` es el único resolutor DSH.
 - `harness/test.sh` es el contrato con upstream.
 - Sin plan mode, goals permanentes, manager adicional ni workflow obligatorio.
+
+## Presupuesto de contexto
+
+`node harness/bin/context-report.mjs` mide, sin llamadas al modelo, el prefijo
+permanente de cada espacio (system + contexto + schemas + catálogo de skills) y
+lo desglosa por dueño con `--details`. Es la evidencia antes de tocar el prompt;
+el token real de una sesión lo da `session-report.mjs --last 1`.
+
+Medido con DSH 0.1.5-rc.2, system + schemas pasó de 21.381 a 16.531 caracteres
+en BUILD (−22,7%) y de 21.171 a 16.534 en CREATOR (−21,9%): se elimina la prosa
+duplicada y las descripciones quedan en el hecho operativo, conservando los
+marcadores que el modelo tiene que reconocer en los resultados (`[exit code: N]`,
+`[sandbox: ...]`, `[status: ...]`, `wait: true`). El techo vive en
+`tests/mount.mjs`, que falla si el prefijo crece en silencio o si una tool pierde
+sus parámetros.
 
 ## Web
 
@@ -62,6 +83,7 @@ anterior y rollback falla si su árbol ya no existe.
 ```bash
 harness/test.sh
 node harness/tests/delete-current.test.mjs
+node harness/bin/context-report.mjs --details
 node harness/bin/session-report.mjs --last 5
 node tools/audit-repo.mjs
 ```

@@ -69,6 +69,16 @@
     fetch: false
     searchTimeoutMs: 60000
 
+# The permanent prefix is the product: this row fits the assembled prompt to a
+# budget — terse English descriptions, no section that only restates one, and
+# sandbox wording that agrees with the policy the session actually has.
+# BUILD never extends DSH itself, so the checkout section is dropped here and
+# restored by the CREATOR include.
+- id: prompt-fit
+  name: './plugins/prompt.js'
+  config:
+    harnessSource: false
+
 # BUILD gets Blender defaults; CREATOR patches includeDefaults:false + cordis.
 - id: capabilities
   name: './plugins/capabilities.js'

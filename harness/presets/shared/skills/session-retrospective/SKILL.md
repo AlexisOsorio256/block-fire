@@ -1,20 +1,20 @@
 ---
 name: session-retrospective
 description: >-
-  Revisar una fricción reusable del harness observada durante trabajo real.
+  Review one reusable harness friction observed during real work.
 whenToUse: >-
-  Solo cuando esta sesión ya encontró una fricción concreta y repetible del
-  harness; no como paso obligatorio de cierre.
+  Only when this session already hit a concrete, repeatable harness friction;
+  never as a mandatory closing step.
 ---
 
-# Retrospectiva causal
+# Causal retrospective
 
-La tarea principal termina primero. Después, solo si hubo fricción reusable:
+The main task finishes first. Then, only if the friction was reusable:
 
-1. Señala el momento concreto que costó pasos/contexto de más.
-2. Separa complejidad de la tarea de fricción del harness.
-3. Aplica únicamente un micro-fix causal y generalizable que pueda verificarse
-   barato. Cambios permanentes de tools/contexto/arquitectura requieren una
-   comparación antes/después real.
+1. Name the concrete moment that cost extra steps or context.
+2. Separate task complexity from harness friction.
+3. Apply one causal, generalizable micro-fix that is cheap to verify. Permanent
+   changes to tools, context or architecture require a real before/after
+   comparison.
 
-Si no hay evidencia clara, no cambies nada y no abras investigación meta.
+With no clear evidence, change nothing and open no meta investigation.

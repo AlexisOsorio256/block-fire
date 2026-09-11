@@ -1,35 +1,34 @@
-# Locomoción TPS: receta de trabajo
+# TPS locomotion: working recipe
 
-Ejecuta desde la raíz del proyecto. Comprueba `git status -sb` y usa
-`tools/bf doctor` cuando necesites resolver Godot/Blender. Conserva cambios ajenos.
-La referencia de producto orienta; no declares equivalencia con Free Fire sin
-una comparación de movimiento observable.
+Run from the project root. Check `git status -sb` and use `tools/bf doctor` when
+you need to resolve Godot/Blender. Preserve others' changes. The product reference
+orients; do not claim equivalence with Free Fire without an observable movement
+comparison.
 
-## Capturar y mirar
+## Capture and look
 
 ```bash
 tools/bf qa motion --mode=locomotion --view=q34 --duration=16 --out=/tmp/bf-before
 ```
 
-Produce 480 PNG a tiempo simulado fijo de 30 Hz; la ejecución puede tardar más
-que 16 segundos. Si bash entrega un job, continúa leyendo al dueño del código y
-consulta `job_output` al necesitar el resultado. No relances el QA porque tarde.
+Produces 480 PNG at fixed simulated 30 Hz time; the run can take longer than 16
+seconds. If bash hands back a job, keep reading the code owner and check
+`job_output` when you need the result. Do not relaunch the QA because it is slow.
 
-Límite conocido (medido): `qa_motion.gd` traduce al actor con un paso fijo de
-1/30 s, pero deja que el reloj de locomoción avance con el delta REAL del
-fotograma, así que con la máquina ocupada la cadencia renderizada no es la
-simulada (medido: 0.28 ciclos/s en diagonal mientras el mismo estado da 3.26
-ciclos/s en un sondeo a paso fijo). Sirve para mirar pose, mezcla, montaje e IK;
-no para juzgar cadencia, patinaje ni fase. Esos juicios van por
-`tools/probe-loco-axes.gd` (paso fijo, métrica de huella del apoyo).
+Known limit (measured): `qa_motion.gd` moves the actor with a fixed 1/30 s step,
+but lets the locomotion clock advance with the frame's REAL delta, so on a busy
+machine the rendered cadence is not the simulated one (measured: 0.28 cycles/s in
+diagonal while the same state gives 3.26 cycles/s in a fixed-step probe). It
+serves to look at pose, blend, mount and IK; not to judge cadence, sliding or
+phase. Those judgments go through `tools/probe-loco-axes.gd` (fixed step, foot
+print metric).
 
-La secuencia avanza por walk, sprint, strafe L, strafe R, diagonal, back,
-crouch fwd y crouch lateral: dos segundos por tramo. Mira con `read_image`
-varias fases del ciclo y frames alrededor de 60, 120, 180, 240 y 360;
-por ejemplo N-1, N, N+1, N+3, N+6. No basta comparar una pose favorecedora.
+The sequence advances through walk, sprint, strafe L, strafe R, diagonal, back,
+crouch fwd and crouch lateral: two seconds per segment. Look with `read_image` at
+several cycle phases and frames around 60, 120, 180, 240 and 360; for example N-1,
+N, N+1, N+3, N+6. Comparing one flattering pose is not enough.
 
-Para hacer una rejilla sin inventar una herramienta nueva, si ImageMagick está
-disponible:
+To build a grid without inventing a new tool, if ImageMagick is available:
 
 ```bash
 montage /tmp/bf-before/frame_0179.png /tmp/bf-before/frame_0180.png \
@@ -38,107 +37,108 @@ montage /tmp/bf-before/frame_0179.png /tmp/bf-before/frame_0180.png \
   -thumbnail 480x270 -tile 3x2 -geometry +2+2 /tmp/bf-before-turn.png
 ```
 
-Abre la rejilla con `read_image`. Para observar manos/pies abre además PNG
-individuales; una miniatura puede ocultar defectos. Guarda el después en otro
-directorio y compara mismos frames, arma, cámara, velocidad y duración. Si
-cambias el reloj de fase, registra esa diferencia: mismo frame ya no significa
-misma fase del ciclo. Los clips quietos no prueban continuidad.
+Open the grid with `read_image`. To observe hands/feet also open individual PNGs;
+a thumbnail can hide defects. Save the after in another directory and compare the
+same frames, weapon, camera, speed and duration. If you change the phase clock,
+record that difference: the same frame no longer means the same cycle phase. Still
+clips do not prove continuity.
 
-## No confundir laboratorio y gameplay
+## Do not confuse lab and gameplay
 
-`qa_motion.gd` usa el visual real, clips, montaje e IK, pero activa
-`debug_manual_state`: escribe intención y velocidad directamente. No prueba
-input → Player → set_combat_state → _read_motion_inputs. Si el fallo aparece
-jugando, recorre ese camino público y prueba el contrato afectado; no concluyas
-que gameplay está bien porque el laboratorio se ve bien.
+`qa_motion.gd` uses the real visual, clips, mount and IK, but enables
+`debug_manual_state`: it writes intent and speed directly. It does not test input
+-> Player -> set_combat_state -> _read_motion_inputs. If the failure appears while
+playing, walk that public path and test the affected contract; do not conclude
+gameplay is fine because the lab looks fine.
 
-`--mode=sequence --view=back --duration=16` añade idle, arranque, parada,
-crouch/stand y combate. Su tramo crouch diagonal usa componentes 2.6/2.6:
-magnitud ~3.68 m/s aunque la etiqueta diga 2.6. Usa el modo locomotion para
-comparar crouch cardinal a 2.6; no recalibres clips a partir de esa etiqueta.
+`--mode=sequence --view=back --duration=16` adds idle, start, stop, crouch/stand
+and combat. Its diagonal crouch segment uses components 2.6/2.6: magnitude ~3.68
+m/s even though the label says 2.6. Use locomotion mode to compare cardinal crouch
+at 2.6; do not recalibrate clips from that label.
 
-La cámara sigue al actor y el checkerboard expone sliding. La suavidad percibida
-en dispositivo, input táctil y FPS reales necesitan su propia ejecución; el
-muestreo fijo no los demuestra.
+The camera follows the actor and the checkerboard exposes sliding. Perceived
+smoothness on device, touch input and real FPS need their own run; fixed sampling
+does not prove them.
 
-## Cambiar al dueño y verificar
+## Change the owner and verify
 
-Si corriges mezcla/input no exportes clips. Si editas `.blend`, guarda y exporta
-solo los clips autorizados con `tools/bf blender <Clip>`. Después resuelve la
-ruta real de Godot con doctor y ejecuta ese binario:
+If you fix blend/input, do not export clips. If you edit `.blend`, save and export
+only the authorized clips with `tools/bf blender <Clip>`. Then resolve the real
+Godot path with doctor and run that binary:
 
 ```bash
 "$BLOCKFIRE_GODOT" --headless --editor --path . --import
 ```
 
-Este comando presupone `BLOCKFIRE_GODOT` definido con la ruta que doctor mostró.
-Espera a que termine y confirma que reimportó el GLB actualizado sin errores.
-Si lo omite por caché, invalida solo el cache importado de ese GLB y repite;
-no edites configuraciones `.import` ni borres todo `.godot` por costumbre.
+This command assumes `BLOCKFIRE_GODOT` is defined with the path doctor showed.
+Wait for it to finish and confirm it reimported the updated GLB without errors. If
+it skips it due to cache, invalidate only that GLB's imported cache and repeat; do
+not edit `.import` configs or delete all `.godot` out of habit.
 
-Repite el QA anterior con `--out=/tmp/bf-after`. Para locomoción/capas usa
-`tools/bf test`: cubre selección pública de sprint, continuidad crouch/ADS,
-foot slide cardinal, montaje e IK. Para investigar un fallo específico están
-`tools/bf qa slide --speed=7 --sprint`, `tools/bf qa ik` y `tools/bf qa reload`.
-No ejecutes todas esas pruebas si la suite ya resolvió la cuestión.
+Repeat the previous QA with `--out=/tmp/bf-after`. For locomotion/layers use
+`tools/bf test`: it covers public sprint selection, crouch/ADS continuity, cardinal
+foot slide, mount and IK. To investigate a specific failure there are
+`tools/bf qa slide --speed=7 --sprint`, `tools/bf qa ik` and `tools/bf qa reload`.
+Do not run all those tests if the suite already settled the question.
 
-Los tests cardinales no certifican sliding diagonal ni cada inversión brusca.
-No cambies velocidades para hacer pasar la animación. Cierra con defecto,
-cambio, evidencia mirada, pruebas ejecutadas, límites y SHA si hubo commit.
-Cierra los procesos iniciados por la tarea; conserva evidencia útil.
+Cardinal tests do not certify diagonal sliding or every sharp reversal. Do not
+change speeds to make the animation pass. Close with defect, change, watched
+evidence, tests run, limits and SHA if there was a commit. Close the processes
+started by the task; keep useful evidence.
 
-## Parada y arranque: quien manda en el apoyo
+## Stop and start: who owns the foot plant
 
-Una parada no necesita "un clip de parada" y ya. Medido en este proyecto, al
-soltar el stick fallaban tres cosas a la vez, cada una con su dueño:
+A stop does not just need "a stop clip". Measured in this project, releasing the
+stick failed in three things at once, each with its own owner:
 
-1. El ciclo de piernas seguía girando a velocidad plena mientras el cuerpo
-   frenaba: el pie plantado se arrastra contra el suelo a la velocidad del
-   cuerpo. Dueño: el reloj de fase (se apaga con la frenada).
-2. La marcha se desvanecía hacia el idle en 0.18 s con el pie apoyado: 2.5 m/s
-   de derrape. Dueño: la salida de `_move_weight` a baja velocidad (0.05 s).
-3. La fase se congelaba a mitad de zancada: un pie plantado y otro colgando,
-   quietos, que se lee como maniquí. Dueño: la fase (asienta en un contacto).
+1. The leg cycle kept spinning at full speed while the body braked: the planted
+   foot drags against the ground at body speed. Owner: the phase clock (it shuts
+   off with braking).
+2. The walk faded to idle in 0.18 s with the foot planted: 2.5 m/s of skid. Owner:
+   the low-speed exit of `_move_weight` (0.05 s).
+3. The phase froze mid-stride: one foot planted and the other dangling, both
+   still, which reads as a mannequin. Owner: the phase (settles on a contact).
 
-Regla que salió de ahí: **un clip de absorción no recoloca los pies**. La primera
-versión del clip de frenada daba un paso adelante y arrastraba el apoyo 0.37 m
-hacia la postura neutra antes de que el paso desapareciera — peor que el
-defecto. El que decide dónde está el apoyo es el ciclo de locomoción que está
-saliendo; el clip de frenada sólo manda centro de masas, columna y brazos, y por
-eso su máscara excluye las piernas.
+Rule that came out of it: **an absorption clip does not reposition the feet**. The
+first version of the braking clip took a step forward and dragged the plant 0.37 m
+toward the neutral stance before the step disappeared - worse than the defect.
+What decides where the plant is, is the locomotion cycle that is playing out; the
+braking clip only drives center of mass, spine and arms, and that is why its mask
+excludes the legs.
 
-Al medir una parada, no midas la ventana de transición: ahí el apoyo cambia de
-pie y cualquier métrica de anclaje mide el cambio, no un defecto. Mide el
-asentamiento (fase en un contacto, pie apoyado, sin jitter residual).
+When measuring a stop, do not measure the transition window: there the plant
+changes foot and any anchoring metric measures the change, not a defect. Measure
+the settle (phase on a contact, foot planted, no residual jitter).
 
-## Assets: una textura junto a un GLB no se juzga por grep
+## Assets: a texture next to a GLB is not judged by grep
 
-Al limpiar, `rifle.glb` carga sus texturas por ruta **externa** (`rifle_0.png`
-…), aunque el GLB las embeba: el `.import` de Godot las resuelve al importar y
-un borrado "probado por grep" rompió el showcase. El smoke test lo cazó; el
-auditor no. Regla: para binarios (`.glb`, `.bin`, `.ttf`, `.blend`) se puede
-afirmar que nada los referencia; para texturas y audio, no — se comprueba
-borrando una copia, reimportando y corriendo `tools/bf test`. El auditor de
-`tools/audit-repo.mjs` aplica esa distinción y avisa de cuántos no juzga.
+When cleaning up, `rifle.glb` loads its textures by **external** path
+(`rifle_0.png` ...), even though the GLB embeds them: Godot's `.import` resolves
+them on import and a delete "proven by grep" broke the showcase. The smoke test
+caught it; the auditor did not. Rule: for binaries (`.glb`, `.bin`, `.ttf`,
+`.blend`) you may claim nothing references them; for textures and audio you may
+not - check by deleting a copy, reimporting and running `tools/bf test`. The
+`tools/audit-repo.mjs` auditor applies that distinction and warns how many it does
+not judge.
 
-## Medir dirección antes de tocar el reloj
+## Measure direction before touching the clock
 
 ```bash
 "$BLOCKFIRE_GODOT" --path . --script res://tools/probe-loco-axes.gd -- --weapon=rifle --sweep
 ```
 
-Sondeo a paso fijo de 60 Hz con el visual real: por cada rumbo imprime la huella
-del apoyo (cuánto se aleja el pie del punto donde aterrizó) y la deriva sobre el
-rumbo. Cardinal y diagonal deben quedar en pocos centímetros; una deriva
-monótona de más de ~0.1 m delata reloj descalibrado, no una pose fea. Sirve para
-cardinales, diagonales, barrido de rumbos, crouch y la inversión lateral
-(`reversal`), y `tools/probe-axis-pop.gd` separa salto de pose de cadencia alta
-en un cruce de eje.
+Fixed-step 60 Hz probe with the real visual: for each heading it prints the foot
+plant print (how far the foot drifts from the point where it landed) and the drift
+over the heading. Cardinal and diagonal must stay within a few centimeters; a
+monotonic drift over ~0.1 m reveals a miscalibrated clock, not an ugly pose. It
+serves for cardinals, diagonals, heading sweep, crouch and lateral reversal
+(`reversal`), and `tools/probe-axis-pop.gd` separates pose jump from high cadence
+at an axis crossing.
 
-Regla causal que salió de ahí: el reloj avanza `velocidad / zancada`, y en una
-mezcla la zancada es la proyección del retroceso de cada clip sobre el rumbo
-(`|eje·rumbo|` por clip). Promediar magnitudes escalares supone que cada clip
-avanza por el rumbo, y en diagonal eso acorta el paso: el apoyo derivaba 0.142 m
-por apoyo (≈2 m/s) con cardinales perfectos. Al proyectar, 0.002 m. Si el
-síntoma aparece sólo en diagonales, sospecha del reloj antes del clip; el
-laboratorio con `debug_manual_state` reproduce ese caso sin input.
+Causal rule that came out of it: the clock advances `speed / stride`, and in a
+blend the stride is the projection of each clip's backward motion onto the heading
+(`|axis.heading|` per clip). Averaging scalar magnitudes assumes every clip
+advances along the heading, and in diagonal that shortens the step: the plant
+drifted 0.142 m per plant (~2 m/s) with perfect cardinals. With projection,
+0.002 m. If the symptom appears only in diagonals, suspect the clock before the
+clip; the lab with `debug_manual_state` reproduces that case without input.

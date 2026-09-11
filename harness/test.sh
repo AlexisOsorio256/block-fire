@@ -88,6 +88,7 @@ for file in \
 	"$PRESETS/build/preset.yml" \
 	"$PRESETS/build/plugins/capabilities.js" \
 	"$PRESETS/build/plugins/blender-min.js" \
+	"$PRESETS/build/plugins/prompt.js" \
 	"$PRESETS/creator/agent.cordis.yml" \
 	"$PRESETS/creator/preset.yml" \
 	"$HERE/host/patch.cordis.yml" \
@@ -97,11 +98,13 @@ for file in \
 	"$HERE/web/lib/client.js" \
 	"$HERE/contract/contract.json" \
 	"$HERE/bin/blockfire" \
+	"$HERE/bin/context-report.mjs" \
 	"$HERE/bin/update.mjs" \
 	"$HERE/bin/session-report.mjs" \
 	"$HERE/install.sh" \
 	"$HERE/lib/check_composition.py" \
 	"$HERE/lib/contract_check.mjs" \
+	"$HERE/lib/isolated-host.mjs" \
 	"$HERE/lib/runtime.mjs" \
 	"$HERE/lib/runtime.sh" \
 	"$HERE/tests/plugins.test.mjs" \
@@ -148,7 +151,7 @@ fi
 
 # ── our own code ────────────────────────────────────────────────────────────
 echo "plugins"
-for file in "$PRESETS/build/plugins/capabilities.js" "$PRESETS/build/plugins/blender-min.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs"; do
+for file in "$PRESETS/build/plugins/capabilities.js" "$PRESETS/build/plugins/prompt.js" "$PRESETS/build/plugins/blender-min.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs" "$HERE/lib/isolated-host.mjs" "$HERE/bin/context-report.mjs"; do
 	if node --check "$file" 2>/dev/null; then ok "${file#"$REPO"/} parses"; else bad "${file#"$REPO"/} has a syntax error"; fi
 done
 if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; then

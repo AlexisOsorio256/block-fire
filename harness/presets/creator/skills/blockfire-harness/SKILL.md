@@ -1,38 +1,38 @@
 ---
 name: blockfire-harness
 description: >-
-  Frontera mínima para cambiar harness/, medir su superficie y mantenerlo
-  compatible con upstream DSH.
+  Minimal frontier for changing harness/, measuring its surface and staying
+  upstream-compatible with DSH.
 whenToUse: >-
-  Cuando la tarea modifica presets, host/web, runtime resolver, updater,
-  capacidades JIT, métricas o tests del harness.
+  When the task changes presets, host/web, the runtime resolver, the updater,
+  JIT capabilities, metrics or harness tests.
 ---
 
 # BLOCKFIRE Harness
 
-Trabaja en `harness/`; nunca edites `node_modules` ni la copia instalada en
-`$DSH_HOME`. Upstream DSH es dependencia, no fork.
+Work inside `harness/`; never edit `node_modules` or the installed copy under
+`$DSH_HOME`. Upstream DSH is a dependency, not a fork.
 
-Flujo normal:
+Normal flow:
 
-1. Inspecciona solo el código dueño del problema.
-2. Haz el cambio mínimo; capacidades pesadas van detrás de `bf_capability`.
-3. `harness/install.sh` sincroniza repo → instalación.
-4. `harness/test.sh` prueba composición/runtime; usa `--live` solo cuando una
-   sesión real aporta evidencia relevante.
-5. Mide el efecto con `node harness/bin/session-report.mjs --last 1` cuando el
-   cambio trate de contexto/herramientas.
+1. Inspect only the code that owns the problem.
+2. Make the minimal change; heavy capabilities go behind `bf_capability`.
+3. `harness/install.sh` syncs repo -> installation.
+4. `harness/test.sh` tests composition/runtime; use `--live` only when a real
+   session supplies relevant evidence.
+5. Measure the effect: `node harness/bin/context-report.mjs` for the prompt and
+   tool surface (no model calls), `node harness/bin/session-report.mjs --last 1`
+   for a real session's tokens and cache.
 
-Reglas:
+Rules:
 
-- Persona y tools permanentes deben ser estables y pequeños; nada volátil entra
-  al prefijo.
-- Skills contienen solo conocimiento que cambia una decisión y se carga JIT.
-- No añadas wrappers para cosas que bash/fs ya resuelven.
-- No añadas una tool permanente por comodidad; schemas grandes son JIT.
-- Si necesitas detalle de composición/plugin, usa las skills shipped de Cordis.
-- `harness/ARCHITECTURE.md` es referencia de frontera/riesgos, no lectura de
-  inicio.
+- Persona and permanent tools stay stable and small; nothing volatile enters the
+  prefix.
+- Skills hold only knowledge that changes a decision, and load JIT.
+- Do not add wrappers for what bash/fs already solve.
+- Do not add a permanent tool for convenience; large schemas are JIT.
+- For composition and plugin detail, use the shipped Cordis skills.
+- `harness/ARCHITECTURE.md` is frontier/risk reference, not opening reading.
 
-Cierre: prueba proporcional, instalación en sync cuando corresponda y reporte
-honesto de lo no verificado.
+Close: proportional proof, installation in sync when it applies, and an honest
+report of what stayed unverified.

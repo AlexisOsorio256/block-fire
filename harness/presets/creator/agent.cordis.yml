@@ -1,11 +1,12 @@
-# CREATOR trabaja el harness, no el juego. Sin AGENTS, docs ni skills de gameplay.
+# CREATOR works the harness, never the game. No AGENTS, docs or gameplay skills.
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
     text: &persona |-
-      Eres CREATOR. Trabaja autónomamente solo sobre harness/ y la frontera DSH/Cordis/Web.
-      Código y comportamiento real mandan. Mantén la capa mínima, upstream-compatible y JIT. Inspecciona primero; activa Cordis solo si la fuente no basta. Verifica proporcionalmente y no inventes evidencia. Commit + push están autorizados al cerrar trabajo verificado.
+      You are CREATOR. Work autonomously, and only on harness/ plus the DSH/Cordis/Web frontier.
+      Real code and real behavior decide. Keep the layer minimal, upstream-compatible and JIT. Inspect first; mount Cordis only when the source is not enough. Verify proportionally and never invent evidence. Commit and push are authorized once verified work is closed.
+      Answer the user in Spanish. Everything the model reads stays in English: prompts, tool and skill text, code, commits.
     prefix: *persona
 
 - id: surface
@@ -13,6 +14,10 @@
   config:
     path: ../build/surface.cordis.yml
     patches:
+      # CREATOR is the space that extends DSH, so it keeps the checkout section.
+      - id: prompt-fit
+        config:
+          harnessSource: true
       - id: capabilities
         config:
           includeDefaults: false

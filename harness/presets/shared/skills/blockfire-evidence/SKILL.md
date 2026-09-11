@@ -1,29 +1,28 @@
 ---
 name: blockfire-evidence
 description: >-
-  Elegir la evidencia mínima que realmente demuestra un cambio de BLOCKFIRE.
+  Pick the minimum evidence that actually proves a BLOCKFIRE change.
 whenToUse: >-
-  Cuando haya que decidir qué prueba basta para cerrar código, visuales,
-  animación, rendimiento o plataforma.
+  When deciding what proof is enough to close code, visuals, animation,
+  performance or platform work.
 ---
 
-# Evidencia proporcional
+# Proportional evidence
 
-Prueba el comportamiento que cambió; no ejecutes una checklist global por
-costumbre.
+Prove the behavior that changed; do not run a global checklist out of habit.
 
-- Lógica/reglas: test dirigido o `tools/bf test` si esa suite cubre el cambio.
-- Escena/input/runtime: QA del área afectada.
-- Presentación/animación: evidencia visual mirada + runtime relevante.
-- Android/plataforma: dispositivo físico cuando la conclusión dependa de él.
-- Rendimiento: medida antes/después.
-- Docs: coherencia con código dueño.
-- Assets: origen/licencia en `CREDITS.md`.
+- Logic/rules: a targeted test, or `tools/bf test` when that suite covers the change.
+- Scene/input/runtime: QA of the affected area.
+- Presentation/animation: visual evidence you actually looked at, plus the relevant runtime.
+- Android/platform: a physical device when the conclusion depends on it.
+- Performance: a before/after measurement.
+- Docs: consistency with the code that owns the behavior.
+- Assets: origin and license in `CREDITS.md`.
 
-Un test que no toca el cambio no es evidencia. Una captura no mirada tampoco.
-La suite completa, `qa touch` y build Android son gates de publicación o de
-cambios que realmente los atraviesan, no de cada commit.
+A test that does not touch the change is not evidence. Neither is a screenshot
+nobody looked at. The full suite, `qa touch` and an Android build are gates for
+release or for changes that really cross them, not for every commit.
 
-Reporte: ejecutado = afirma qué probó; no ejecutado = `SIN VERIFICAR`; deducido
-de logs/métricas = `INFERENCIA`. Commit + push pueden hacerse cuando la evidencia
-necesaria de esa tarea existe.
+Report: what ran states what it proved; what did not run is `SIN VERIFICAR`;
+what was deduced from logs or metrics is `INFERENCIA`. Commit and push are
+allowed once that task's required evidence exists.

@@ -1,20 +1,17 @@
 ---
 name: blockfire-android-qa
-description: >-
-  Verificación en Android físico cuando Linux no puede autorizar la conclusión.
-whenToUse: >-
-  Input táctil, layout/densidad real, rendimiento/estabilidad de dispositivo,
-  export/APK o bugs Android.
+description: "Load for touch input, real density, APK or Android bugs; verify on a physical device."
+whenToUse: "Touch input, real layout/density, device performance/stability, export/APK or Android bugs."
 ---
 
 # Android
 
-El teléfono físico es autoridad solo para conclusiones de plataforma/dispositivo.
-`tools/bf doctor` descubre adb/teléfono; no instales SDKs ni busques rutas a mano.
+The physical phone is authoritative only for platform/device conclusions.
+`tools/bf doctor` discovers adb/phone; do not install SDKs or hunt paths by hand.
 
-Flujo cuando aplica: `tools/bf build android` → instalar/lanzar con las tools del
-repo/adb → captura o vídeo **mirado** → logcat filtrado si falla → cerrar procesos
-propios. `captures/` es salida temporal.
+Flow when it applies: `tools/bf build android` -> install/launch with the repo
+tools/adb -> capture or video **watched** -> filtered logcat if it fails -> close
+your own processes. `captures/` is temporary output.
 
-Si no hay dispositivo, reporta la parte Android como `SIN VERIFICAR`; un APK que
-compila no demuestra input táctil, densidad real ni rendimiento.
+If there is no device, report the Android part as `SIN VERIFICAR`; a compiling APK
+proves no touch input, real density or performance.

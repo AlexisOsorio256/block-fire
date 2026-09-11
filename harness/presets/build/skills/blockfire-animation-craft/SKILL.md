@@ -1,63 +1,59 @@
 ---
 name: blockfire-animation-craft
-description: >-
-  Diagnóstico y mejora de animación, locomoción TPS y gamefeel: gameplay,
-  mezcla runtime o clip Blender, con evidencia visual comparable.
-whenToUse: >-
-  Cuando la tarea toca clips, rig, IK, poses, reload, locomoción o rigidez,
-  popping y sliding del movimiento; también si pide movimiento tipo Free Fire.
+description: "Load for clips, rig, IK, poses or reload; fix animation, TPS locomotion and gamefeel."
+whenToUse: "When the task touches clips, rig, IK, poses, reload, locomotion or stiffness, popping and sliding of movement; also if it asks for Free Fire-style movement."
 ---
 
-# Animación
+# Animation
 
-Fuente de verdad: `assets/animation_sources/<Clip>.blend`; el GLB es export. No
-edites `.glb`/`.import` a mano. `ReloadRifle` y `ReloadPistol` son
+Source of truth: `assets/animation_sources/<Clip>.blend`; the GLB is an export. Do
+not edit `.glb`/`.import` by hand. `ReloadRifle` and `ReloadPistol` are
 `CRAFT_LOCKED`: no `--rebuild`.
 
-Primero identifica dónde nace el defecto:
+First identify where the defect is born:
 
-- Input, velocidad o intención no llega: `game/player/player.gd` y
+- Input, speed or intent does not arrive: `game/player/player.gd` and
   `OperatorVisual.set_combat_state()` / `_read_motion_inputs()`.
-- Clip correcto aislado, pero transición/torso falla: `operator_motion.gd`.
-- Pose correcta pero cadencia o patinaje: el reloj de fase en
-  `operator_motion.gd` (avanza `velocidad / zancada`), no el clip. Mídelo antes
-  de tocar fórmulas con `tools/probe-loco-axes.gd` como dice la receta.
-- Pose final, montaje de arma o agarre: orden de capas/IK en `operator_visual.gd`.
-- El defecto existe en el clip aislado: edita su `.blend` en Blender.
+- Clip correct in isolation, but transition/torso fails: `operator_motion.gd`.
+- Pose correct but cadence or sliding: the phase clock in `operator_motion.gd`
+  (advances `speed / stride`), not the clip. Measure it before touching formulas
+  with `tools/probe-loco-axes.gd`, as the recipe says.
+- Final pose, weapon mount or grip: layer/IK order in `operator_visual.gd`.
+- Defect exists in the isolated clip: edit its `.blend` in Blender.
 
-En locomoción consulta [la receta de runtime](references/locomotion.md): incluye
-comandos, fases comparables y límites del laboratorio. Mira primero el defecto,
-plantea una causa comprobable y haz un cambio focal; vuelve a mirar la misma
-secuencia. Preserva velocidades y foot-lock salvo cambio de gameplay pedido.
-Dos intentos sin evidencia nueva son señal para revisar la hipótesis o entregar
-el caso a revisión, no para seguir afinando números a ciegas.
+For locomotion consult [the runtime recipe](references/locomotion.md): it includes
+commands, comparable phases and lab limits. Look at the defect first, state a
+testable cause and make one focal change; look at the same sequence again.
+Preserve speeds and foot-lock unless a gameplay change was requested. Two attempts
+with no new evidence are a signal to revise the hypothesis or hand the case to
+review, not to keep tuning numbers blindly.
 
-Para editar el clip, activa `bf_capability` con
+To edit the clip, enable `bf_capability` with
 `{"action":"on","capability":"blender"}`: `blender_exec` +
-`blender_screenshot`. Python también permite consultar escena, huesos y curvas;
-no hace falta el MCP completo para esas consultas. Si falta una capacidad real,
-apaga `blender` y activa `blender-full`; no conviven.
+`blender_screenshot`. Python also allows querying scene, bones and curves; the
+full MCP is not needed for those queries. If a real capability is missing, turn
+off `blender` and enable `blender-full`; they do not coexist.
 
-Los `*.blend` son rig puro: el viewport no tiene cuerpo y el render sale vacío.
-Para juzgar de verdad, ejecuta `exec(open('tools/bf_blender_body.py').read())`
-en la escena abierta (enlaza el operador real al rig del clip) y **renderiza**
-el ciclo con `bpy.ops.render.render` a varios fotogramas, no una pose suelta:
-`blender_screenshot` captura el viewport y no siempre refresca. Medir el clip
-también pide mirar la curva, no la pose: `Body.location` usa su **Y local** como
-eje vertical (la Z local es el avance), y leer el índice equivocado hace
-concluir que una curva plana "ya se aplica". Si el clip sale de `--rebuild`,
-revisa si le toca re-cocer brazos (`tools/bake_locomotion_arms.py`, solo
-SprintFwd y StrafeLeft) antes de exportar.
+`*.blend` files are pure rig: the viewport has no body and the render comes out
+empty. To really judge, run `exec(open('tools/bf_blender_body.py').read())`
+in the open scene (it links the real operator to the clip rig) and **render** the
+cycle with `bpy.ops.render.render` at several frames, not a single pose:
+`blender_screenshot` captures the viewport and does not always refresh. Measuring
+the clip also requires looking at the curve, not the pose: `Body.location` uses
+its **local Y** as the vertical axis (local Z is forward), and reading the wrong
+index makes you conclude a flat curve "is already applied". If the clip comes
+from `--rebuild`, check whether its arms need re-baking
+(`tools/bake_locomotion_arms.py`, SprintFwd and StrafeLeft only) before exporting.
 
-Guarda la fuente, exporta con `tools/bf blender <Clip>`, fuerza reimport Godot y
-mira el runtime/QA relevante antes de cerrar. Una captura no mirada ni un export
-sin runtime prueban calidad visual. Android solo cuando la conclusión dependa
-del dispositivo.
+Save the source, export with `tools/bf blender <Clip>`, force a Godot reimport and
+look at the relevant runtime/QA before closing. An unwatched capture or an export
+without runtime does not prove visual quality. Android only when the conclusion
+depends on the device.
 
-Si Blender MCP no está disponible, repórtalo; no sustituyas silenciosamente el
-craft interactivo por generación masiva.
+If the Blender MCP is unavailable, report it; do not silently replace interactive
+craft with mass generation.
 
-La imagen tiene que llegar al modelo: usa `read_image` para PNG de Godot y
-`blender_screenshot` para el viewport. Un path, un MP4 generado o un mensaje de
-imagen no disponible no permiten juzgar calidad. Si falla la ruta visual,
-continúa las pruebas numéricas útiles y deja el juicio visual sin verificar.
+The image must reach the model: use `read_image` for Godot PNGs and
+`blender_screenshot` for the viewport. A path, a generated MP4 or an
+image-not-available message does not allow judging quality. If the visual route
+fails, continue the useful numeric tests and leave the visual judgment unverified.

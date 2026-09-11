@@ -15,6 +15,18 @@
 `presets/build/surface.cordis.yml` posee las **18 tools base**. Ambos espacios la
 reutilizan.
 
+El prefijo permanente tiene un dueño explícito: `presets/build/plugins/prompt.js`
+se une al waterfall `system-prompt/assemble` dentro del scope de la sesión y
+devuelve el assembly que DSH usa tal cual — `renderPrompt()` y `header.tools`
+salen de ahí. Reescribe descripciones al hecho operativo en inglés, elimina las
+secciones `tool:*` que solo repetían una descripción (solo si esa tool existe),
+comprime las secciones largas que son casi todo prohibición y alinea el texto de
+sandbox con la política real (`approval:policy`): una sesión sin approvals no
+recibe instrucciones de escalar. Nunca toca `parameters`, y lo que no reconoce
+pasa intacto, así que un rename upstream degrada a "texto upstream", no a una
+regla perdida. `presets/build/plugins/prompt.js` es también el único lugar donde
+vive la política de idioma: el modelo lee inglés, el usuario recibe español.
+
 BUILD guarda su baseline mínimo dentro de la persona del preset: no monta
 `agent-instructions`, no depende de `AGENTS.md` y no obliga lecturas al iniciar.
 Sus skills de proyecto son JIT. Blender también es JIT: `blender` expone solo
@@ -24,6 +36,11 @@ CREATOR mantiene las mismas 18 tools base. No carga shared/game skills ni
 Blender; solo su skill de harness, las skills shipped de autoría Cordis y la
 capacidad `cordis` JIT. Shell, búsqueda y el subagente base cubren fetch/delegación
 sin pagar goals, fork, list-agents o web-fetch en cada request.
+
+El costo de ese prefijo se mide sin llamadas al modelo con
+`bin/context-report.mjs` (host aislado, `--details` por dueño) y se congela como
+techo en `tests/mount.mjs`. `bin/session-report.mjs` sigue siendo la lectura real
+de una sesión ya ocurrida.
 
 ## Runtime
 
@@ -90,3 +107,6 @@ storage domain para limpiarlo.
 - `danger-full-access` no es aislamiento completo.
 - Browser/Blender/Android necesitan evidencia real solo cuando la conclusión
   depende de ellos.
+- Lo que queda caro en el prefijo son los `parameters` de las tools (~8,7k) y las
+  descripciones del catálogo de skills shipped de Cordis (~775): comprimirlos
+  exige tocar schema o contenido upstream, no prosa propia.

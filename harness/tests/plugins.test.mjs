@@ -34,6 +34,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
 const CAPABILITIES = pathToFileURL(join(HARNESS, 'presets', 'build', 'plugins', 'capabilities.js')).href
 const BLENDER_MIN = pathToFileURL(join(HARNESS, 'presets', 'build', 'plugins', 'blender-min.js')).href
+const PROMPT = pathToFileURL(join(HARNESS, 'presets', 'build', 'plugins', 'prompt.js')).href
 const GUARD = pathToFileURL(join(HARNESS, 'host', 'guard.js')).href
 const UPDATE_CENTER = pathToFileURL(join(HARNESS, 'web', 'lib', 'index.js')).href
 
@@ -288,6 +289,124 @@ test('capabilities: a package that cannot load reports an actionable error', asy
   const result = await state.tools[0].execute({ action: 'on', capability: 'broken' }, sessionExec(ctx))
   assert.match(result, /could not load/)
   assert.match(result, /install\.sh/)
+})
+
+// ── prompt fit ──────────────────────────────────────────────────────────────
+//
+// `prompt.js` is a pure function over an assembled prompt, which makes it
+// testable without a host. The fixtures are the upstream texts this layer
+// actually meets — the bash description below is verbatim DSH 0.1.5-rc.2 — so
+// "terse" is asserted against reality rather than against a straw man.
+
+const UPSTREAM_BASH = 'Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later.'
+
+const UPSTREAM_GLOB = 'Find files whose paths match a glob pattern. Returns matching file paths — never directories — including hidden and ignored files (VCS metadata directories are excluded). Up to 100 paths come back in modification-time order; a larger result returns the first 100 paths in modification-time order, says so, and reports where the complete sorted list was saved. This tool does not enumerate directory entries.'
+
+/** One assembly shaped like the waterfall's, with the sections a preset really has. */
+function fitFixture({ descriptions = {}, sections = [], contexts = [] } = {}) {
+  return {
+    variables: {},
+    contexts: contexts.map(([name, text]) => ({ name, text })),
+    sections: sections.map(([name, text]) => ({ name, text })),
+    tools: Object.entries(descriptions).map(([name, description]) => ({
+      name,
+      description,
+      parameters: { type: 'object', properties: { [name]: { type: 'string' } }, required: [name] },
+    })),
+  }
+}
+
+const APPROVAL_ASK = ['approval:policy', 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.']
+const APPROVAL_NEVER = ['approval:policy', 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).']
+const DENIAL = '[sandbox: file access denied under'
+
+test('prompt: a known tool gets a terse English description and keeps its parameters', async () => {
+  const { fit } = await import(PROMPT)
+  const assembly = fitFixture({ descriptions: { bash: UPSTREAM_BASH, glob: UPSTREAM_GLOB, unknown_tool: 'Some upstream text about an unknown tool.' } })
+  const fitted = fit(assembly, { harnessSource: false })
+  const bash = fitted.tools.find(tool => tool.name === 'bash')
+  const glob = fitted.tools.find(tool => tool.name === 'glob')
+  assert(bash.description.length < UPSTREAM_BASH.length * 0.6,
+    `bash must shrink substantially (${UPSTREAM_BASH.length} -> ${bash.description.length})`)
+  assert(glob.description.length < UPSTREAM_GLOB.length * 0.8, 'glob must shrink')
+  for (const marker of ['[exit code: N]', 'workdir', 'run_in_background', 'job_output', 'job_kill', DENIAL, '$DSH_*']) {
+    assert(bash.description.includes(marker), `bash keeps ${marker} so the model recognizes it in results`)
+  }
+  assert.equal(fitted.tools.find(tool => tool.name === 'unknown_tool').description,
+    assembly.tools.find(tool => tool.name === 'unknown_tool').description,
+    'an unknown tool passes through untouched instead of being dropped')
+  assert.deepEqual(fitted.tools.map(tool => tool.parameters), assembly.tools.map(tool => tool.parameters),
+    'parameters are never touched')
+  assert.deepEqual(fitted.tools.map(tool => tool.name), assembly.tools.map(tool => tool.name), 'tool order is preserved')
+  assert(!/[áéíóúüñ¿¡]/.test(JSON.stringify(fitted.tools)), 'rewritten schemas stay ASCII English')
+  assert.equal(assembly.tools.find(tool => tool.name === 'bash').description, UPSTREAM_BASH,
+    'the input assembly is never mutated')
+})
+
+test('prompt: the sandbox wording follows the policy this session actually has', async () => {
+  const { fit } = await import(PROMPT)
+  const of = async contexts => fit(fitFixture({ descriptions: { bash: UPSTREAM_BASH }, contexts }), {})
+    .tools.find(tool => tool.name === 'bash').description
+  const ask = await of([APPROVAL_ASK])
+  const never = await of([APPROVAL_NEVER])
+  const unstated = await of([])
+  assert(ask.includes('sandbox_permissions') && ask.includes('justification'), 'an asking session keeps the escalation path')
+  assert(!ask.includes('Approval prompts are disabled in this session: actions'), 'upstream boilerplate is not repeated')
+  assert(never.includes('do not set `sandbox_permissions`'), 'a never-ask session is told a denial is final')
+  assert(!never.includes('retry the exact same command once'), 'a never-ask session is not taught an escalation it cannot get')
+  assert(unstated.includes('sandbox_permissions'), 'an unstated policy keeps the conditional wording')
+  assert(never.length < ask.length, 'the disabled policy is the shorter text')
+})
+
+test('prompt: a section that only restates a description goes away only when that tool is present', async () => {
+  const { fit } = await import(PROMPT)
+  const sections = [['tool:bash', 'Check the [exit code: N] marker.'], ['tool:glob', 'Use the glob tool.'], ['tool:subagent', 'Use subagent in the background.'], ['tool:jobs', 'Track every background job id.']]
+  const withTools = fit(fitFixture({ descriptions: { bash: UPSTREAM_BASH, glob: UPSTREAM_GLOB, subagent: 'Delegate a self-contained task to a subagent.' }, sections }), {})
+  assert.deepEqual(withTools.sections.map(section => section.name), ['tool:jobs'],
+    'redundant sections are dropped, unrelated ones survive')
+  const withoutTools = fit(fitFixture({ descriptions: { bash: UPSTREAM_BASH }, sections }), {})
+  assert.deepEqual(withoutTools.sections.map(section => section.name), ['tool:glob', 'tool:subagent', 'tool:jobs'],
+    'without the tool, upstream keeps owning the fact')
+})
+
+test('prompt: upstream prose is rewritten only when it is the text we recognize', async () => {
+  const { fit } = await import(PROMPT)
+  const upstream = "Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session."
+  const rewritten = fit(fitFixture({ sections: [['tool:edit', upstream]] }), {})
+  assert(rewritten.sections[0].text.length < upstream.length, 'recognized prose is rewritten shorter')
+  assert(rewritten.sections[0].text.includes('old_string'), 'the rewritten prose keeps the parameter semantics')
+  const renamed = fit(fitFixture({ sections: [['tool:edit', 'Entirely different upstream wording.']] }), {})
+  assert.equal(renamed.sections[0].text, 'Entirely different upstream wording.',
+    'unrecognized prose passes through instead of being replaced by a stale copy')
+  const dynamic = fit(fitFixture({ sections: [['app:web-surface', 'You are interacting with the user through the DeepSeek Harness Web GUI at http://127.0.0.1:9999. Change something.']] }), {})
+  assert.equal(dynamic.sections[0].text.includes('window.__DSH_BOOT__'), false, 'the web section needs its own marker to be rewritten')
+})
+
+test('prompt: the checkout section is dropped only where it is configured away', async () => {
+  const { fit } = await import(PROMPT)
+  const checkout = 'The DeepSeek Harness implementation checkout is at /tmp/dsh-checkout. The checkout location and the current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.'
+  const sections = [['harness:source', checkout], ['harness:identity', 'You are an AI agent powered by DeepSeek Harness.']]
+  assert.deepEqual(fit(fitFixture({ sections }), { harnessSource: false }).sections.map(section => section.name), ['harness:identity'])
+  const kept = fit(fitFixture({ sections }), { harnessSource: true }).sections
+  assert.deepEqual(kept.map(section => section.name), ['harness:source', 'harness:identity'])
+  assert(kept[0].text.includes('/tmp/dsh-checkout'), 'the checkout path survives the rewrite')
+  assert(kept[0].text.length < checkout.length, 'the kept section is compressed')
+})
+
+test('prompt: fitting is idempotent, and apply() joins the assemble waterfall', async () => {
+  const module = await import(PROMPT)
+  const assembly = fitFixture({ descriptions: { bash: UPSTREAM_BASH, glob: UPSTREAM_GLOB }, sections: [['tool:glob', 'Use the glob tool.']], contexts: [APPROVAL_ASK] })
+  const once = module.fit(assembly, { harnessSource: false })
+  assert.deepEqual(module.fit(once, { harnessSource: false }), once, 'a second pass changes nothing')
+
+  const listeners = []
+  module.apply({ on: (event, handler) => listeners.push({ event, handler }) }, { harnessSource: false })
+  assert.equal(listeners.length, 1)
+  assert.equal(listeners[0].event, 'system-prompt/assemble')
+  let called = 0
+  const fitted = await listeners[0].handler({}, {}, async () => { called += 1; return assembly })
+  assert.equal(called, 1, 'the listener continues the waterfall exactly once')
+  assert.equal(fitted.tools.find(tool => tool.name === 'bash').description.length < UPSTREAM_BASH.length, true)
 })
 
 // ── minimal Blender craft loop ──────────────────────────────────────────────

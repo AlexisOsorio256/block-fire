@@ -1,82 +1,70 @@
 #!/usr/bin/env node
 // Real Web host + both presets, in an ephemeral DSH_HOME. No model requests.
+//
+// Beyond "does it mount", this suite owns the two invariants of the model-facing
+// prefix that a thin layer can actually break: every registered tool still
+// reaches the model with untouched parameters, and the permanent prefix stays
+// inside its budget. The numbers behind the budget come from
+// `harness/bin/context-report.mjs`.
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { pathToFileURL, fileURLToPath } from 'node:url'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, cpSync, symlinkSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { resolveRuntime } from '../lib/runtime.mjs'
+import { fileURLToPath } from 'node:url'
+import { withIsolatedHost } from '../lib/isolated-host.mjs'
 
 const harness = fileURLToPath(new URL('../', import.meta.url))
-const runtime = resolveRuntime()
-assert.equal(runtime.ok, true, runtime.error)
-const modules = runtime.nodeModules
-const require = createRequire(join(modules, 'blockfire-mount.cjs'))
-const fromRuntime = async name => import(pathToFileURL(require.resolve(name)))
-const temporary = mkdtempSync(join(tmpdir(), 'blockfire-mount-'))
-process.env.DSH_HOME = temporary
-process.env.DSH_TELEMETRY_DISABLED = '1'
-let ctx
-try {
-  const { boot, loadOverlayPatches } = await fromRuntime('@deepseek-ai/dsh-app-boot')
-  const { provideCmdline } = await fromRuntime('@deepseek-ai/dsh-cmdline')
-  writeFileSync(join(temporary, 'cordis.yml'), '[]\n')
-  symlinkSync(modules, join(temporary, 'node_modules'), 'dir')
-  // Match the installed Web profile: upstream's profile manifest has no version.
-  // The guard is loaded through this symlink, not its repo-realpath.
-  const profile = join(temporary, 'profile')
-  mkdirSync(profile)
-  writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'dsh-profile-web', private: true }))
-  symlinkSync(join(harness, 'host'), join(profile, 'blockfire'), 'dir')
-  cpSync(join(harness, 'presets'), join(temporary, 'presets'), { recursive: true })
-  for (const space of ['build', 'creator']) symlinkSync(modules, join(temporary, 'presets', space, 'node_modules'), 'dir')
+const repo = resolve(harness, '..')
 
-  const fixture = join(temporary, 'probe.mjs')
-  writeFileSync(fixture, `export const inject = ['tools'];
+/**
+ * Permanent-prefix ceiling per space, in characters: system prompt + tool
+ * schemas, measured with `harness/bin/context-report.mjs`. Raising a ceiling is
+ * a deliberate decision with a measurement attached, never a silent side effect
+ * of adding a section or a tool.
+ */
+const PREFIX_BUDGET = { build: 17000, creator: 17000 }
+
+/**
+ * Sections the prompt layer must have removed by the time the model sees the
+ * prompt: each one only restated a tool description. If upstream renames one,
+ * the layer degrades to pass-through — safe, but a silent budget leak — so the
+ * suite fails here instead of discovering it months later.
+ */
+const DROPPED_SECTIONS = ['tool:bash', 'tool:glob', 'tool:grep', 'tool:subagent']
+
+await withIsolatedHost({
+  harness,
+  beforeBoot({ temporary }) {
+    writeFileSync(join(temporary, 'probe.mjs'), `export const inject = ['tools'];
 export function apply(ctx) {
   ctx.effect(() => ctx.tools.register({name:'mcp__probe__ping', description:'Lifecycle fixture',
     parameters:{type:'object',properties:{}}, output:{schema:{type:'string'},render:()=>[]},
     execute:async()=> 'pong'}));
 }`)
-  const failFixture = join(temporary, 'probe-fail.mjs')
-  writeFileSync(failFixture, `export function apply(ctx) {
+    writeFileSync(join(temporary, 'probe-fail.mjs'), `export function apply(ctx) {
   ctx.effect(() => ctx.tools.register({name:'mcp__fail__ping', description:'Partial mount fixture',
     parameters:{type:'object',properties:{}}, output:{schema:{type:'string'},render:()=>[]},
     execute:async()=> 'pong'}));
   throw new Error('probe start failure');
 }`)
-  appendFileSync(join(temporary, 'presets/build/surface.cordis.yml'),
-    `\n  config:\n    capabilities:\n      probe:\n        package: ${JSON.stringify(fixture)}\n        config:\n          serverName: probe\n` +
-    `      fail:\n        package: ${JSON.stringify(failFixture)}\n        config:\n          serverName: fail\n`)
-
-  const load = file => loadOverlayPatches('blockfire-mount', file)
-  const ownPatch = load(join(harness, 'host/patch.cordis.yml'))
-  for (const patch of ownPatch) for (const row of patch.insert ?? []) {
-    if (row.id === 'blockfire-guard') row.name = pathToFileURL(join(profile, 'blockfire/guard.js')).href
-    if (row.id === 'blockfire-update-center') row.name = pathToFileURL(join(harness, 'web/lib/index.js')).href
-  }
-  const patches = [
-    ...load(join(modules, '@deepseek-ai/dsh-base/cordis.patch.yml')),
-    ...load(join(modules, '@deepseek-ai/dsh-web-app/cordis.patch.yml')),
-    ...ownPatch,
-    { id: 'agent-presets', config: { default: 'build', includeShippedRoot: false,
-      includeUserRoot: false, roots: [{ path: join(temporary, 'presets'), trust: 'user' }] } },
-    { id: 'session-telemetry-otel', disabled: true },
-    { id: 'webserver', config: { host: '127.0.0.1', port: 0 } },
-    { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext: true } },
-  ]
-  if (process.argv.includes('--missing-host-service')) patches.push({ id: 'subagent-model-selection-settings', disabled: true })
-  ctx = await boot('blockfire-mount', join(temporary, 'cordis.yml'), patches,
-    host => provideCmdline(host, { args: ['--no-open'], exit: code => { throw new Error(`unexpected exit ${code}`) } }),
-    pathToFileURL(`${modules}/`).href)
-
+    appendFileSync(join(temporary, 'presets/build/surface.cordis.yml'),
+      `\n  config:\n    capabilities:\n      probe:\n        package: ${JSON.stringify(join(temporary, 'probe.mjs'))}\n        config:\n          serverName: probe\n` +
+      `      fail:\n        package: ${JSON.stringify(join(temporary, 'probe-fail.mjs'))}\n        config:\n          serverName: fail\n`)
+  },
+  patches: process.argv.includes('--missing-host-service')
+    ? [{ id: 'subagent-model-selection-settings', disabled: true }]
+    : [],
+}, async ({ ctx, modules, runtime, fromRuntime }) => {
   const contract = JSON.parse(readFileSync(join(harness, 'contract/contract.json'), 'utf8'))
   const { scopeOf } = await fromRuntime('@deepseek-ai/dsh-scope')
+  const { renderPrompt, renderContextSnapshot } = await fromRuntime('@deepseek-ai/dsh-system-prompt')
+  const mount = (space, sessionId) => ctx.agents.create({
+    sessionId,
+    meta: { cwd: repo, agentPreset: space },
+    setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, space) },
+  })
+
   for (const space of ['build', 'creator']) {
-    const handle = await ctx.agents.create({ sessionId: `blockfire-mount-${space}`,
-      meta: { cwd: resolve(harness, '..'), agentPreset: space },
-      setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
+    const handle = await mount(space, `blockfire-mount-${space}`)
     try {
       const scope = scopeOf(handle.agent.ctx)
       const schemas = ctx.tools.schemas(scope)
@@ -100,6 +88,36 @@ export function apply(ctx) {
         assert.doesNotMatch(listed, /blender/, 'CREATOR capabilities are harness-only')
       }
       console.log(`  ok    live mount ${space}: ${schemas.length} tools, ${JSON.stringify(schemas).length} schema chars, ${skills.length} skills (DSH ${runtime.version})`)
+
+      // What the model is actually sent, assembled the way the loop assembles it.
+      const assembly = await ctx.systemPrompt.assemble({ scope, agent: handle.agent })
+      const byName = new Map(schemas.map(tool => [tool.name, tool]))
+      for (const tool of assembly.tools) {
+        const registered = byName.get(tool.name)
+        assert(registered !== undefined, `${space}: assembled tool ${tool.name} is not registered`)
+        assert.deepEqual(tool.parameters, registered.parameters,
+          `${space}: the prompt layer must never touch ${tool.name} parameters`)
+      }
+      const system = renderPrompt(assembly)
+      const prefix = system.length + JSON.stringify(assembly.tools).length
+      assert(!/[áéíóúüñ¿¡]/i.test(system), `${space}: the model-facing prompt must be English (accented characters found)`)
+      assert(!/[áéíóúüñ¿¡]/i.test(JSON.stringify(assembly.tools)), `${space}: tool schemas must be English`)
+      assert(assembly.tools.some(tool => tool.name === 'bash'), `${space}: bash survives the prompt budget`)
+      const bash = assembly.tools.find(tool => tool.name === 'bash').description
+      for (const marker of ['[exit code: N]', 'workdir', 'run_in_background']) {
+        assert(bash.includes(marker), `${space}: the compressed bash description must keep ${marker} so results stay recognizable`)
+      }
+      assert(bash.length < 1200, `${space}: the bash description must stay fitted (${bash.length} chars) — upstream wording is back, so the prompt row stopped matching`)
+      for (const name of DROPPED_SECTIONS) {
+        assert(!assembly.sections.some(section => section.name === name),
+          `${space}: section ${name} only restates a description and must be gone from the assembled prompt`)
+      }
+      assert(assembly.sections.every(section => typeof section.text === 'string' && section.name.length > 0),
+        `${space}: every assembled section keeps its name and text`)
+      assert(prefix <= PREFIX_BUDGET[space],
+        `${space}: permanent prefix ${prefix} chars exceeds its ${PREFIX_BUDGET[space]} budget — measure with harness/bin/context-report.mjs`)
+      console.log(`  ok    ${space} prompt fitted: system ${system.length} + schemas ${JSON.stringify(assembly.tools).length} = ${prefix} chars (budget ${PREFIX_BUDGET[space]}), context ${renderContextSnapshot(assembly).length}`)
+
       // Exercise the official adapter's pre-dispatch boundary without HTTP or keys.
       const extensions = ctx.get('deepseekLlmApiExtensions')
       assert(extensions, 'DeepSeek request extension registry is mounted')
@@ -118,9 +136,7 @@ export function apply(ctx) {
 
       if (space === 'build') {
         const router = ctx.tools.get('bf_capability', scope)
-        const sibling = await ctx.agents.create({ sessionId: 'blockfire-mount-sibling',
-          meta: { cwd: resolve(harness, '..'), agentPreset: space },
-          setup: async agentCtx => { await ctx.agentPresets.mount(agentCtx, space) } })
+        const sibling = await mount(space, 'blockfire-mount-sibling')
         try {
           const call = action => router.execute({ action, capability: 'probe' }, { agent: handle.agent })
           for (let cycle = 0; cycle < 2; cycle++) {
@@ -161,7 +177,7 @@ export function apply(ctx) {
   }
 
   const resumeSetup = async agentCtx => { await ctx.agentPresets.mount(agentCtx, 'build') }
-  const first = await ctx.agents.create({ sessionId: 'blockfire-mount-resume', meta: { cwd: resolve(harness, '..'), agentPreset: 'build' }, setup: resumeSetup })
+  const first = await mount('build', 'blockfire-mount-resume')
   const router = ctx.tools.get('bf_capability', scopeOf(first.agent.ctx))
   try {
     assert.match(await router.execute({ action: 'on', capability: 'probe' }, { agent: first.agent }), /activated/)
@@ -174,6 +190,4 @@ export function apply(ctx) {
     assert.match(await router.execute({ action: 'off', capability: 'probe' }, { agent: resumed.agent }), /deactivated/)
   } finally { await resumed.dispose() }
   console.log('  ok    session close releases the capability: same-id session starts OFF, re-activates')
-} finally {
-  try { await ctx?.fiber.dispose() } finally { rmSync(temporary, { recursive: true, force: true }) }
-}
+})
