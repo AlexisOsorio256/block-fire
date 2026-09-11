@@ -268,7 +268,13 @@ func evaluate(delta: float) -> void:
 	_move_weight = move_toward(_move_weight, smoothstep(0.08, 0.65, speed), delta / (0.11 if speed > 0.15 else 0.18))
 	_crouch_weight = move_toward(_crouch_weight, 1.0 if crouched else 0.0, delta / (0.19 if crouched else 0.24))
 	if speed > 0.15:
-		_direction = _direction.lerp(Vector2(local_velocity.x, local_velocity.z).normalized(), 1.0 - exp(-18.0 * delta)).normalized()
+		var wanted := Vector2(local_velocity.x, local_velocity.z).normalized()
+		var turn := wrapf(wanted.angle() - _direction.angle(), -PI, PI)
+		# Normalized lerp cannot leave an exactly opposite unit vector. Turn
+		# through the forward gait on lateral reversals, preserving cycle phase.
+		if _direction.dot(wanted) < -0.9999 and absf(_direction.x) > 0.99:
+			turn = PI if _direction.x < 0.0 else -PI
+		_direction = _direction.rotated(turn * (1.0 - exp(-18.0 * delta)))
 	# Clase de velocidad: gameplay decide, la animación sólo la consume.
 	var walk_speed := maxf(declared_speed(LOCO_WALK), 0.1)
 	var sprint_speed := maxf(declared_speed(LOCO_SPRINT), walk_speed)

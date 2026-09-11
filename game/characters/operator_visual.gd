@@ -67,11 +67,13 @@ static var WEAPON_CONFIG := {
 		"length": 0.92,
 		"pivot": Vector3(0.0, -0.10, -0.21),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
-		"ready": Vector3(-0.10, -0.06, 0.20),
-		"aim": Vector3(-0.08, 0.05, 0.26),
+		"ready": Vector3(-0.10, -0.06, 0.10),
+		"aim": Vector3(-0.08, -0.025, 0.17),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
-		"foregrip": Vector3(0.0, 0.06, 0.20),
+		# Underside of the rifle handguard, measured in the normalized mesh.
+		"foregrip": Vector3(0.0, 0.175, 0.28),
+		"support_wrist": Vector3(0.040, -0.025, -0.065),
 		"muzzle": Vector3(0.0, 0.0, 0.46),
 	},
 	"pistol": {
@@ -648,6 +650,24 @@ func _make_fist(fist_name: String, at: Vector3, skin_material: StandardMaterial3
 	var fist := Node3D.new()
 	fist.name = fist_name
 	fist.position = at
+	if mirrored and equipped_weapon_id == "rifle":
+		# Cupped support: palm below the handguard, fingers up one side and
+		# thumb on the other. A solid cylinder here filled the weapon with skin.
+		var parts := [
+			[Vector3(0.076, 0.025, 0.085), Vector3(0.0, -0.017, -0.005)],
+			[Vector3(0.015, 0.050, 0.025), Vector3(0.039, 0.020, -0.021)],
+		]
+		for z in [-0.030, -0.008, 0.014, 0.036]:
+			parts.append([Vector3(0.014, 0.052, 0.018), Vector3(-0.037, 0.018, z)])
+		for part: Array in parts:
+			var surface := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = part[0]
+			surface.mesh = box
+			surface.position = part[1]
+			surface.material_override = skin_material
+			fist.add_child(surface)
+		return fist
 	var palm := MeshInstance3D.new()
 	var palm_mesh := CylinderMesh.new()
 	# Canal de agarre a lo largo del cañón: el arma pasa por dentro del puño.
@@ -1160,6 +1180,13 @@ func _solve_arm_ik(side: String, target_world: Vector3, pole: Vector3) -> void:
 	if upper < 0 or lower < 0 or wrist < 0:
 		return
 	var target := skeleton.global_transform.affine_inverse() * target_world
+	var config: Dictionary = WEAPON_CONFIG.get(equipped_weapon_id, {})
+	if side == "L" and config.has("support_wrist"):
+		# The cupped palm has a fixed wrist socket in weapon space. Solving
+		# that socket keeps the forearm attached through ADS and lateral lean.
+		target = skeleton.global_transform.affine_inverse() * (target_world + weapon_mount.global_basis * (config.support_wrist as Vector3))
+		_two_bone_ik(upper, lower, wrist, target, pole)
+		return
 	# La malla de la mano sobresale ~7 cm del hueso de muñeca: el IK apunta a
 	# la PALMA (objetivo retrocedido a lo largo del brazo), no a la muñeca,
 	# para que el arma caiga dentro de la mano y no delante de los dedos.

@@ -45,6 +45,18 @@ m/s. `tools/bf qa reload`: PASS, aunque el probe avisa de recursos vivos al
 salir. Pendiente visual: manos de apoyo toscas y rigidez del strafe.
 Android de este pulido: SIN VERIFICAR (sesión limitada a animación en Linux).
 
+Pulido de apoyo/strafe sobre `9f9818e`: mano izquierda del rifle en el
+guardamanos con palma cóncava y socket de muñeca explícito; contacto palma a
+superficie medida 78.364→2.033 mm. Ajustados montaje/ADS para alcance del rig.
+Ambos strafes tienen inclinación lateral y contrapeso en fuentes Blender;
+piernas/pies/tiempos idénticos y bucles 0.0. Corregido en OperatorMotion el
+bloqueo de interpolación al invertir exactamente izquierda→derecha.
+Final: `tools/bf test` PASS (296 smoke + animation_layers); foot slide
+walk/sprint/left/right 0.12/0.01/0.17/0.109 m/s; socket strafe ~0 mm y
+alineación del arma 1.0. Capturas comparadas e inversión final inspeccionadas
+en `captures/support-strafe/`; receta y medidas en `ANIMATION_HANDOFF.md`.
+Sigue siendo una mano estilizada; puño derecho heredado tosco. Sin Android.
+
 ## P0 técnico
 
 1. **`OperatorVisual` sigue siendo el archivo más grande** (1331 líneas).

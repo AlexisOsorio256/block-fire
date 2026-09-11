@@ -155,6 +155,27 @@ func run() -> void:
 	var slide_side := _measure_slide(v, m, feet, Vector3(-4.8,0,0), false)
 	print("FOOT_SLIDE walk=%.2f (f%d) sprint=%.2f (f%d) strafe=%.2f (f%d) m/s (peor fotograma de aterrizaje)" % [slide_walk.worst, slide_walk.frame, slide_sprint.worst, slide_sprint.frame, slide_side.worst, slide_side.frame])
 	check(slide_side.worst < 0.55, "No horizontal foot slide at strafe 4.8 (worst %.2f m/s)" % slide_side.worst)
+	var slide_right := _measure_slide(v, m, feet, Vector3(4.8,0,0), false)
+	check(slide_right.worst < 0.55, "No horizontal foot slide at right strafe 4.8 (worst %.2f m/s)" % slide_right.worst)
+	# Authored lateral lean must not pull the support wrist away from its palm
+	# or rotate the chest-mounted barrel away from the actor's aim direction.
+	v.set_equipped_weapon("rifle")
+	m.reset()
+	var socket_error := 0.0
+	var barrel_alignment := 1.0
+	for direction in [-4.8, 4.8]:
+		m.local_velocity = Vector3(direction, 0, 0)
+		for ads in [false, true]:
+			m.aiming = ads
+			for i in 120:
+				v._process(1.0 / 60.0)
+				var wrist := v.skeleton.global_transform * v.skeleton.get_bone_global_pose(v.skeleton.find_bone("Wrist.L")).origin
+				var socket := v._left_fist.global_position + v.weapon_mount.global_basis * (OperatorVisual.WEAPON_CONFIG.rifle.support_wrist as Vector3)
+				socket_error = maxf(socket_error, wrist.distance_to(socket))
+				barrel_alignment = minf(barrel_alignment, v.weapon_mount.global_basis.z.normalized().dot(v.model_root.global_basis.z.normalized()))
+	print("STRAFE_GRIP socket_mm=%.3f barrel_alignment=%.6f right_slide=%.3f m/s" % [socket_error * 1000.0, barrel_alignment, slide_right.worst])
+	check(socket_error < 0.020, "Support wrist stays attached through left/right strafe and ADS")
+	check(barrel_alignment > 0.9999, "Lateral body lean preserves barrel orientation")
 	# Numerical reach and singularity guard across all real weapon configurations.
 	for weapon in OperatorVisual.WEAPON_IDS:
 		v.set_equipped_weapon(weapon)

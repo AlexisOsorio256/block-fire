@@ -15,7 +15,7 @@ func run() -> void:
 	v.set_process(false)
 	v.debug_manual_state = true
 	var m := v.motion
-	print("%-9s %-7s %8s %8s %8s %8s %8s" % ["weapon", "state", "min_elbow", "max_elbow", "max_flip", "hyperext", "wrist_err"])
+	print("%-9s %-7s %8s %8s %8s %8s %8s %10s" % ["weapon", "state", "min_elbow", "max_elbow", "max_flip", "hyperext", "wrist_err", "socket_err"])
 	for weapon: String in OperatorVisual.WEAPON_IDS:
 		v.set_equipped_weapon(weapon)
 		for state: String in STATES:
@@ -29,6 +29,7 @@ func run() -> void:
 			var max_flip := 0.0
 			var max_hyper := 0.0
 			var worst_wrist := 0.0
+			var worst_socket := 0.0
 			var previous_plane := {"L": Vector3.ZERO, "R": Vector3.ZERO}
 			for frame in 240:
 				if state == "RELOAD":
@@ -59,6 +60,17 @@ func run() -> void:
 					if side == "L" and is_instance_valid(v._left_fist):
 						var wrist_world := v.skeleton.global_transform * w
 						worst_wrist = maxf(worst_wrist, wrist_world.distance_to(v._left_fist.global_position))
-			print("%-9s %-7s %8.1f %8.1f %8.1f %8.3f %8.3f" % [weapon, state, min_elbow, max_elbow, max_flip, max_hyper, worst_wrist])
+						var config: Dictionary = OperatorVisual.WEAPON_CONFIG[weapon]
+						if config.has("support_wrist"):
+							var socket := v._left_fist.global_position + v.weapon_mount.global_basis * (config.support_wrist as Vector3)
+							worst_socket = maxf(worst_socket, wrist_world.distance_to(socket))
+			print("%-9s %-7s %8.1f %8.1f %8.1f %8.3f %8.3f %10.4f" % [weapon, state, min_elbow, max_elbow, max_flip, max_hyper, worst_wrist, worst_socket])
+			if weapon == "rifle" and state == "HIP":
+				# Reference measured on the normalized rifle mesh: underside of the
+				# rear handguard. AABB clearance is a contact proxy; inspect the hand too.
+				var contact := Vector3(0.0, 0.172533, 0.28)
+				var palm := v._left_fist.get_child(0) as MeshInstance3D
+				var bounds := (v.weapon_mount.global_transform.affine_inverse() * palm.global_transform) * palm.get_aabb()
+				print("RIFLE_PALM_HANDGUARD clearance_mm=%.3f" % (1000.0 * contact.distance_to(contact.clamp(bounds.position, bounds.end))))
 	v.free()
 	quit(0)
