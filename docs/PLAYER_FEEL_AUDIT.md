@@ -100,6 +100,8 @@ Commands (use the Godot binary found by `tools/bf doctor`):
   displaces Player/Bot. One clip clock and generated stride metadata unchanged.
 - Remeasured pose signature **1044286260**, unchanged. Future intentional pose
   work may change it, but must explain why; this camera patch must not.
+  Current valid signature after aim/mount work: **`1135775949`** (was
+  `3900121176`).
 - Steady slide baseline walk/sprint/left/right ≈0.01 / 0.13 / 0.01 / 0.005 m/s.
   Existing test ceilings are looser (0.40 / 1.20 / 0.55 / 0.55); do not mistake
   merely passing those ceilings for preserving current quality.
@@ -390,3 +392,141 @@ The test app and adb daemon started for this task were stopped.
 
 Start with existing code/tests, not another broad audit. Commit each verified
 polish. Preserve speeds 4.8/7.0/2.6 and all foot/phase/FOV gates above.
+
+## Shot line, chest assist and weapon mount closed
+
+Three measured defects were reproduced, fixed and verified in this order.
+
+**1. The shot did not land where the reticle points.** The muzzle ray started at
+the real barrel but converged on a point at full range, so the measured 0.77 m
+muzzle-to-camera axis offset became the miss distance at every normal range:
+a target whose chest or head was under the reticle took 0/8 hits at
+3.5/10/25 m, and headshots were impossible. The muzzle now fires at the first
+obstacle the aim ray covers and still traces the whole segment from the barrel,
+so cover in front of the muzzle keeps blocking. `CONVERGENCE_BACKSTOP` (0.02 m)
+keeps an impact that lands exactly on a surface inside the segment: without it,
+1 of 3 shots found nothing.
+
+**2. The chest assist blocked deliberate head aim.** The ADS/fire rotational
+assist was a magnet: a sustained drag stalled 2.07 deg above the torso point
+(head unreachable at every tested range) and the camera moved with the thumb at
+rest (-0.87/-0.64/-0.57 deg in 1.5 s). It is now grip resistance on the
+player's own drag (35% slower on the torso line, exactly zero with no thumb
+input, none during a deliberate flick), and the direction assist no longer
+bends a shot whose reticle already covers the target.
+
+`tools/probe-aim-assist.gd` is in `tools/test.sh`: real BlockfireBot target,
+real physics callbacks, real weapon path. Same probe before the fixes: 18
+failures; after: 0.
+
+```text
+ASSIST_FREE drag_px=6 step_deg=0.7200 expected=0.7200
+ASSIST_DRAG distance=3.5 window_deg=1.0000 fast_ticks=43 fast_error=0.2728 slow_ticks=126 slow_error=0.4916
+ASSIST_REST distance=3.5 head_error_start=0.4916 head_error_end=0.4916 pitch_drift=0.0000 yaw_drift=0.0000
+ASSIST_ADHESION distance=3.5 drag_px=6 torso_step_deg=0.3370 free_step_deg=0.5184 slowdown=0.3499
+ASSIST_SHOT distance=3.5 aim=head shots=8 hits=8 heads=8 missed=0 muzzle_offset_m=0.7844
+ASSIST_SHOT distance=3.5 aim=chest shots=8 hits=8 heads=0 missed=0
+ASSIST_NEAR_MISS distance=3.5 miss_raw_deg=5.3072 miss_assisted_deg=1.7669 hits=8 heads=0
+ASSIST_COVER distance=3.5 wall_at=1.8 shots=4 hits=0
+ASSIST_DRAG distance=10.0 window_deg=0.9420 fast_ticks=15 fast_error=0.2962 slow_ticks=44 slow_error=0.3867
+ASSIST_SHOT distance=10.0 aim=head shots=8 hits=8 heads=8 missed=0 muzzle_offset_m=0.7821
+ASSIST_SHOT distance=10.0 aim=chest shots=8 hits=8 heads=0 missed=0
+ASSIST_NEAR_MISS distance=10.0 miss_raw_deg=2.5464 miss_assisted_deg=0.8042 hits=8 heads=0
+ASSIST_DRAG distance=25.0 window_deg=0.4197 fast_ticks=6 fast_error=0.1909 slow_ticks=18 slow_error=0.1718
+ASSIST_SHOT distance=25.0 aim=head shots=8 hits=8 heads=8 missed=0 muzzle_offset_m=0.7814
+ASSIST_SHOT distance=25.0 aim=chest shots=8 hits=8 heads=0 missed=0
+ASSIST_NEAR_MISS distance=25.0 miss_raw_deg=1.1518 miss_assisted_deg=0.3538 hits=8 heads=0
+ASSIST_COVER distance=25.0 wall_at=12.5 shots=4 hits=0
+AIM_ASSIST: failures=0
+```
+
+Without the fixes the same probe reported: drag never reached the head
+(fast_error 8.19/3.00/0.51 deg), rest drift -0.87/-0.64/-0.57 deg, and 8/8
+missed shots on both head and chest aim at 3.5/10 m (6-7 of 8 at 25 m).
+
+**3. Weapons were held by the wrong part and fired from inside the barrel.**
+The mount transform was the only thing ever verified, and it was aligned while
+the meshes were not: the pistol sat 8.2 cm from the hand that should hold it
+(the character gripped the front of the frame, so the pistol read as held
+backwards) and the SMG 4.9 cm. Pivots derived from the mesh (lowest rear vertex
+cluster = grip) bring both to 0.010/0.017 m, the same order as rifle 0.016 and
+shotgun 0.015. The muzzle marker, which is the tracer origin, the muzzle flash
+and the hitscan origin, sat 0.10-0.23 m inside the barrel on all four weapons;
+markers now sit 0.022-0.027 m inside the mesh crown.
+
+```text
+AUDIT rifle    z=[-0.228, 0.692] muzzle_cfg_z=0.670
+AUDIT pistol   z=[-0.036, 0.234] muzzle_cfg_z=0.210 (was pivot (0,-0.06,0.07), tip 0.234 vs 0.13)
+AUDIT shotgun  z=[-0.263, 0.787] muzzle_cfg_z=0.760
+AUDIT smg      z=[-0.176, 0.444] muzzle_cfg_z=0.420
+```
+
+A fourth pass rendered each mounted weapon with the MOUNT's own axes drawn
+(X red, Y green, Z blue, camera along -X so +Z is screen-right): that is what
+settled orientation for good, because mount-basis checks and mass heuristics
+both passed while the SMG's buttstock sat on the +Z side and its muzzle on -Z.
+The MPX is now mounted with `asset_rot = (0, 180, 0)` and its muzzle marker
+moved from the stock end to the real crown (0.15, mesh tip 0.176); rifle,
+pistol and shotgun were re-checked the same way and are correct. When a render
+already shows the defect, look at the render and fix it: proving it in numbers
+first cost most of this session.
+
+Barrel alignment (0.000000 deg at -78/-45/0/+45/+78 for four weapons), wrist
+sockets (max 0.0055 mm), reload hand path (rifle 0.365/0.410 m, pistol
+0.197/0.218 m) and foot invariants are unchanged. Pose oracle moves from
+`3900121176` to **`1135775949`** because the weapon really is somewhere else
+relative to the hand now: intentional, not a refactor.
+
+## Tooling hygiene and the current reference numbers
+
+Four tools quit with playbacks still live in the audio server and reported
+"N ObjectDB instances were leaked" plus "resources still in use"
+(qa_touch 52/8, probe-reload-hand 58/6, probe-aim-coordination 10-14/4-6);
+`tools/probe_teardown.gd` pauses the tree, stops every AudioStreamPlayer(3D)
+and lets the audio server drain before `quit()`. All four now exit clean, with
+qa_touch PASS (0 fallos) and reload-hand PASS.
+
+`probe-reload-hand` measured through real frame pacing, so the same pose moved
+up to 0.03 m between runs. It now freezes automatic processing and advances
+the layer with a fixed 1/60 s step while holding the sampled phase: rifle
+0.364/0.409 m and pistol 0.197/0.218 m, identical across runs (24 settle steps,
+verified equal to 90). The previous documented numbers (rifle 0.266/0.290,
+pistol 0.157/0.187) came from the frame-paced fixture and are superseded.
+
+`probe-aim-coordination` re-asserts the thumb state every tick: a windowed run
+can receive focus-out, Player clears combat input there, and the fixture used
+to lose the aim layer at negative pitch (2 failures, windowed only).
+
+Probe fixtures are not the runtime. Known ways they lie, all hit this session:
+audio playbacks left at exit, `CameraFX` shake rotating the camera between
+ticks, focus-out clearing combat input, a dead bot silently dropping out of
+assist target selection, an out-of-tree node ignoring `global_position`, and a
+wall spawned inside the player pushing it away.
+
+## Android on device (SM-S901E, R5CT403MXZJ)
+
+Debug APK built, installed (incremental) and launched; FFA live on device with
+HUD, health, ammo and touch controls; ADS toggles (zoom + centre reticle);
+fire accepted; weapon switch accepted; logcat reported 0 Godot errors or
+warnings over the session; the game was force-stopped afterwards and captures
+were inspected (`captures/aim-assist/`). The rifle in the character's hands on
+device reads right side up with the magazine below and the stock at the
+shoulder.
+
+**SIN VERIFICAR on device:** touch-to-camera latency, thumb comfort,
+simultaneous move/look/fire/ADS, sustained frame pacing, and how the new drag
+grip and head reachability feel to a real thumb. Scripted taps and swipes
+cannot establish any of that.
+
+## Still open
+
+1. **ADS sight presentation.** The camera sits 0.78 m from the weapon axis by
+   design: the barrel is parallel to the view axis, so the weapon projects to
+   the screen centre (correct as seen) while the shot line is now the reticle.
+   A true sight picture (weapon at eye level, optic/aperture presentation) is
+   pose work on the aim layer plus a weapon-appropriate reticle; not done here.
+2. **Visual transition inspection** (running→aim, lateral reversals, stop and
+   resume) has numeric invariants only; no rendered sequence was judged.
+3. **Bot lethality** after the convergence fix is symmetric and unmeasured:
+   bots now land on their aim line instead of at the muzzle offset, so their
+   close-range damage per shot went up. Candidate for a tuning pass.

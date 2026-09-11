@@ -77,6 +77,23 @@ cronometrado.
 
 ## Herramientas
 
+`tools/probe_teardown.gd` (compartido): pausa el árbol, para todo
+`AudioStreamPlayer(3D)` y deja drenar al servidor de audio antes de `quit()`.
+Sin él, qa_touch (52/8), probe-reload-hand (58/6) y a veces
+probe-aim-coordination (10-14/4-6) reportaban fugas de audio al salir que
+tapaban una fuga real. Los cuatro salen limpios.
+
+`tools/probe-reload-hand.gd` es determinista desde entonces (delta fijo 1/60 y
+fase sostenida): rifle 0.364/0.409 m, pistola 0.197/0.218 m, idénticos entre
+corridas. Las cifras anteriores (0.266/0.290 y 0.157/0.187) venían del fixture
+con pacing de frames y quedan superadas.
+
+Los fixtures de los probes no son el runtime. Formas conocidas de mentir, todas
+vistas en esta sesión: audio pendiente al salir, sacudida de `CameraFX` girando
+la cámara entre ticks, focus-out que limpia el input de combate, un bot muerto
+que sale en silencio de la selección de objetivo, un nodo fuera del árbol que
+ignora `global_position`, y un muro creado dentro del jugador que lo empuja.
+
 `tools/audit-repo.mjs` tarda ~0,2 s (antes 39 s: lanzaba ~84 000 `grep` como
 subproceso). Se puede ejecutar antes de cada limpieza sin pensarlo.
 
@@ -103,12 +120,36 @@ cabeza residual y offsets dentro del alcance del rig. Prueba por defecto:
 crouch/recarga/disparo. Error angular máximo 0.000000°, error de muñeca máximo
 0.009204 mm; pies sin desplazamiento añadido. Capturas desktop inspeccionadas.
 
-Oráculo válido actual: `3900121176`; el fixture ahora construye nodos después
-de entrar al árbol. Firmas históricas de `_init` no son comparación fiable.
-Los montajes y la pose sí cambiaron intencionalmente.
+Oráculo válido actual: `1135775949` (antes `3900121176`); el fixture ahora
+construye nodos después de entrar al árbol. Firmas históricas de `_init` no son
+comparación fiable. Los montajes y la pose sí cambiaron intencionalmente.
 
-APK final instalado en SM-S901E; lobby y una pose ADS en partida inspeccionados.
-Confort táctil/latencia/multitouch y fluidez sostenida siguen SIN VERIFICAR.
-Pendiente: pulido visual de transiciones/extremos, asistencia fuerte al pecho
-sin bloquear arrastre a cabeza y presentación de mira/óptica ADS. Continuar
+Disparo y asistencia (implementado y verificado): la boca converge al primer
+obstáculo que cubre la mira y sigue trazando todo el segmento desde el cañón
+(la cobertura bloquea igual); `CONVERGENCE_BACKSTOP` 0.02 m evita el impacto al
+borde numérico del rayo. La asistencia rotacional es agarre sobre el arrastre
+propio (35% sobre el torso, 0 sin pulgar, nada en un flick) y la ayuda de
+dirección no dobla un disparo cuyo retículo ya cubre el objetivo. Prueba por
+defecto nueva: `tools/probe-aim-assist.gd` (18 fallos antes, 0 después; 8/8
+headshots y 8/8 impactos al pecho a 3.5/10/25 m). Velocidades, slide, huella y
+FOV sin cambios.
+
+Montaje de armas corregido: la pistola se sujetaba a 8.2 cm de la mano y la SMG
+a 4.9 cm (ahora 0.010/0.017 m, como rifle 0.016 y escopeta 0.015), los cuatro
+marcadores de boca estaban 0.10-0.23 m dentro del cañón (ahora 0.022-0.027 m
+dentro de la corona) y la SMG estaba girada 180° (culata delante): se monta con
+`asset_rot` (0, 180, 0). Lo que lo zanjó fue renderizar cada arma montada con
+los ejes del montaje dibujados; el chequeo del basis del montaje y las
+heurísticas de masa pasaban con el arma al revés. Alineación de cañón, muñecas (máx 0.0055 mm) y recorrido
+de recarga (rifle 0.365/0.410 m, pistola 0.197/0.218 m) intactos.
+
+APK final instalado en SM-S901E: lobby, partida FFA en vivo, ADS, disparo y
+cambio de arma verificados; logcat sin errores ni avisos de Godot; capturas en
+`captures/aim-assist/`. Confort táctil/latencia/multitouch y fluidez sostenida
+siguen SIN VERIFICAR.
+
+Pendiente: presentación de mira/óptica ADS (el cañón es paralelo al eje de
+cámara a propósito: se proyecta al centro de pantalla; una mira real pide pose
+a altura de ojo), inspección visual de transiciones (sólo hay invariantes
+numéricos) y posible ajuste de letalidad de bots tras la convergencia. Continuar
 sobre lo implementado; ver `docs/PLAYER_FEEL_AUDIT.md` para pruebas y dueños.
