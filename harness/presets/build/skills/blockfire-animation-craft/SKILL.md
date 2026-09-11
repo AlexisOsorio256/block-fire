@@ -10,7 +10,12 @@ Source of truth: `assets/animation_sources/<Clip>.blend`; the GLB is an export. 
 not edit `.glb`/`.import` by hand. `ReloadRifle` and `ReloadPistol` are
 `CRAFT_LOCKED`: no `--rebuild`.
 
-First identify where the defect is born:
+If a current capture/render already shows the defect, inspect it before tracing
+code, transforms or measurements. State what is visibly wrong first; use numbers
+to locate a cause the image cannot reveal or to protect the fix, never as a
+substitute for looking.
+
+Then identify where the defect is born:
 
 - Input, speed or intent does not arrive: `game/player/player.gd` and
   `OperatorVisual.set_combat_state()` / `_read_motion_inputs()`.
