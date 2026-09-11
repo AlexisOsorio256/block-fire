@@ -45,6 +45,14 @@ LEG_REACH = 0.433 + 0.433  # UpperLeg + LowerLeg, measured from the rest skeleto
 # Retardo de la cadena cadera -> pecho -> cabeza, en fracción de ciclo. Es lo que
 # separa "el torso gira entero" de "la cadera lidera y el pecho llega tarde".
 CHAIN_LAG = 0.045
+# Amplitud del balanceo de columna por metro de rebote vertical. El torso rígido
+# era el otro motivo de "genérico": al pisar, la columna absorbe y el pecho cae;
+# al empujar, se extiende. Se deriva del `bob` de cada clip, así que un clip con
+# más rebote recibe más balanceo sin tocar constantes a mano.
+SPINE_PITCH_PER_BOB = 1.15
+# Reparto por hueso y adelanto respecto al rebote. El pecho va delante del punto
+# bajo (absorbe al aterrizar), la cabeza estabiliza la mirada y llega después.
+SPINE_PITCH_SHARE = {'Abdomen': 0.30, 'Torso': 0.50, 'Chest': 0.80, 'Neck': 0.45, 'Head': 1.35}
 ANKLE_OFFSET = Vector((0.0, -0.0039, 0.078))  # ankle above the contact point
 GROUND_Z = 0.0228  # Foot bone head z when the foot is flat on the floor
 
@@ -413,11 +421,23 @@ def gait(name, arm, controls):
         yaw_mid = spec['yaw'] * math.cos(math.tau * (phase - CHAIN_LAG))
         yaw_top = spec['yaw'] * math.cos(math.tau * (phase - CHAIN_LAG * 2.0))
         rot(arm, 'Hips', [(frame, (0.0, roll, -yaw))])
-        rot(arm, 'Abdomen', [(frame, (spec['lean'] * 0.30, 0.0, yaw_mid * 0.45))])
-        rot(arm, 'Torso', [(frame, (spec['lean'] * 0.34, 0.0, yaw_mid * 0.55))])
-        rot(arm, 'Chest', [(frame, (spec['lean'] * 0.26, 0.0, yaw_top * 0.75))])
-        rot(arm, 'Neck', [(frame, (-spec['lean'] * 0.35, 0.0, 0.0))])
-        rot(arm, 'Head', [(frame, (-spec['lean'] * 0.30, 0.0, -yaw_top * 0.25))])
+        # Balanceo de columna ligado al peso: el rebote vertical menos su media
+        # (+1 abajo, -1 arriba) modula el cabeceo de cada vértebra.
+        weight = ((spec['bob'] * 0.5 - bob) / max(spec['bob'] * 0.5, 1e-6))
+        weight = max(-1.0, min(1.0, weight))
+        # `rot()` recibe GRADOS: el balanceo nace en metros de rebote y hay que
+        # convertirlo, o el cabeceo queda 57x más pequeño y no se ve.
+        swing = math.degrees(weight * spec['bob'] * SPINE_PITCH_PER_BOB)
+        pitch_abdomen = spec['lean'] * 0.30 + swing * SPINE_PITCH_SHARE['Abdomen']
+        pitch_torso = spec['lean'] * 0.34 + swing * SPINE_PITCH_SHARE['Torso']
+        pitch_chest = spec['lean'] * 0.26 + swing * SPINE_PITCH_SHARE['Chest']
+        pitch_neck = -spec['lean'] * 0.35 + swing * SPINE_PITCH_SHARE['Neck']
+        pitch_head = -spec['lean'] * 0.30 + swing * SPINE_PITCH_SHARE['Head']
+        rot(arm, 'Abdomen', [(frame, (pitch_abdomen, 0.0, yaw_mid * 0.45))])
+        rot(arm, 'Torso', [(frame, (pitch_torso, 0.0, yaw_mid * 0.55))])
+        rot(arm, 'Chest', [(frame, (pitch_chest, 0.0, yaw_top * 0.75))])
+        rot(arm, 'Neck', [(frame, (pitch_neck, 0.0, 0.0))])
+        rot(arm, 'Head', [(frame, (pitch_head, 0.0, -yaw_top * 0.25))])
         # Arm swing is cosmetic: runtime IK replaces both arms with the weapon.
         swing = spec['arms'] * 26.0 * math.cos(math.tau * phase)
         rot(arm, 'UpperArm.L', [(frame, (-swing * 0.55, 0.0, 0.0))])
