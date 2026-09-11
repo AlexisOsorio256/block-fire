@@ -4,8 +4,12 @@ extends SceneTree
 ## camino que el juego (OperatorMotion + IK de OperatorVisual). Sirve para
 ## distinguir "el clip está bien pero el IK no lo muestra" de "el clip no viaja".
 ## USO: godot --headless --path . --script res://tools/probe-reload-hand.gd
+const ProbeTeardown := preload("res://tools/probe_teardown.gd")
 
 const PHASES := [0.0, 0.2, 0.34, 0.5, 0.7, 0.9, 1.0]
+## Fixed step and convergence count: the sample must not depend on frame pacing.
+const STEP := 1.0 / 60.0
+const SETTLE_STEPS := 24
 
 var _app: Node
 var _visual: Node
@@ -40,12 +44,22 @@ func _init() -> void:
 				index = i
 		if index < 0:
 			continue
+		# El arma equipada REAL manda, sin pasar por available_indices (el probe
+		# mide las dos clases de recarga, no el loadout de la partida) pero sí
+		# propagando el cambio al visual, que es lo que refresca el clip.
 		weapon.set("active_index", index)
 		weapon.set("switching_timer", 0.0)
-		_visual.call("_process", 0.0)
-		for i: int in range(3):
-			await process_frame
-		var duration := 1.7
+		weapon.call("_refresh_presentation")
+		# Fixture determinista: se congelan los procesos automáticos y la capa se
+		# avanza con delta fijo manteniendo la fase muestreada. Con el pacing de
+		# frames real, la misma medición variaba ±0,02 m entre corridas.
+		weapon.set_physics_process(false)
+		_visual.set_process(false)
+		var duration: float = weapon.call("current_definition").reload_time
+		# Clip and class come from the layer, which reads the equipped weapon
+		# during its own process: settle first, then ask.
+		for i: int in range(SETTLE_STEPS):
+			_visual.call("_process", STEP)
 		var clip: String = motion.call("reload_clip")
 		var klass: String = motion.call("reload_class")
 		var origin := _wrist()
@@ -56,9 +70,10 @@ func _init() -> void:
 			# solo lo posiciona para muestrear el progreso normalizado.
 			weapon.set("reload_timer", (1.0 - phase) * duration)
 			motion.set("reload_duration", duration)
-			motion.set("reload_weight", 1.0)
-			_visual.call("_process", 0.0)
-			await process_frame
+			for i: int in range(SETTLE_STEPS):
+				weapon.set("reload_timer", (1.0 - phase) * duration)
+				motion.set("reload_weight", 1.0)
+				_visual.call("_process", STEP)
 			var p := _wrist()
 			samples[phase] = p
 			if p.y < lowest.y:
@@ -75,9 +90,10 @@ func _init() -> void:
 			print("   FAIL: la mano apenas baja (%.3f m)" % drop)
 		weapon.set("reload_timer", 0.0)
 		motion.set("reload_weight", 0.0)
-		for i: int in range(4):
-			await process_frame
+		weapon.set_physics_process(true)
+		_visual.set_process(true)
 	print("PROBE_RELOAD_HAND: %s (%d fallos)" % ["PASS" if fails == 0 else "FAIL", fails])
+	ProbeTeardown.quiesce(self)
 	quit(0 if fails == 0 else 1)
 
 func _wrist() -> Vector3:

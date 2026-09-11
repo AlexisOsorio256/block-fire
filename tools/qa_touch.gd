@@ -4,6 +4,7 @@ extends SceneTree
 ## drag sobre FUEGO rota la cámara sin soltar el fuego, ADS tap-to-latch y
 ## multitouch joystick+FUEGO. No forma parte del runtime.
 ## USO: godot --path . --script res://tools/qa_touch.gd
+const ProbeTeardown := preload("res://tools/probe_teardown.gd")
 
 var _app: Node
 var _player: Node
@@ -141,4 +142,5 @@ func _fail(label: String) -> void:
 
 func _finish() -> void:
 	print("[TOUCH-TEST] RESULTADO: %s (%d fallos)" % ["PASS" if _fails == 0 else "FAIL", _fails])
+	ProbeTeardown.quiesce(self)
 	quit(0 if _fails == 0 else 1)

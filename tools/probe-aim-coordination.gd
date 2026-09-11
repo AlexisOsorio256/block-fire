@@ -1,6 +1,7 @@
 extends SceneTree
 ## Public visual/weapon state; measure intended camera heading vs barrel +Z.
 ## Default gate covers aim/grips/transitions and FOV. --capture saves pose views.
+const ProbeTeardown := preload("res://tools/probe_teardown.gd")
 class ProbePlayer extends BlockfirePlayer:
 	signal tick_done
 	var measured_delta := 0.0
@@ -128,6 +129,7 @@ func run() -> void:
 	player.free()
 	controls.free()
 	print("AIM_COORDINATION: failures=%d" % failures)
+	ProbeTeardown.quiesce(self)
 	quit(0 if "--baseline" in OS.get_cmdline_user_args() else mini(failures, 1))
 
 ## Expected wrist socket for a reachable grip. Report real error, not the fist

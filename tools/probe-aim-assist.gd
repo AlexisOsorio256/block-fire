@@ -7,6 +7,7 @@ extends SceneTree
 ## take_damage); the match context is a stub so combat stays deterministic. Player
 ## ticks are real physics callbacks measured at 1/60 s.
 ## --baseline prints failures without a nonzero exit.
+const ProbeTeardown := preload("res://tools/probe_teardown.gd")
 
 class ProbePlayer extends BlockfirePlayer:
 	signal tick_done
@@ -92,15 +93,6 @@ func drag_until(point: Vector3, max_pixels: float, tolerance: float, max_ticks: 
 		await tick()
 		used += 1
 	return used
-
-## Shot and hurt feedback keeps audio playbacks alive in the audio server; a
-## probe that quits with them playing reports leaked objects at exit.
-func silence(node: Node) -> void:
-	for child: Node in node.find_children("*", "AudioStreamPlayer3D", true, false):
-		var player := child as AudioStreamPlayer3D
-		player.stop()
-		player.stream = null
-
 
 func aim_head() -> Vector3:
 	return bot.global_position + Vector3.UP * 2.16
@@ -315,17 +307,13 @@ func run() -> void:
 		wall.free()
 
 	controls.release_all()
-	silence(player)
-	silence(bot)
-	await process_frame
 	await process_frame
 	floor_body.free()
 	player.free()
 	bot.free()
 	match_stub.free()
 	controls.free()
-	# The audio server mixes on its own thread; quitting with playbacks still
-	# pending makes the exit report transient ObjectDB leaks.
-	OS.delay_msec(250)
+	# Pending shot/hurt playbacks would report transient ObjectDB leaks at exit.
+	ProbeTeardown.quiesce(self)
 	print("AIM_ASSIST: failures=%d" % failures)
 	quit(0 if "--baseline" in OS.get_cmdline_user_args() else mini(failures, 1))
