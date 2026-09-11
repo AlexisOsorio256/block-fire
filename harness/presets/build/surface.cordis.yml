@@ -31,6 +31,11 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
+      config:
+        # The repo is durable memory. Compact conversation history before it
+        # becomes the dominant per-request input; reread owners when needed.
+        thresholdRatio: 0.55
+        retainRatio: 0.10
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
     - id: tool-result-pruner
