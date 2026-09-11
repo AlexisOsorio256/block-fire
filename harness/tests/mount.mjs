@@ -24,19 +24,24 @@ const repo = resolve(harness, '..')
 const PREFIX_BUDGET = { build: 17500, creator: 17500 }
 
 /**
- * Old tool payloads are paid again on later requests. Keep the configured
- * retention materially below its trigger; a narrow reread is cheaper than
- * dragging a large stale result through every subsequent turn.
+ * Old conversation/tool payloads are paid again on later requests. BLOCKFIRE's
+ * repo is durable memory, so compact early and retain only a narrow recent tail;
+ * reread the real owner when old detail matters again.
  */
 const surfaceText = readFileSync(join(harness, 'presets/build/surface.cordis.yml'), 'utf8')
-const surfaceNumber = (name) => {
-  const match = new RegExp(`${name}:\\s*(\\d+)`).exec(surfaceText)
+const surfaceValue = (name) => {
+  const match = new RegExp(`${name}:\\s*([0-9]+(?:\\.[0-9]+)?)`).exec(surfaceText)
   assert.notEqual(match, null, `${name} must stay explicit in the shared surface`)
   return Number(match[1])
 }
-const pruneThreshold = surfaceNumber('thresholdChars')
-const pruneHead = surfaceNumber('headChars')
-const pruneTail = surfaceNumber('tailChars')
+const compactThreshold = surfaceValue('thresholdRatio')
+const compactRetain = surfaceValue('retainRatio')
+const pruneThreshold = surfaceValue('thresholdChars')
+const pruneHead = surfaceValue('headChars')
+const pruneTail = surfaceValue('tailChars')
+assert(compactThreshold <= 0.60, `compaction threshold regressed to ${compactThreshold}`)
+assert(compactRetain <= 0.12, `compaction retention regressed to ${compactRetain}`)
+assert(compactRetain < compactThreshold, 'compaction must retain less than its pressure threshold')
 assert(pruneThreshold <= 4096, `tool-result prune threshold regressed to ${pruneThreshold}`)
 assert(pruneHead <= 2048, `tool-result retained head regressed to ${pruneHead}`)
 assert(pruneTail <= 768, `tool-result retained tail regressed to ${pruneTail}`)
