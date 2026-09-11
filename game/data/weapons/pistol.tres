@@ -5,8 +5,8 @@
 [resource]
 script = ExtResource("1_weapon")
 id = "pistol"
-display_name = "Pistol"
-short_name = "PISTOL"
+display_name = "Pistola"
+short_name = "PISTOLA"
 cost = 0
 damage = 22.0
 headshot_multiplier = 1.25
