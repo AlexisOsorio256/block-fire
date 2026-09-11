@@ -193,7 +193,7 @@ export function apply(ctx, config) {
       description:
         'Execute Python code in the open Blender GUI (one focal change per call: move a bone, tweak a keyframe, adjust the rig). ' +
         'Part of the minimal craft loop: screenshot, focal change, screenshot, judge. ' +
-        'For scene queries, asset marketplaces or anything beyond executing code, activate the blender-full capability instead.',
+        'Query scene, bones and curves through Python here too. Activate blender-full only for capabilities beyond code and screenshots, such as asset marketplaces.',
       parameters: {
         type: 'object',
         properties: {
