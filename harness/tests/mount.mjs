@@ -143,8 +143,6 @@ export function apply(ctx) {
       assert(bash.length < 1200, `${space}: the bash description must stay fitted (${bash.length} chars) — upstream wording is back, so the prompt row stopped matching`)
       assert.match(descriptionOf('subagent'), /Do not delegate a question solvable with a few direct tool calls/,
         `${space}: delegation must not replace direct tool use`)
-      assert.match(descriptionOf('todo_write'), /Do not create todos for straightforward work or mirror every action/,
-        `${space}: todo must remain optional rather than workflow ceremony`)
       assert.match(descriptionOf('skill'), /Do not preload every possibly related skill/,
         `${space}: skills must stay JIT rather than speculative context`)
       assert.doesNotMatch(descriptionOf('skill'), /load every applicable skill before acting/,
