@@ -85,6 +85,25 @@ La suite (`tests/smoke.gd`, `tests/animation_layers.gd`) es la puerta; los
 `tools/qa_*` son las comprobaciones de experiencia y `tools/probe-*` son
 mediciones de diagnóstico. Punto de entrada único: `tools/bf`.
 
+## Presupuesto de arranque de partida
+
+`OperatorVisual` construye el personaje en runtime: carga el GLB, repara los
+pesos de las manos y genera el detalle de material. Nueve combatientes entran a
+la vez, así que ese coste se multiplica por nueve. Medido con
+`tools/probe-build-cost.gd` (Godot headless, sobremesa):
+
+| | antes | ahora |
+|---|---|---|
+| 9 actores, `_build()` total | 15 505 ms | 1 611 ms |
+| texturas de detalle generadas | 124 por proceso | 2 por proceso |
+
+Dos cachés `static` lo sostienen, ambas sobre dato derivado del ASSET (idéntico
+en cada actor, nunca por instancia): `_DETAIL_TEXTURES` (dos mapas, uno de piel
+y otro de tejido) y `_REPAIR_CACHE` (cirugía de pesos por superficie, indexada
+por la posición en la malla reparada). Si se toca `_repair_mesh_hands`, la
+prueba `_test_repaired_mesh_replay` de `tests/animation_layers.gd` compara la
+malla del actor en frío con la del que copia caché: deben ser idénticas.
+
 ## Recetas
 
 - **Editar una recarga**: abre `assets/animation_sources/ReloadRifle.blend` o

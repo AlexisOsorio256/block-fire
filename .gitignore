@@ -18,6 +18,15 @@ node_modules/
 __pycache__/
 *.pyc
 
+# Texturas que Godot EXTRAE de un GLB al importar (`<modelo>_Image_N.<ext>`).
+# Son un artefacto del import: el GLB las lleva dentro y se regeneran al
+# reimportar. No se versionan, pero SÍ deben existir en disco: si faltan, ese
+# arma carga con 0 superficies (el jugador se queda sin modelo). Lo cubre
+# `_test_weapon_models_load` en tests/smoke.gd.
+*_Image_*.png
+*_Image_*.jpg
+*_Image_*.jpeg
+
 # Salidas generadas y cachés
 .godot/
 builds/

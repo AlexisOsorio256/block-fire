@@ -20,6 +20,7 @@ func _run() -> void:
 	_test_settings_layout_contract()
 	_test_audio_contract()
 	_test_control_editor_contract()
+	_test_weapon_models_load()
 	_test_consolidation_contracts()
 	await _test_navigation_contract()
 	_test_lobby_screen_contract()
@@ -538,6 +539,27 @@ func _test_control_editor_contract() -> void:
 	controls.free()
 	_test_spectator_contract()
 	_test_editor_pause_contract()
+
+## Cada arma debe llegar a las manos CON geometría. El import de Godot extrae
+## las texturas de un GLB a ficheros junto al modelo; si esa metadata falta, el
+## arma carga con 0 superficies y el jugador se queda sin modelo: sólo sale un
+## warning en consola. Esto lo convierte en un fallo de suite.
+func _test_weapon_models_load() -> void:
+	for weapon_id: String in OperatorVisual.WEAPON_CONFIG:
+		var path: String = str(OperatorVisual.WEAPON_CONFIG[weapon_id].get("path", ""))
+		_check(ResourceLoader.exists(path), "weapon model exists for " + weapon_id)
+		var packed := load(path) as PackedScene
+		if packed == null:
+			_check(false, "weapon model loads as a scene for " + weapon_id)
+			continue
+		var model := packed.instantiate()
+		var surfaces := 0
+		for candidate: Node in model.find_children("*", "MeshInstance3D", true, false):
+			var mesh_instance := candidate as MeshInstance3D
+			if mesh_instance != null and mesh_instance.mesh != null:
+				surfaces += mesh_instance.mesh.get_surface_count()
+		_check(surfaces > 0, "weapon model yields geometry for " + weapon_id)
+		model.free()
 
 func _test_spectator_contract() -> void:
 	var game_match := MatchScript.new()

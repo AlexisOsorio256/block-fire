@@ -22,6 +22,3 @@ extends Resource
 ## agarre, boca) vive en OperatorVisual.WEAPON_CONFIG: aquí solo quedan los
 ## números que deciden GAMEPLAY y este único valor de FX que sí se consume.
 @export var muzzle_flash_scale: float = 1.0
-
-func clone() -> WeaponDefinition:
-	return duplicate(true) as WeaponDefinition

@@ -315,5 +315,45 @@ func run() -> void:
 			for bone in v.skeleton.get_bone_count():
 				check(v.skeleton.get_bone_global_pose(bone).is_finite(), "Finite pose "+weapon)
 	v.free()
+	_test_repaired_mesh_replay()
 	print("ANIMATION_LAYERS: ","PASS" if failures == 0 else "FAIL", " failures=",failures)
 	quit(0 if failures == 0 else 1)
+
+## `OperatorVisual._repair_mesh_hands` cachea por asset la cirugía de pesos (la
+## geometría es idéntica en cada actor). Un actor en frío y otro que sólo copia
+## la caché deben dar EXACTAMENTE la misma malla: si divergen, la caché devuelve
+## superficies que el actor en frío descartó y Godot falla al asignar material.
+## Se compara geometría/material, no nombres: el sufijo de un nodo anónimo
+## (`@MeshInstance3D@15`) lo asigna Godot por sesión.
+func _test_repaired_mesh_replay() -> void:
+	var cold := _repaired_signature()
+	var warm := _repaired_signature()
+	check(not cold.is_empty(), "repaired mesh has surfaces")
+	check(cold == warm, "warm repaired mesh is identical to the cold one")
+
+func _repaired_signature() -> Array:
+	var actor := Node3D.new()
+	get_root().add_child(actor)
+	var visual := OperatorVisual.new()
+	actor.add_child(visual)
+	visual._build()
+	var signature: Array = []
+	if visual.model_root != null:
+		for candidate: Node in visual.model_root.find_children("*", "MeshInstance3D", true, false):
+			var mesh_instance := candidate as MeshInstance3D
+			if mesh_instance == null or mesh_instance.mesh == null:
+				continue
+			var surfaces: Array = []
+			for surface in range(mesh_instance.mesh.get_surface_count()):
+				var arrays: Array = mesh_instance.mesh.surface_get_arrays(surface)
+				var material := mesh_instance.mesh.surface_get_material(surface)
+				surfaces.append([
+					hash(arrays[Mesh.ARRAY_VERTEX]),
+					hash(arrays[Mesh.ARRAY_INDEX]) if arrays[Mesh.ARRAY_INDEX] != null else 0,
+					material.resource_name if material != null else "",
+				])
+			signature.append(["" if String(mesh_instance.name).begins_with("@") else String(mesh_instance.name), surfaces])
+	visual.free()
+	actor.free()
+	return signature
+

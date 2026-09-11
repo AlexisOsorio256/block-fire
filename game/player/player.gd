@@ -335,9 +335,6 @@ func _assist_has_line_of_sight(origin: Vector3, target_point: Vector3) -> bool:
 		return arena.has_line_of_sight(origin, target_point, excluded)
 	return true
 
-func set_spectator_mode(enabled: bool) -> void:
-	input_enabled = not enabled and is_alive
-
 func _movement_input() -> Vector2:
 	var value := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	if mobile_controls != null and mobile_controls.has_method("get_move_vector"):

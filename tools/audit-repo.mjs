@@ -117,16 +117,32 @@ function orphanAssets(files) {
 // --- 2. Metadata huérfana ----------------------------------------------------
 // Godot crea `<fuente>.import` y ahora `<script>.gd.uid`: si el fuente se borró
 // a mano, el metadata queda y contamina inventarios y diffs.
-function orphanMetadata(files) {
-  const findings = [];
-  for (const file of files) {
-    if (file.endsWith('.import')) {
-      const source = file.slice(0, -'.import'.length);
-      if (!existsSync(path.join(root, source))) findings.push({ path: file, missing: source });
-    } else if (file.endsWith('.uid')) {
-      const source = file.slice(0, -'.uid'.length);
-      if (!existsSync(path.join(root, source))) findings.push({ path: file, missing: source });
+//
+// Los .import/.uid NO están rastreados (los ignora .gitignore), así que mirar
+// solo `git ls-files` no ve nada: el barrido es del ÁRBOL DE TRABAJO. Un
+// `weapon_visual.gd.uid` sin fuente sobrevivió así a la auditoría anterior.
+function workingTreeMetadata() {
+  const out = [];
+  const walk = (dir, rel) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (IGNORE_DIRS.has(entry.name)) continue;
+        walk(path.join(dir, entry.name), childRel);
+      } else if (entry.name.endsWith('.import') || entry.name.endsWith('.uid')) {
+        out.push(childRel);
+      }
     }
+  };
+  walk(root, '');
+  return out;
+}
+function orphanMetadata() {
+  const findings = [];
+  for (const file of workingTreeMetadata()) {
+    const suffix = file.endsWith('.import') ? '.import' : '.uid';
+    const source = file.slice(0, -suffix.length);
+    if (!existsSync(path.join(root, source))) findings.push({ path: file, missing: source });
   }
   return findings;
 }
@@ -196,7 +212,7 @@ const report = {
   trackedFiles: files.length,
   notJudged: files.filter((f) => JUDGEMENT_CALL.test(f)).length,
   orphans: orphanAssets(files),
-  metadata: orphanMetadata(files),
+  metadata: orphanMetadata(),
   refs: refAudit(),
   caches: regenerable(),
 };

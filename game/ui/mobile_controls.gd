@@ -1,7 +1,6 @@
 class_name BlockfireMobileControls
 extends Control
 
-signal fire_started
 signal fire_stopped
 signal look_dragged(delta: Vector2)
 signal jump_requested
@@ -105,9 +104,6 @@ func is_firing() -> bool:
 func is_aiming() -> bool:
 	return aiming
 
-func is_aim_latched() -> bool:
-	return aiming
-
 func is_looking() -> bool:
 	return look_pointer >= 0 or fire_pointer >= 0 or aim_pointer >= 0
 
@@ -181,7 +177,6 @@ func reset_layout() -> void:
 
 func qa_press_fire() -> void:
 	firing = true
-	fire_started.emit()
 	queue_redraw()
 
 func qa_release_fire() -> void:
