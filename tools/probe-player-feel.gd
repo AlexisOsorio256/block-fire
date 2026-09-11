@@ -144,7 +144,11 @@ func movement_tests(player: ProbePlayer, controls: BlockfireMobileControls) -> v
 		check(absf(player.velocity.length() - expected) < 0.001, "arbitrated speed " + state)
 	for hz: int in [30, 60, 120]:
 		Engine.physics_ticks_per_second = hz
-		await physics_frame
+		# Drain old-rate ticks queued before Engine's new rate takes effect.
+		reset_case(player, controls)
+		player.set_physics_process(true)
+		for i in 12: await player.tick_done
+		player.set_physics_process(false)
 		var dt := 1.0 / hz
 		var reference: Array[int] = []
 		for angle: float in [0.0, PI / 4.0]:

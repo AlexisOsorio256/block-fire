@@ -153,7 +153,7 @@ ANALOG crouch input=0.25 speed=0.6500 expected=0.6500
 ANALOG crouch input=0.50 speed=1.3000 expected=1.3000
 ANALOG crouch input=0.75 speed=1.9500 expected=1.9500
 ANALOG crouch input=1.00 speed=2.6000 expected=2.6000
-RESPONSE hz=30 heading=0 action=start ticks=8 ms=266.667 distance=0.488889 overshoot=0.000000
+RESPONSE hz=30 heading=0 action=start ticks=5 ms=166.667 distance=0.515556 overshoot=0.000000
 RESPONSE hz=30 heading=0 action=stop ticks=5 ms=166.667 distance=0.284445 overshoot=0.000000
 RESPONSE hz=30 heading=0 action=resume ticks=5 ms=166.667 distance=0.515556 overshoot=0.000000
 RESPONSE hz=30 heading=0 action=turn90 ticks=7 ms=233.333 distance=0.929438 overshoot=0.000000
@@ -173,3 +173,6 @@ RESPONSE hz=120 heading=0 action=reverse ticks=36 ms=300.000 distance=0.720000 o
 Suite: smoke 310, regressions 29, animation_layers PASS; updated real-tick
 player-feel PASS. Touch QA PASS / zero failures (resource cleanup warnings
 remain). Thumb comfort of the new deadzone is not established by headless QA.
+
+The rate-transition test now drains queued old-rate ticks before measurement.
+The corrected real-callback probe exited 0 with no failed assertions.
