@@ -16,7 +16,11 @@ a sesiones nuevas.
 ## Diseño
 
 - Código, tests y git mandan; detalle y capacidades se cargan JIT.
-- BUILD y CREATOR mantienen la misma superficie permanente mínima.
+- BUILD y CREATOR comparten **17 tools base**. `todo_write` no está en la
+  superficie: no se paga schema ni turnos por planificación ceremonial.
+- Camino decisivo más corto: una tool/plugin/captura que responde directamente
+  gana a scripts, auditorías, proxies, lecturas/pruebas duplicadas o subagentes
+  especulativos. Cuando causa + evidencia requerida están resueltas, se cierra.
 - BUILD tiene skills del proyecto y Blender JIT (`blender` mínimo, `blender-full`
   solo al escalar).
 - CREATOR no carga contexto, skills ni Blender del juego; conserva solo skills
@@ -26,8 +30,8 @@ a sesiones nuevas.
   descripciones cortas en inglés, ninguna sección que solo repita una
   descripción, y el texto de sandbox coherente con la política real de la
   sesión. Parámetros y semántica no se tocan: solo prosa.
-- Trabajo visual no está cerrado hasta inspeccionar la captura real; exportar o
-  generar una imagen sin verla no prueba calidad.
+- Trabajo visual no está cerrado hasta inspeccionar la captura real; exportar,
+  medir geometría o generar una imagen sin verla no prueba calidad.
 - Todo lo que lee el modelo es inglés; la respuesta al usuario es español.
 - `harness/lib/runtime.mjs` es el único resolutor DSH.
 - `harness/test.sh` es el contrato con upstream.
@@ -40,20 +44,23 @@ permanente de cada espacio (system + contexto + schemas + catálogo de skills) y
 lo desglosa por dueño con `--details`. Es la evidencia antes de tocar el prompt;
 el token real de una sesión lo da `session-report.mjs --last 1`.
 
-La suite congela **system + schemas** con un techo de 17.500 caracteres por
-espacio en `tests/mount.mjs`: falla si el prefijo crece en silencio o si una tool
-pierde sus parámetros. No se guarda aquí un número "actual" porque se volvería
-obsoleto con el siguiente ajuste de persona/upstream; el valor autoritativo es
-el que imprime el `mount`/`context-report` de la versión que realmente está
-instalada. Las optimizaciones conservan los marcadores que el modelo necesita
-reconocer en resultados (`[exit code: N]`, `[sandbox: ...]`, `[status: ...]`,
-`wait: true`).
+La conversación es working set, no memoria durable. El repo lo es. Por eso
+`compaction-basic` entra al 55% del context window y conserva 10% reciente; los
+resultados viejos de tools se podan desde 4096 caracteres y conservan 2048 de
+cabeza + 768 de cola. Si un detalle viejo vuelve a importar, se relee el owner
+real en el repo en vez de arrastrarlo en cada request.
 
-Cada persona declara además el objetivo de su modo, porque es una directiva
-permanente y no prosa: CREATOR hace medible la eficiencia de todo lo que lee el
-modelo sin canjear reglas, marcadores ni semántica de parámetros por texto más
-corto; BUILD mejora el juego sin sacrificar animación, calidad visual ni game
-feel, y no reescribe nada sin una razón medida.
+La suite congela **system + schemas** con un techo de 17.500 caracteres por
+espacio en `tests/mount.mjs`: falla si el prefijo crece en silencio, una tool
+pierde parámetros, vuelve la regla de cargar skills especulativamente, un
+subagente sustituye el camino directo o se relajan compaction/pruning sin una
+razón medida. El valor actual del prefijo no se guarda aquí: lo autoritativo es
+lo que imprime el `mount`/`context-report` del runtime instalado.
+
+`session-report` muestra además promedio de prompt por request con usage,
+amplificación acumulada frente al primer request, tool calls exactas repetidas y
+skills recargadas. Esas cifras permiten localizar churn sin releer manualmente la
+trayectoria completa.
 
 ## Web
 
@@ -100,11 +107,12 @@ node tools/audit-repo.mjs
 ```
 
 `harness/test.sh` incluye las regresiones baratas de guard, updater, delete/purge,
-integridad de logs y lifecycle Web antes de depender de QA físico. Para auditar
-logs reales del DSH instalado usa `--live`; reconoce tanto
-`session.v3.jsonl.zstd` como el nombre legacy. Una última línea JSONL a medio
-escribir puede ser una sesión viva; corrupción en medio no se convierte en
-métricas aparentemente completas.
+integridad de logs y lifecycle Web antes de depender de QA físico. Su mount real
+comprueba también el contrato anti-churn y la política de contexto contra lo que
+el modelo efectivamente recibe. Para auditar logs reales del DSH instalado usa
+`--live`; reconoce tanto `session.v3.jsonl.zstd` como el nombre legacy. Una última
+línea JSONL a medio escribir puede ser una sesión viva; corrupción en medio no se
+convierte en métricas aparentemente completas.
 
 Para inspeccionar cambios **visuales del Web harness** sin tocar el `DSH_HOME`
 real ni copiar credenciales:
