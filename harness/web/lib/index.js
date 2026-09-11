@@ -3,6 +3,7 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { updateVersionError, validUpdateVersion } from '../../lib/update-version.mjs'
 
 export const name = 'blockfire-update-center'
 export const inject = ['webServer', 'sessionPersistence', 'workspaceRegistry', 'storageDomain']
@@ -11,7 +12,6 @@ const DEFAULT_REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'
 const CHECK_TTL_MS = 10 * 60 * 1000
 const BODY_LIMIT = 64 * 1024
 const UPDATE_ACTIONS = new Set(['check', 'stage', 'verify', 'activate', 'rollback', 'update'])
-const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/
 const SESSION_ID_RE = /^[0-9A-Za-z-]{8,64}$/
 const JOB_OUTPUT_CAP = 64 * 1024
 const JOB_TIMEOUT_MS = 20 * 60 * 1000
@@ -247,7 +247,9 @@ export function apply(ctx, config) {
     const action = body.value?.action
     const version = typeof body.value?.version === 'string' ? body.value.version : undefined
     if (typeof action !== 'string' || !UPDATE_ACTIONS.has(action)) return send(res, 400, { ok: false, error: `action must be one of: ${[...UPDATE_ACTIONS].sort().join(', ')}` })
-    if (['stage', 'verify', 'activate', 'update'].includes(action) && (version === undefined || !VERSION_RE.test(version))) return send(res, 400, { ok: false, error: 'a valid version is required' })
+    if (['stage', 'verify', 'activate', 'update'].includes(action) && !validUpdateVersion(version)) {
+      return send(res, 400, { ok: false, error: updateVersionError(action) })
+    }
     if (job?.state === 'running') return send(res, 409, { ok: false, error: 'an update operation is already running' })
     const steps = action === 'update'
       ? [{ label: `stage ${version}`, args: ['stage', version] }, { label: `verify ${version}`, args: ['verify', version] }, { label: `activate ${version}`, args: ['activate', version] }]
