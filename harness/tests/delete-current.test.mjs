@@ -2,7 +2,7 @@
 import { strict as assert } from 'node:assert'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -40,7 +40,7 @@ function post(route, body) {
   })
 }
 
-test('current DSH delete archives/detaches now and purges files only before next boot', async () => {
+test('current DSH delete records intent, archives/detaches, then purges only before next boot', async () => {
   const home = await mkdtemp(join(tmpdir(), 'blockfire-delete-v3-'))
   const oldHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -91,5 +91,6 @@ test('current DSH delete archives/detaches now and purges files only before next
   } finally {
     if (oldHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = oldHome
+    await rm(home, { recursive: true, force: true })
   }
 })
