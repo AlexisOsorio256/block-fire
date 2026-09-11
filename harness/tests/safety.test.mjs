@@ -2,7 +2,7 @@
 /** Cheap regressions for host/update/evidence boundaries that must fail safely. */
 import { strict as assert } from 'node:assert'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -12,6 +12,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
 const GUARD = pathToFileURL(join(HARNESS, 'host', 'guard.js')).href
 const UPDATE = join(HARNESS, 'bin', 'update.mjs')
+const PURGER = join(HARNESS, 'bin', 'purge-sessions.mjs')
+const REPORT = join(HARNESS, 'bin', 'session-report.mjs')
 const CONTRACT = join(HARNESS, 'lib', 'contract_check.mjs')
 
 async function guardFor() {
@@ -30,6 +32,14 @@ async function guardFor() {
   assert.equal(guards.length, 1)
   return guards[0]
 }
+
+test('auxiliary harness programs exist and parse before runtime-dependent tests', () => {
+  for (const file of [UPDATE, PURGER, REPORT, CONTRACT]) {
+    assert.equal(existsSync(file), true, `${file} must exist`)
+    const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
+    assert.equal(checked.status, 0, `${file} must parse: ${checked.stderr}`)
+  }
+})
 
 test('guard: HOME-expanded protected paths are denied but normal cache cleanup stays allowed', async () => {
   const guard = await guardFor()
@@ -67,6 +77,26 @@ test('updater: path-shaped versions are rejected before staging touches disk or 
       assert.equal(existsSync(sentinel), true, `${action} must not touch the escaped target`)
       assert.equal(existsSync(join(stateDir, 'staging')), false, `${action} must fail before creating staging`)
     }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('session purger: corrupt delete queue fails without rewriting or discarding it', () => {
+  const home = mkdtempSync(join(tmpdir(), 'bf-purge-safety-'))
+  try {
+    const dir = join(home, '.blockfire-harness')
+    mkdirSync(dir, { recursive: true })
+    const queue = join(dir, 'pending-session-deletes.json')
+    const corrupt = '{"unfinished":'
+    writeFileSync(queue, corrupt)
+    const result = spawnSync(process.execPath, [PURGER], {
+      encoding: 'utf8',
+      env: { ...process.env, DSH_HOME: home },
+    })
+    assert.equal(result.status, 1, 'corrupt durable delete intent must fail loud')
+    assert.match(result.stderr, /delete queue is unreadable/)
+    assert.equal(readFileSync(queue, 'utf8'), corrupt, 'corrupt evidence stays untouched for recovery')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
