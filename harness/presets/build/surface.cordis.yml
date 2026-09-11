@@ -36,9 +36,11 @@
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
       config:
-        thresholdChars: 8192
-        headChars: 4096
-        tailChars: 1024
+        # Old tool payloads are context, not an archive. Keep enough head/tail to
+        # identify the result; reread a narrow range if the middle becomes relevant.
+        thresholdChars: 4096
+        headChars: 2048
+        tailChars: 768
 
 - id: delegation
   name: cordis:group
