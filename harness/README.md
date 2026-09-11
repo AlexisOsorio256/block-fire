@@ -27,8 +27,10 @@ a sesiones nuevas.
 
 ## Web
 
-La capa añade Update Center, `+ New`, borrado de conversaciones y stats junto a
-la actividad: turns, steps, LLM, tools, TTFT, TPS, cache, input y output.
+La capa añade Update Center, borrado de conversaciones y stats junto a la
+actividad: turns, steps, LLM, tools, TTFT, TPS, cache, input y output. **New
+Session** pertenece al sidebar upstream; BLOCKFIRE usa ese seam y no duplica el
+control.
 
 DSH actual hace la persistencia de sesiones append-only y no expone delete. Por
 eso **Delete** es deliberadamente de dos fases: mientras Web está vivo se

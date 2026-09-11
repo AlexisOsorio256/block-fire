@@ -81,6 +81,21 @@ test('current runtime shapes: system/message sizes the prompt, systemless header
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
+test('system prompt sizing tolerates string content from provider/runtime adapters', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    writeLog(file, [
+      sessionEvent('string-system-shape'),
+      { type: 'system/message', data: { message: { content: 'ABCDE' } }, time: 1 },
+      { type: 'request/header', data: { header: { tools: [], config: { model: 'm' } } }, time: 2 },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.systemChars, 5)
+    assert.equal(r.toolCount, 0)
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
 test('--last prefers current session.v3 logs and still sees legacy logs', () => {
   const home = mkdtempSync(join(tmpdir(), 'blockfire-report-home-'))
   try {

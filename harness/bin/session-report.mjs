@@ -99,6 +99,15 @@ function readEvents(file) {
   return events
 }
 
+function messageText(content) {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((block) => {
+    if (typeof block === 'string') return block
+    return typeof block?.text === 'string' ? block.text : ''
+  }).join('')
+}
+
 function fold(file, events) {
   const report = {
     file,
@@ -182,10 +191,12 @@ function fold(file, events) {
         report.provider = header.config?.provider ?? report.provider
         // Current runtimes send the system prompt as system/message events
         // (dynamic, KV-cache friendly), so header.system is usually absent.
-        // Tool schemas still ride the header: capture them independently.
-        if (report.systemChars === undefined && typeof header.system === 'string') {
-          report.systemChars = header.system.length
+        // Older snapshots may store either a string or text blocks here.
+        if (report.systemChars === undefined) {
+          const text = messageText(header.system)
+          if (text !== '') report.systemChars = text.length
         }
+        // Tool schemas still ride the header: capture them independently.
         if (report.toolCount === undefined && Array.isArray(header.tools)) {
           report.toolCount = header.tools.length
           report.toolSchemaChars = JSON.stringify(header.tools).length
@@ -198,8 +209,7 @@ function fold(file, events) {
         // First system/message sizes the permanent prompt on runtimes that
         // manage it dynamically instead of embedding it in every header.
         if (report.systemChars === undefined) {
-          const content = event.data?.message?.content ?? []
-          const text = content.filter((block) => typeof block?.text === 'string').map((block) => block.text).join('')
+          const text = messageText(event.data?.message?.content)
           if (text !== '') report.systemChars = text.length
         }
         break
