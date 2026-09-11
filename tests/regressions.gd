@@ -19,7 +19,10 @@ func _run() -> void:
 	_test_ffa_spawn_ignores_corpses()
 	_test_overlay_restores_player_input()
 	_test_damage_hitbox_lifecycle()
-	_test_weapon_ray_includes_head_areas()
+	_test_weapon_ray_contracts()
+	_test_crouch_collision_profile()
+	_test_match_weapon_skin_is_authoritative()
+	_test_single_hit_marker_owner()
 	if failures.is_empty():
 		print("BLOCKFIRE TARGETED REGRESSIONS: PASS (%d checks)" % checks)
 		quit(0)
@@ -102,6 +105,46 @@ func _test_damage_hitbox_lifecycle() -> void:
 	actor.free()
 	game_match.free()
 
-func _test_weapon_ray_includes_head_areas() -> void:
+func _test_weapon_ray_contracts() -> void:
 	var source := FileAccess.get_file_as_string("res://game/weapons/weapon_controller.gd")
 	_check(source.contains("query.collide_with_areas = true"), "weapon ray explicitly collides with Area3D head hitboxes")
+	_check(source.contains("var origin := _muzzle_origin()"), "authoritative damage ray starts at the real muzzle")
+	_check(source.contains("get_node_or_null(\"HeadHitbox\")"), "muzzle ray excludes the shooter's own head Area3D")
+
+func _test_crouch_collision_profile() -> void:
+	var actor := BlockfirePlayer.new()
+	actor.call("_create_collision")
+	var body := actor.get_node_or_null("BodyCollision") as CollisionShape3D
+	var head := actor.get_node_or_null("HeadHitbox/HeadCollision") as CollisionShape3D
+	_check(body != null and body.shape is CapsuleShape3D, "player owns a named capsule collision profile")
+	_check(head != null, "player owns a named head collision profile")
+	if body != null and body.shape is CapsuleShape3D and head != null:
+		var capsule := body.shape as CapsuleShape3D
+		var standing_height := capsule.height
+		var standing_head_y := head.position.y
+		actor.crouched = true
+		actor.call("_apply_collision_profile")
+		_check(capsule.height < standing_height, "crouch lowers the physical body capsule")
+		_check(head.position.y < standing_head_y, "crouch lowers the actual headshot volume")
+		actor.crouched = false
+		actor.call("_apply_collision_profile")
+		_check(is_equal_approx(capsule.height, standing_height), "standing restores body collision height")
+		_check(is_equal_approx(head.position.y, standing_head_y), "standing restores headshot height")
+	actor.free()
+
+func _test_match_weapon_skin_is_authoritative() -> void:
+	var game_match := MatchScript.new()
+	game_match.weapon_skin = "Oro"
+	var actor := BlockfirePlayer.new()
+	actor.match_context = game_match
+	var controller := WeaponController.new()
+	controller.actor = actor
+	_check(str(controller.call("_current_weapon_skin")) == "Oro", "match-selected weapon skin wins over ambient settings")
+	actor.free()
+	controller.free()
+	game_match.free()
+
+func _test_single_hit_marker_owner() -> void:
+	var source := FileAccess.get_file_as_string("res://game/ui/crosshair.gd")
+	_check(source.contains("func register_hit(_headshot: bool)"), "crosshair keeps the HUD compatibility seam")
+	_check(not source.contains("feedback_timer"), "crosshair no longer renders a duplicate timed hit marker")
