@@ -58,12 +58,18 @@ function events(file) {
     return []
   }
   const out = []
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
     if (line === '') continue
     try {
       out.push(JSON.parse(line))
     } catch {
-      // A truncated final line is normal while a session is live.
+      // Only the final non-empty line may be half-written while a live session
+      // is being inspected. Corruption in the middle must not disappear from
+      // evidence and turn a broken log into a false PASS.
+      const later = lines.slice(index + 1).some((candidate) => candidate !== '')
+      if (later) bad(`malformed JSONL before end of ${file} at line ${index + 1}`)
     }
   }
   return out
@@ -76,6 +82,16 @@ function get(value, path) {
     current = current[key]
   }
   return current
+}
+
+function hasDynamicSystemMessage(rows) {
+  return rows.some((row) => {
+    if (row.type !== 'system/message') return false
+    const content = row.data?.message?.content
+    if (typeof content === 'string') return content.length > 0
+    if (!Array.isArray(content)) return false
+    return content.some((block) => typeof block === 'string' || typeof block?.text === 'string')
+  })
 }
 
 function checkDsh(version) {
@@ -115,8 +131,13 @@ function checkLog(file) {
   else {
     for (const field of CONTRACT.sessionLog.fields['request/header']) {
       const value = get({ header }, field)
-      if (value === undefined) bad(`request/header.${field} missing`)
-      else ok(`request/header.${field} present`)
+      if (value !== undefined) {
+        ok(`request/header.${field} present`)
+      } else if (field === 'header.system' && hasDynamicSystemMessage(rows)) {
+        ok('system prompt present via system/message (dynamic header route)')
+      } else {
+        bad(`request/header.${field} missing`)
+      }
     }
   }
   // Usage fields are adapter-dependent: absent from a report is "unavailable",
