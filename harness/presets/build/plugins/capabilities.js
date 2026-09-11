@@ -16,9 +16,7 @@ const DEFAULT_CAPABILITIES = {
     config: {
       serverName: 'blender',
       transport: 'stdio',
-      command:
-        process.env.BLOCKFIRE_BLENDER_MCP ??
-        `${process.env.HOME ?? ''}/.local/share/blockfire-tools/blender-mcp-venv/bin/blender-mcp`,
+      command: process.env.BLOCKFIRE_BLENDER_MCP ?? `${process.env.HOME ?? ''}/.local/share/blockfire-tools/blender-mcp-venv/bin/blender-mcp`,
       args: [],
       toolCallTimeoutMs: 120000,
     },
@@ -28,77 +26,41 @@ const DEFAULT_CAPABILITIES = {
 const PARAMETERS = {
   type: 'object',
   properties: {
-    action: {
-      type: 'string',
-      enum: ['list', 'on', 'off'],
-      description: 'List, activate or release an optional capability.',
-    },
-    capability: {
-      type: 'string',
-      description: 'Capability key returned by list. Required for on/off.',
-    },
+    action: { type: 'string', enum: ['list', 'on', 'off'], description: 'List, activate or release an optional capability.' },
+    capability: { type: 'string', description: 'Capability key returned by list. Required for on/off.' },
   },
   required: ['action'],
 }
-
 const DESCRIPTION = 'List, activate or release heavyweight capabilities for this session. Keep them off unless needed.'
 
 export function apply(ctx, config) {
-  const defaults = config?.includeDefaults === false ? {} : DEFAULT_CAPABILITIES
-  const specs = { ...defaults, ...(config?.capabilities ?? {}) }
+  const specs = { ...(config?.includeDefaults === false ? {} : DEFAULT_CAPABILITIES), ...(config?.capabilities ?? {}) }
   const mounted = new Map()
-
-  const ownerOf = (exec) => (exec?.agent !== undefined && exec.agent !== null ? exec.agent : undefined)
-  const ownerKeyOf = (exec) => {
-    const agent = ownerOf(exec)
-    return typeof agent?.id === 'string' ? agent.id : undefined
-  }
-  const ownerCtxOf = (exec) => {
-    const agent = ownerOf(exec)
-    return typeof agent?.ctx?.plugin === 'function' ? agent.ctx : undefined
-  }
-  const ofOwner = (ownerKey) => {
-    let owner = mounted.get(ownerKey)
-    if (owner === undefined) {
-      owner = new Map()
-      mounted.set(ownerKey, owner)
-    }
-    return owner
-  }
-
-  async function scopeKeyOf(scope) {
-    try {
-      const { scopeOf } = await import('@deepseek-ai/dsh-scope')
-      return scopeOf(scope)
-    } catch {
-      return scope
-    }
+  const ownerOf = (exec) => exec?.agent ?? undefined
+  const ownerKeyOf = (exec) => typeof ownerOf(exec)?.id === 'string' ? ownerOf(exec).id : undefined
+  const ownerCtxOf = (exec) => typeof ownerOf(exec)?.ctx?.plugin === 'function' ? ownerOf(exec).ctx : undefined
+  const ofOwner = (key) => {
+    let value = mounted.get(key)
+    if (value === undefined) { value = new Map(); mounted.set(key, value) }
+    return value
   }
 
   async function schemaNames(scope) {
     try {
-      return ctx.tools.schemas(scope === undefined ? undefined : await scopeKeyOf(scope))
-        .map((schema) => schema?.name)
-        .filter((toolName) => typeof toolName === 'string')
-    } catch {
-      return undefined
-    }
+      const scoped = scope === undefined ? undefined : (await import('@deepseek-ai/dsh-scope')).scopeOf(scope)
+      return ctx.tools.schemas(scoped).map((schema) => schema?.name).filter((name) => typeof name === 'string')
+    } catch { return undefined }
   }
-
   const toolPrefixOf = (spec) => {
     if (typeof spec?.toolPrefix === 'string' && spec.toolPrefix !== '') return spec.toolPrefix
-    const serverName = spec?.config?.serverName
-    return typeof serverName === 'string' && serverName !== '' ? `mcp__${serverName}__` : undefined
+    const server = spec?.config?.serverName
+    return typeof server === 'string' && server !== '' ? `mcp__${server}__` : undefined
   }
-
   async function registeredNames(spec, entry, scope) {
     const names = await schemaNames(scope)
     if (names === undefined) return undefined
     const prefix = toolPrefixOf(spec)
-    const discovered = entry?.discovered
-    return names
-      .filter((toolName) => (prefix !== undefined && toolName.startsWith(prefix)) || discovered?.has(toolName) === true)
-      .sort()
+    return names.filter((name) => (prefix !== undefined && name.startsWith(prefix)) || entry?.discovered?.has(name) === true).sort()
   }
 
   async function describeAll(exec) {
@@ -110,17 +72,11 @@ export function apply(ctx, config) {
     for (const key of keys) {
       const spec = specs[key]
       const entry = owner?.get(key)
-      const state = entry === undefined
-        ? 'off'
-        : entry.state === 'starting'
-          ? 'starting'
-          : entry.state === 'stuck'
-            ? 'active; release failed'
-            : 'active'
+      const state = entry === undefined ? 'off' : entry.state === 'starting' ? 'starting' : entry.state === 'stuck' ? 'active; release failed' : 'active'
       lines.push(`- ${key} [${state}] — ${spec?.whenToUse ?? ''}`)
       if (entry !== undefined && entry.state !== 'starting') {
         const names = await registeredNames(spec, entry, ownerCtxOf(exec) ?? ctx)
-        if (names?.length > 0) lines.push(`  tools: ${names.join(', ')}`)
+        if (names?.length > 0) lines.push(`    tools now visible: ${names.join(', ')}`)
       }
     }
     return lines.join('\n')
@@ -128,22 +84,14 @@ export function apply(ctx, config) {
 
   async function activate(key, exec) {
     const spec = specs[key]
-    if (spec === undefined || typeof spec !== 'object') {
-      return `Unknown capability "${key}". Declared: ${Object.keys(specs).join(', ') || '(none)'}`
-    }
+    if (spec === undefined || typeof spec !== 'object') return `Unknown capability "${key}". Declared: ${Object.keys(specs).join(', ') || '(none)'}`
     const host = ownerCtxOf(exec)
     const ownerKey = ownerKeyOf(exec)
-    if (host === undefined || ownerKey === undefined) return `Capability "${key}" requires a session context.`
-
+    if (host === undefined || ownerKey === undefined) return `Capability "${key}" can only be activated from a session.`
     const owner = ofOwner(ownerKey)
     const existing = owner.get(key)
-    if (existing !== undefined) {
-      return existing.state === 'starting'
-        ? `Capability "${key}" is already starting.`
-        : `Capability "${key}" is already active.`
-    }
+    if (existing !== undefined) return existing.state === 'starting' ? `Capability "${key}" is already starting.` : `Capability "${key}" is already active.`
     if (typeof spec.package !== 'string' || spec.package === '') return `Capability "${key}" has no package.`
-
     for (const other of Array.isArray(spec.conflictsWith) ? spec.conflictsWith : []) {
       if (owner.get(other) !== undefined) return `Capability "${key}" conflicts with "${other}". Turn "${other}" off first.`
     }
@@ -153,18 +101,13 @@ export function apply(ctx, config) {
     try {
       let moduleNamespace
       try {
-        const id = spec.package.startsWith('.') || spec.package.startsWith('/')
-          ? new URL(spec.package, import.meta.url).href
-          : spec.package
+        const id = spec.package.startsWith('.') || spec.package.startsWith('/') ? new URL(spec.package, import.meta.url).href : spec.package
         moduleNamespace = await import(id)
       } catch (error) {
         return `Capability "${key}" could not load ${spec.package}: ${String(error?.message ?? error)}. Run harness/install.sh and retry.`
       }
-
       const plugin = moduleNamespace?.default ?? moduleNamespace
-      if (typeof plugin !== 'function' && !(plugin && typeof plugin === 'object' && typeof plugin.apply === 'function')) {
-        return `Capability "${key}" could not mount: ${spec.package} is not a Cordis plugin.`
-      }
+      if (typeof plugin !== 'function' && !(plugin && typeof plugin === 'object' && typeof plugin.apply === 'function')) return `Capability "${key}" could not mount: ${spec.package} is not a Cordis plugin.`
 
       let before
       let fiber
@@ -175,22 +118,18 @@ export function apply(ctx, config) {
       } catch (error) {
         let cleanup = ''
         if (typeof fiber?.dispose === 'function') {
-          try { await fiber.dispose() } catch (cleanupError) {
-            cleanup = ` Cleanup also failed: ${String(cleanupError?.message ?? cleanupError)}`
-          }
+          try { await fiber.dispose() } catch (cleanupError) { cleanup = ` Cleaning the partial mount also failed: ${String(cleanupError?.message ?? cleanupError)}` }
         }
         owner.delete(key)
-        return `Capability "${key}" failed: ${String(error?.message ?? error)}.${cleanup}`
+        return `Capability "${key}" failed to start: ${String(error?.message ?? error)}.${cleanup}`
       }
-
       if (before !== undefined) {
         const after = await schemaNames(host)
         if (after !== undefined) {
-          const added = new Set(after.filter((toolName) => !before.includes(toolName)))
+          const added = new Set(after.filter((name) => !before.includes(name)))
           if (added.size > 0) entry.discovered = added
         }
       }
-
       entry.state = 'active'
       entry.dispose = typeof fiber.dispose === 'function' ? fiber.dispose.bind(fiber) : undefined
       if (typeof host.effect === 'function') {
@@ -216,16 +155,9 @@ export function apply(ctx, config) {
     const entry = ownerKey === undefined ? undefined : mounted.get(ownerKey)?.get(key)
     if (entry === undefined) return `Capability "${key}" is not active.`
     if (entry.state === 'starting') return `Capability "${key}" is still starting; retry off shortly.`
-    if (typeof entry.dispose !== 'function') {
-      entry.state = 'stuck'
-      return `Capability "${key}" has no disposer; treat it as still active.`
-    }
-    try {
-      await entry.dispose()
-    } catch (error) {
-      entry.state = 'stuck'
-      return `Capability "${key}" release failed: ${String(error?.message ?? error)}`
-    }
+    if (typeof entry.dispose !== 'function') { entry.state = 'stuck'; return `Capability "${key}" has no disposer; treat it as still active.` }
+    try { await entry.dispose() }
+    catch (error) { entry.state = 'stuck'; return `Capability "${key}" disposed with an error: ${String(error?.message ?? error)}` }
     const owner = mounted.get(ownerKey)
     owner?.delete(key)
     if (owner !== undefined && owner.size === 0) mounted.delete(ownerKey)
@@ -236,10 +168,7 @@ export function apply(ctx, config) {
     name: 'bf_capability',
     description: DESCRIPTION,
     parameters: PARAMETERS,
-    output: {
-      schema: { type: 'string' },
-      render(_args, value) { return [{ type: 'text', text: String(value) }] },
-    },
+    output: { schema: { type: 'string' }, render(_args, value) { return [{ type: 'text', text: String(value) }] } },
     async execute(args, exec) {
       const action = typeof args?.action === 'string' && args.action !== '' ? args.action : 'list'
       if (action === 'list') return describeAll(exec)
@@ -254,10 +183,7 @@ export function apply(ctx, config) {
   ctx.effect(() => async () => {
     disposeTool()
     for (const owner of mounted.values()) {
-      for (const entry of owner.values()) {
-        if (typeof entry.dispose !== 'function') continue
-        try { await entry.dispose() } catch {}
-      }
+      for (const entry of owner.values()) if (typeof entry.dispose === 'function') try { await entry.dispose() } catch {}
       owner.clear()
     }
     mounted.clear()
