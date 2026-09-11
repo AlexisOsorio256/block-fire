@@ -9,6 +9,11 @@
  *
  *   * `capabilities.js` — the router must list, mount and release a declared
  *     capability, and must fail with a useful message instead of throwing.
+ *     Its Blender defaults are `blender` (minimal craft loop) plus the
+ *     `blender-full` escalation, which must refuse to run alongside each other.
+ *   * `blender-min.js` — the minimal craft plugin must register exactly two
+ *     cheap tools and fail soft (actionable message, never a mount failure)
+ *     when Blender is unreachable.
  *   * `guard.js` — the destructive-operation boundary must deny exactly the
  *     catastrophic shapes and leave normal work alone. A guard that over-blocks
  *     is as broken as one that under-blocks, so both directions are asserted.
@@ -28,6 +33,7 @@ import { resolveRuntime } from '../lib/runtime.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
 const CAPABILITIES = pathToFileURL(join(HARNESS, 'presets', 'build', 'plugins', 'capabilities.js')).href
+const BLENDER_MIN = pathToFileURL(join(HARNESS, 'presets', 'build', 'plugins', 'blender-min.js')).href
 const GUARD = pathToFileURL(join(HARNESS, 'host', 'guard.js')).href
 const UPDATE_CENTER = pathToFileURL(join(HARNESS, 'web', 'lib', 'index.js')).href
 
@@ -102,7 +108,8 @@ test('capabilities: registers exactly one tool and declares the shared default',
   assert.equal(state.tools[0].name, 'bf_capability')
   const listed = await state.tools[0].execute({ action: 'list' }, {})
   assert.match(listed, /blender/)
-  assert.match(listed, /off/, 'the shared capability is off by default')
+  assert.match(listed, /blender-full/, 'the full-bridge escalation is declared next to the minimal loop')
+  assert.match(listed, /off/, 'the shared capabilities are off by default')
 })
 
 test('capabilities: composition config merges over the default, and unknown keys fail soft', async () => {
@@ -255,6 +262,25 @@ test('capabilities: list names the tools a capability really added (no prefix ru
     'the activation diff names the real tools even without an mcp__ prefix')
 })
 
+test('capabilities: conflicting capabilities refuse to run together', async () => {
+  const module = await import(CAPABILITIES)
+  const { ctx, state } = fakeCtx()
+  module.apply(ctx, { capabilities: {
+    min: { package: NOOP_PACKAGE, whenToUse: 'y', conflictsWith: ['full'] },
+    full: { package: NOOP_PACKAGE, whenToUse: 'y', conflictsWith: ['min'] },
+  } })
+  const router = state.tools[0]
+  const exec = sessionExec(ctx)
+  assert.match(await router.execute({ action: 'on', capability: 'min' }, exec), /activated/)
+  const clash = await router.execute({ action: 'on', capability: 'full' }, exec)
+  assert.match(clash, /conflicts with "min"/, 'the second Blender connection is refused with a message')
+  assert.match(clash, /"off"/, 'the message says how to proceed')
+  assert.equal(state.plugins.length, 1, 'the refused activation mounted nothing')
+  assert.match(await router.execute({ action: 'off', capability: 'min' }, exec), /deactivated/)
+  assert.match(await router.execute({ action: 'on', capability: 'full' }, exec), /activated/,
+    'escalation works once the minimal loop is off')
+})
+
 test('capabilities: a package that cannot load reports an actionable error', async () => {
   const module = await import(CAPABILITIES)
   const { ctx, state } = fakeCtx()
@@ -262,6 +288,50 @@ test('capabilities: a package that cannot load reports an actionable error', asy
   const result = await state.tools[0].execute({ action: 'on', capability: 'broken' }, sessionExec(ctx))
   assert.match(result, /could not load/)
   assert.match(result, /install\.sh/)
+})
+
+// ── minimal Blender craft loop ──────────────────────────────────────────────
+
+async function blenderMinFor(config = {}) {
+  const module = await import(BLENDER_MIN)
+  const { ctx, state } = fakeCtx()
+  module.apply(ctx, config)
+  assert.equal(state.tools.length, 2, 'the minimal loop registers exactly two tools')
+  const byName = Object.fromEntries(state.tools.map((tool) => [tool.name, tool]))
+  assert.ok(byName.blender_exec, 'execute-code primitive present')
+  assert.ok(byName.blender_screenshot, 'viewport-screenshot primitive present')
+  return { ctx, state, byName }
+}
+
+test('blender-min: two cheap tools, no connection at mount', async () => {
+  const { state, byName } = await blenderMinFor()
+  assert.deepEqual(byName.blender_exec.parameters.required, ['code'])
+  assert.deepEqual(byName.blender_screenshot.parameters.required, [])
+  const chars = JSON.stringify(state.tools.map(({ name, description, parameters }) =>
+    ({ name, description, parameters }))).length
+  assert.ok(chars < 4000, `both schemas together stay cheap, got ${chars} chars`)
+  const finalize = byName.blender_screenshot.finalizeContent
+  assert.equal(typeof finalize, 'function', 'the screenshot tool owns its image projection')
+  assert.equal(finalize({}, { isError: false }), undefined, 'no projection without an execution')
+})
+
+test('blender-min: executing without Blender fails soft with an actionable error', async () => {
+  const { byName } = await blenderMinFor({ command: '/nonexistent/blender-mcp-for-unit-tests' })
+  await assert.rejects(
+    byName.blender_exec.execute({}, {}),
+    /"code"/,
+    'missing code is rejected before any connection attempt',
+  )
+  const failure = await byName.blender_exec.execute({ code: 'x = 1' }, {}).then(
+    () => { throw new Error('must not succeed without a server') },
+    (error) => String(error?.message ?? error),
+  )
+  assert.match(failure, /Blender/i, 'the error names Blender and how to fix it, never a stack trace')
+  const shot = await byName.blender_screenshot.execute({}, {}).then(
+    () => { throw new Error('must not succeed without a server') },
+    (error) => String(error?.message ?? error),
+  )
+  assert.match(shot, /Blender/i)
 })
 
 // ── destructive-operation guard ─────────────────────────────────────────────

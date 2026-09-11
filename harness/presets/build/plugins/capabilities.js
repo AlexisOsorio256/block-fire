@@ -59,14 +59,40 @@ export const inject = ['tools']
 /**
  * Capabilities every BLOCKFIRE space can activate. A composition overrides a key
  * by declaring the same key and adds one by declaring a new key.
+ *
+ * Blender comes in two sizes. `blender` is the normal craft path: a tiny
+ * harness-owned plugin (`./blender-min.js`, resolved against this module)
+ * exposing exactly the two primitives the animation loop uses — execute code
+ * and viewport screenshot. `blender-full` is the escalation: the complete MCP
+ * bridge (~28 tools) for scene queries, asset marketplaces and everything the
+ * two primitives cannot do. They conflict on purpose — two simultaneous MCP
+ * connections against the one Blender addon interleave commands — so turning
+ * one on while the other is active is refused with a message, not a state
+ * machine: turn the other off first.
  */
 const DEFAULT_CAPABILITIES = {
   blender: {
-    package: '@deepseek-ai/dsh-mcp-client',
+    package: './blender-min.js',
+    conflictsWith: ['blender-full'],
     whenToUse:
-      'Blender GUI craft: animation clips, rigging, mesh and visual work on ' +
-      'assets/animation_sources/*.blend while Blender is open. Requires the ' +
-      'blender-mcp addon listening on 127.0.0.1:9876 (`tools/bf doctor` reports it).',
+      'Blender GUI craft FIRST: the minimal animation loop (screenshot, focal ' +
+      'change, screenshot, judge) on assets/animation_sources/*.blend while ' +
+      'Blender is open. Two tools only (blender_exec, blender_screenshot). ' +
+      'Requires the blender-mcp addon listening on 127.0.0.1:9876 ' +
+      '(`tools/bf doctor` reports it).',
+    config: {
+      toolCallTimeoutMs: 120000,
+    },
+  },
+  'blender-full': {
+    package: '@deepseek-ai/dsh-mcp-client',
+    conflictsWith: ['blender'],
+    whenToUse:
+      'Full Blender MCP ESCALATION ONLY, when the two minimal craft tools are ' +
+      'not enough: scene/object queries, Polyhaven/Sketchfab/Hyper3D asset ' +
+      'marketplaces, generated-asset import. ~28 tools (~7.4k tokens of ' +
+      'schema); turn it off when that work is done, and never alongside the ' +
+      'minimal `blender` capability.',
     config: {
       serverName: 'blender',
       transport: 'stdio',
@@ -244,6 +270,14 @@ export function apply(ctx, config) {
     if (typeof spec.package !== 'string' || spec.package === '') {
       return `Capability "${key}" has no "package" configured.`
     }
+    // One Blender connection at a time: the minimal loop and the full bridge
+    // both talk to the one addon socket, and interleaved commands desync it.
+    // Refused with a message on purpose — no auto-off state machine.
+    for (const other of Array.isArray(spec.conflictsWith) ? spec.conflictsWith : []) {
+      if (owner.get(other) !== undefined) {
+        return `Capability "${key}" conflicts with "${other}", which is active in this session. Call this tool with action "off" for "${other}" first.`
+      }
+    }
 
     // Claimed synchronously, BEFORE the first await: a concurrent `on` sees
     // `starting` instead of issuing a second mount. Every early return below
@@ -253,7 +287,13 @@ export function apply(ctx, config) {
     try {
       let moduleNamespace
       try {
-        moduleNamespace = await import(spec.package)
+        // A harness-owned plugin next to this router (`./blender-min.js`)
+        // resolves against this module, so the installed copy and the repo
+        // stay co-located; anything else resolves as an installed package.
+        const id = spec.package.startsWith('.') || spec.package.startsWith('/')
+          ? new URL(spec.package, import.meta.url).href
+          : spec.package
+        moduleNamespace = await import(id)
       } catch (error) {
         return [
           `Capability "${key}" could not load ${spec.package}: ${String(error?.message ?? error)}`,

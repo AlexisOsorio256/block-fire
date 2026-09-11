@@ -125,19 +125,24 @@
     fetch: false
     searchTimeoutMs: 60000
 
-# ── capability router (the only BLOCKFIRE-owned code in this composition) ───
+# ── capability router (BLOCKFIRE-owned code in this composition) ─────────────
 #
 # Blender MCP advertises 28 tools (~7.4k tokens of schema) of which BLOCKFIRE
-# craft work uses a handful, and most sessions never touch Blender. The router
-# registers ONE small tool and mounts the bridge only when a task asks for it.
+# craft work uses two in a loop (execute code, viewport screenshot), and most
+# sessions never touch Blender. The router registers ONE small tool and mounts
+# heavyweight bridges only when a task asks for them: `blender` is the minimal
+# two-tool craft loop (`./plugins/blender-min.js`), `blender-full` the complete
+# bridge as escalation. JIT keeps every session that never asks on a
+# byte-identical catalog prefix.
 #
 # JIT PAYS ONLY FOR HEAVY CAPABILITIES. Activating one mid-session changes the
 # tool catalog and therefore invalidates KV-cache reuse from the schema
 # position onward. That is a good trade for a 7.4k-token bridge and a bad trade
 # for a 1.3k-char tool, which is why the router is not used to hide small tools.
 #
-# The shared `blender` capability is declared by the plugin as its default, so
-# BUILD and CREATOR cannot drift on it; a space adds capabilities (or overrides
-# the default) with `config.capabilities`, which merges over the defaults.
+# The shared `blender` / `blender-full` capabilities are declared by the plugin
+# as its defaults, so BUILD and CREATOR cannot drift on them; a space adds
+# capabilities (or overrides a default) with `config.capabilities`, which merges
+# over the defaults.
 - id: capabilities
   name: './plugins/capabilities.js'

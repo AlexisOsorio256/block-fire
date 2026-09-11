@@ -87,6 +87,7 @@ for file in \
 	"$PRESETS/build/surface.cordis.yml" \
 	"$PRESETS/build/preset.yml" \
 	"$PRESETS/build/plugins/capabilities.js" \
+	"$PRESETS/build/plugins/blender-min.js" \
 	"$PRESETS/creator/agent.cordis.yml" \
 	"$PRESETS/creator/preset.yml" \
 	"$HERE/host/patch.cordis.yml" \
@@ -147,7 +148,7 @@ fi
 
 # ── our own code ────────────────────────────────────────────────────────────
 echo "plugins"
-for file in "$PRESETS/build/plugins/capabilities.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs"; do
+for file in "$PRESETS/build/plugins/capabilities.js" "$PRESETS/build/plugins/blender-min.js" "$HERE/host/guard.js" "$HERE/web/lib/index.js" "$HERE/web/lib/client.js" "$HERE/lib/runtime.mjs"; do
 	if node --check "$file" 2>/dev/null; then ok "${file#"$REPO"/} parses"; else bad "${file#"$REPO"/} has a syntax error"; fi
 done
 if node "$HERE/tests/plugins.test.mjs" >/tmp/blockfire-plugin-tests.log 2>&1; then
@@ -230,6 +231,18 @@ if [ -n "$INSTALL_MODULES" ]; then
 			ok "capability package mounts as a Cordis plugin: $package"
 		else
 			bad "capability package is not a Cordis plugin (no apply): $package"
+		fi
+	done
+	# Harness-owned file capabilities: resolved ./-relative against the router
+	# module, so they are checked as repo files with a Cordis plugin shape
+	# (named exports + apply), not as installed packages.
+	for key in $(python3 -c "import json;c=json.load(open('$HERE/contract/contract.json'))['layout'].get('fileCapabilities',{});print(' '.join(k for k in c if not k.startswith('_')))" 2>/dev/null); do
+		rel="$(python3 -c "import json;print(json.load(open('$HERE/contract/contract.json'))['layout']['fileCapabilities']['$key'])")"
+		if [ -f "$HERE/$rel" ] && node --check "$HERE/$rel" 2>/dev/null \
+			&& (node --input-type=module -e "const m = await import(process.argv[1]); const p = m.default ?? m; if (typeof p.apply !== 'function' || typeof m.name !== 'string') process.exit(1)" "file://$HERE/$rel" 2>/dev/null); then
+			ok "file capability is a loadable Cordis plugin: $key ($rel)"
+		else
+			bad "file capability broken or not a Cordis plugin: $key ($rel)"
 		fi
 	done
 fi

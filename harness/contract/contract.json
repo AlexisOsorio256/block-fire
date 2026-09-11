@@ -100,8 +100,12 @@
   "layout": {
     "shippedCordisSkills": "@deepseek-ai/dsh-agent-presets/presets/cordis/skills",
     "capabilityPackages": {
-      "blender": "@deepseek-ai/dsh-mcp-client",
+      "blender-full": "@deepseek-ai/dsh-mcp-client",
       "cordis": "@deepseek-ai/dsh-tool-cordis"
+    },
+    "fileCapabilities": {
+      "_comment": "Harness-owned JIT plugins resolved against the router module (./-relative), not installed packages: repo path from harness/.",
+      "blender": "presets/build/plugins/blender-min.js"
     }
   }
 }

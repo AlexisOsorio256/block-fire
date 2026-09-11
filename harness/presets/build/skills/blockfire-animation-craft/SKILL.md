@@ -20,17 +20,22 @@ whenToUse: >-
 - `ReloadRifle` y `ReloadPistol` están en `CRAFT_LOCKED`: `--rebuild` se niega
   a tocarlos. Si el trabajo es sobre esos clips, el camino es la GUI.
 
-## Activar Blender MCP (capacidad opcional)
+## Activar Blender (mínimo primero, full solo si hace falta)
 
-Las tools de Blender **no** están cargadas por defecto: su esquema son ~7.4k
-tokens que la mayoría de sesiones no necesita. Si el craft lo requiere:
+El craft normal expone **dos tools** y nada más — el loop es
+screenshot → cambio focal → screenshot → juzgar:
 
 1. `tools/bf doctor` — confirma `Blender MCP OK` (addon escuchando en
    `127.0.0.1:9876`, GUI abierta con el `.blend` correcto).
-2. `bf_capability { action: "on", capability: "blender" }` — activa el puente.
-   Sus tools aparecen como `mcp__blender__*` en el paso siguiente.
+2. `bf_capability { action: "on", capability: "blender" }` — activa
+   `blender_exec` + `blender_screenshot` en el paso siguiente.
 3. Trabaja. Al terminar, `bf_capability { action: "off", capability: "blender" }`
    para devolver el catálogo de tools a su estado estable.
+
+`blender-full` (el puente MCP completo, ~28 tools) es solo escalamiento JIT:
+scene queries, marketplaces de assets, import generativo. Si las dos
+primitives no bastan, apaga `blender` y activa `blender-full` (no conviven:
+dos conexiones contra el mismo addon se interfieren).
 
 Si el addon no responde, no inventes un camino alternativo silencioso: repórtalo
 y decide con el usuario si se arregla la GUI o se cambia de estrategia.

@@ -31,7 +31,8 @@ V1. Auditable por Astra después. Las decisiones dudosas están marcadas abajo e
 | `presets/build/` | El espacio BUILD: persona + skills; incluye `surface.cordis.yml` | Punto de entrada del trabajo normal |
 | `presets/build/surface.cordis.yml` | **Único dueño** de la superficie de tools que ambos espacios montan | BUILD y CREATOR no pueden divergir en filas de tools |
 | `presets/creator/` | El espacio CREATOR: persona + skills + deltas (delegación completa, goals, web fetch, capacidad `cordis`) | Trabajo sobre el harness |
-| `presets/build/plugins/capabilities.js` | Router `bf_capability` + capacidades JIT declaradas | Blender MCP son ~7.4k tokens de esquema; la mayoría de sesiones no lo toca |
+| `presets/build/plugins/capabilities.js` | Router `bf_capability` + capacidades JIT declaradas | El puente Blender completo son +28 tools / +27k chars de esquema; la mayoría de sesiones no lo toca |
+| `presets/build/plugins/blender-min.js` | Capacidad `blender`: el loop mínimo de craft (`blender_exec`, `blender_screenshot`) | El craft real usa 2 primitives (+891 chars); el full queda como escalamiento `blender-full`. Ni el puente MCP ni el servidor ofrecen filtrado, y `tools.restrict()` no oculta la capa propia: el proxy mínimo es la capa soportada |
 | `host/guard.js` | Guard de operaciones destructivas (host plane) | Sustituye los prompts de aprobación por un límite de política |
 | `host/patch.cordis.yml` | Capa de parche del perfil Web (guard, Update Center, roster) | Punto de extensión **soportado** por DSH; no toca archivos del usuario |
 | `web/` | Plugin propio host+cliente: ruta `/blockfire/update` (estado, acciones, progreso de job), página *Settings → BLOCKFIRE* que maneja Update/Rollback, stats de sesión en vivo, botón `+ New` y borrado permanente de conversaciones | Superficie Web visible sin tocar el frontend de upstream |
@@ -116,9 +117,12 @@ Medido: BUILD pasó de 25 tools / 22.311 caracteres de esquema a **18 tools /
 
 **JIT solo para capacidades pesadas.** Activar una capacidad a mitad de sesión
 invalida la cache desde el esquema de tools. Compensa cuando lo que se quita del
-prefijo es mucho mayor que una invalidación (Blender MCP ~7.4k tokens; el
-toolset Cordis ~7.5k caracteres). No compensa para una tool de 1.3k: esas se
-quitan o se quedan, nunca se esconden tras el router.
+prefijo es mucho mayor que una invalidación. Blender viene en dos tamaños
+(medido 2026-09-10 sobre DSH 0.1.5-rc.1, caracteres de esquema JSON):
+`blender` mínimo +2 tools / +891 chars (el loop screenshot → cambio focal →
+screenshot → juzgar); `blender-full` +28 tools / +27.072 chars (~7.4k tokens).
+No compensa para una tool de 1.3k: esas se quitan o se quedan, nunca se
+esconden tras el router.
 
 ## Modelo de updates
 
@@ -174,6 +178,10 @@ quitan o se quedan, nunca se esconden tras el router.
    administrado. `install.sh --check` lo reporta como `BRIDGE LINK missing`.
 7. **El ciclo de vida de las capacidades JIT se prueba con un fixture local**
    (`tests/mount.mjs`: Fiber real, arranque que rechaza, sesión que se cierra con
-   una capacidad activa). No prueba Blender/MCP real, resume de sesión
-   persistida, ni dos sesiones activando la capacidad `cordis` a la vez: eso
-   sigue SIN VERIFICAR hasta que exista Blender conectado o una prueba dedicada.
+   una capacidad activa, ciclo on/list/off del `blender` mínimo sin binario
+   externo). Verificado con Blender real el 2026-09-10 (GUI 4.0.2 + addon en
+   127.0.0.1:9876): `blender_exec` ejecuta y confirma cambios, `blender_screenshot`
+   devuelve PNG del viewport mirado, y la admisión de imagen proyecta el ref al
+   modelo con ruta real; `blender-full` activa/lista sus 28 tools en headless.
+   Sigue SIN VERIFICAR: resume de sesión persistida con Blender activo, y dos
+   sesiones activando la capacidad `cordis` a la vez.

@@ -112,6 +112,30 @@ export function apply(ctx) {
         }
         console.log('  ok    real capability lifecycle: on/list/off twice, session isolation')
 
+        // The minimal Blender craft loop mounts headless: it registers its two
+        // tools synchronously and only spawns the MCP server on first execute,
+        // so `on`/`list`/`off` need no Blender here. The full bridge
+        // (`blender-full`) spawns the real server binary and stays out of this
+        // hermetic suite — it is measured manually, never asserted here.
+        const bcall = action => router.execute({ action, capability: 'blender' }, { agent: handle.agent })
+        const baseSchemas = ctx.tools.schemas(scope)
+        assert.match(await bcall('on'), /activated/)
+        assert(ctx.tools.get('blender_exec', scope), 'minimal exec visible to owner')
+        assert(ctx.tools.get('blender_screenshot', scope), 'minimal screenshot visible to owner')
+        assert.equal(ctx.tools.get('blender_exec', scopeOf(sibling.agent.ctx)), undefined,
+          'minimal loop must not leak into sibling')
+        const minSchemas = ctx.tools.schemas(scope)
+        const minAdded = minSchemas.filter(tool => !baseSchemas.some(base => base.name === tool.name))
+        assert.deepEqual(minAdded.map(tool => tool.name).sort(), ['blender_exec', 'blender_screenshot'])
+        console.log(`  ok    blender minimal: +${minAdded.length} tools, +${JSON.stringify(minAdded).length} schema chars (base ${baseSchemas.length} tools)`)
+        assert.match(await bcall('list'), /tools now visible: blender_exec, blender_screenshot/)
+        // One Blender connection at a time: escalating while minimal is active
+        // is refused BEFORE any mount, so this needs no server binary either.
+        assert.match(await router.execute({ action: 'on', capability: 'blender-full' }, { agent: handle.agent }),
+          /conflicts with "blender"/, 'full escalates only once minimal is off')
+        assert.match(await bcall('off'), /deactivated/)
+        assert.equal(ctx.tools.get('blender_exec', scope), undefined, 'off removes the minimal tools')
+
         // A plugin whose start rejects: the error must surface with the original
         // cause, nothing may stay mounted, and the slot must be free again.
         const failCall = action => router.execute({ action, capability: 'fail' }, { agent: handle.agent })
