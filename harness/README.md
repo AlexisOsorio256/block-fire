@@ -1,186 +1,90 @@
-# Capa BLOCKFIRE del harness
+# BLOCKFIRE Harness
 
-Esta carpeta es **todo** lo que BLOCKFIRE añade a DeepSeek Harness. No es un
-fork: compone capacidades que DSH ya ofrece, añade dos plugins pequeños y una
-página Web propia. Actualizar DSH = actualizar paquetes.
+Capa delgada sobre DeepSeek Harness. No es un fork y no edita `node_modules`.
+Solo existen dos espacios visibles: **BUILD** para trabajar en el juego y
+**CREATOR** para trabajar en `harness/`.
 
-Las decisiones de arquitectura, la frontera con DSH y los riesgos están en
-**`ARCHITECTURE.md`**. Esto es solo el manual de uso.
+## Uso
 
-```
-DSH upstream (paquetes @deepseek-ai/*)          ← nunca se edita
-        ↓
-perfil Web + capa de parche host/               ← guard, Update Center, roster
-        ↓
-dos espacios: BUILD / CREATOR (presets/)        ← lo único que el usuario elige
-        ↓
-skills on-demand + capacidades JIT              ← se pagan solo cuando se usan
-        ↓
-proyecto BLOCKFIRE (AGENTS.md, docs/, tools/bf) ← hechos y verificación
+```bash
+harness/install.sh
+harness/bin/blockfire
 ```
 
-## Arrancar
+`harness/bin/blockfire` aplica la capa BLOCKFIRE, la política de permisos y el
+runtime activo. Una sesión ya abierta conserva la composición con la que nació;
+los cambios de preset aplican a sesiones nuevas.
 
-```
-harness/install.sh          # repo -> $DSH_HOME (presets + parche host + plugin web)
-harness/bin/blockfire       # arranca la superficie Web con la política y el parche
-```
+## Principios
 
-`harness/bin/blockfire` es la forma normal de arrancar el producto: aplica la
-capa de parche, fija la política de permisos (sin prompts de aprobación, porque
-Godot/Blender/Gradle/adb escriben fuera del workspace) y arranca la versión que
-el Update Center tiene activa. `dsh web` a secas sigue siendo el despliegue
-upstream puro, sin filas BLOCKFIRE.
+- Código, tests y git son la verdad del proyecto.
+- El contexto permanente debe ser pequeño; el detalle se carga JIT.
+- Capacidades pesadas usan `bf_capability`; no inflan todas las sesiones.
+- `harness/lib/runtime.mjs` es el único resolutor de DSH.
+- `harness/test.sh` es el contrato de compatibilidad con upstream.
+- No hay plan mode, manager adicional ni workflow obligatorio.
 
-Una sesión ya abierta conserva la composición con la que nació; un cambio en un
-preset aplica a la siguiente sesión.
+## Espacios
 
-### Runtime
+**BUILD** monta la superficie normal de edición, shell, búsqueda, skills,
+subagente básico y capacidades JIT. Su baseline del proyecto vive en la persona
+del preset; no depende de `AGENTS.md` ni obliga a leer documentación al arrancar.
 
-`harness/lib/runtime.mjs` es el **único** resolutor del runtime DSH: lo consumen
-el launcher, `install.sh`, `test.sh` y el Update Center. No hace falta un `dsh`
-global ni `npm i -g`: en una shell nueva resuelve, en este orden, el runtime
-ACTIVE del Update Center, un `dsh` en el PATH (o en la shell de login), un
-`node_modules` local o global, el caché de `npx @deepseek-ai/dsh` y, como último
-recurso, un candidato staged. Devuelve siempre binario **y** `node_modules` del
-mismo árbol, que es lo que resuelven las capacidades opcionales (Blender MCP).
-
-```
-node harness/lib/runtime.mjs            # qué runtime usaría BLOCKFIRE y por qué
-node harness/lib/runtime.mjs --json     # candidatos y diagnóstico
-BLOCKFIRE_DSH_BIN=/ruta/lib/bin.js harness/bin/blockfire    # forzar uno
-```
-
-`command -v dsh` por sí solo no basta: bajo `npx`, `dsh` existe solo dentro de
-ese proceso npx.
-
-## Los dos espacios
-
-| Espacio | Para qué | Superficie permanente |
-|---|---|---|
-| **BUILD** | Trabajo normal sobre el proyecto: código, animación, Android, QA | 18 tools, ~16.5k caracteres de esquema |
-| **CREATOR** | Trabajo sobre el harness: presets, plugins, runtime, compatibilidad | BUILD + delegación completa + goals + `web_fetch`; el toolset Cordis es una capacidad JIT |
-
-Plan mode no está montado en ninguno: una máquina de estados de "planear antes
-de actuar" no aporta a un modelo que ya inspecciona, decide e itera, y medía 0
-usos en las sesiones reales.
+**CREATOR** reutiliza la misma superficie base y añade lo necesario para trabajo
+del harness: delegación completa, goals, `web_fetch` y la capacidad JIT de
+Cordis. No recibe contexto de gameplay.
 
 ## Capacidades JIT
 
+```text
+bf_capability on blender        # loop mínimo: exec + screenshot
+bf_capability on blender-full   # puente Blender completo
+bf_capability on cordis         # solo CREATOR
+bf_capability off <capability>
 ```
-bf_capability                 # lista lo declarado y su estado
-bf_capability action=on  capability=blender
-bf_capability action=on  capability=cordis
-bf_capability action=off capability=blender
-```
 
-- `blender` (BUILD y CREATOR): puente MCP a Blender GUI. Apagado por defecto.
-- `cordis` (solo CREATOR): inspección y modificación del runtime. Apagado por
-  defecto.
+`blender` y `blender-full` no conviven. La opción mínima existe para no pagar el
+esquema completo cuando solo hacen falta ejecución y captura.
 
-Activar una capacidad cambia el catálogo de tools y por eso invalida la cache
-desde la posición del esquema. Compensa solo para capacidades pesadas; una tool
-pequeña que casi no se usa se elimina, no se esconde aquí.
+## Web
 
-## Contexto
+La capa Web añade sin tocar upstream:
 
-En el prompt permanente solo entran: la persona del espacio (identidad +
-contrato del harness), `AGENTS.md` como mensaje durable y el catálogo de skills
-(una línea por skill). Los hechos del proyecto — HEAD, P0, estado, assets,
-teléfono, últimos tests — viven en el repo y se leen cuando la tarea los pide.
-Un hecho tiene un dueño: los hechos del proyecto los posee `AGENTS.md` y
-`docs/`, y la persona no los repite. El arranque es `tools/bf doctor` + git +
-el código dueño; los documentos se leen cuando la tarea los necesita, no de
-rutina.
+- Update Center;
+- stats de sesión junto a la actividad, conservando turns, steps, LLM time,
+  tool time, TTFT, TPS, cache, input y output;
+- botón `+ New`;
+- borrado permanente de conversación mediante la ruta host BLOCKFIRE.
 
-| Tarea | Skill |
-|---|---|
-| Cierre de cualquier tarea | `blockfire-evidence` |
-| Animación, rig, pose | `blockfire-animation-craft` (+ capacidad `blender`) |
-| Input táctil, APK, rendimiento | `blockfire-android-qa` |
-| Cambiar esta capa | `blockfire-harness` (solo CREATOR) |
-| Escribir una composición / un plugin (CREATOR) | `editing-cordis-compositions`, `cordis-plugin-development` |
+El borrado usa las fronteras disponibles de la versión actual. Upstream todavía
+no ofrece una operación única `sessionPersistence.delete(id)` +
+`workspaceRegistry.removeSession(id)`, así que esa ausencia sigue siendo una
+costura conocida y documentada en `ARCHITECTURE.md`.
 
 ## Update Center
 
-```
-node harness/bin/update.mjs status      # qué corre, qué está staged, qué pasó la suite
-node harness/bin/update.mjs check       # canales, versiones nuevas, release notes
-node harness/bin/update.mjs stage <v>   # instala el candidato en un árbol aislado
-node harness/bin/update.mjs verify <v>  # corre harness/test.sh contra ese árbol
-node harness/bin/update.mjs activate <v># solo si pasó; guarda la anterior
+```bash
+node harness/bin/update.mjs status
+node harness/bin/update.mjs check
+node harness/bin/update.mjs stage <version>
+node harness/bin/update.mjs verify <version>
+node harness/bin/update.mjs activate <version>
 node harness/bin/update.mjs rollback
 ```
 
-Nada se reemplaza solo y el proceso en marcha nunca se toca: el cambio aplica al
-siguiente arranque. Estado en `$DSH_HOME/.blockfire-harness/state.json`.
+El proceso en marcha nunca se reemplaza. Una activación aplica al siguiente
+arranque y conserva el anterior para rollback.
 
-En la Web, **Settings → BLOCKFIRE** maneja el mismo mecanismo, sin duplicar
-ninguna lógica: el host lanza `update.mjs` y muestra su salida tal cual. El botón
-**Update** ejecuta la cadena stage → verify → activate (un fallo de verify corta
-la cadena y muestra el output exacto de la suite), **Rollback** vuelve al pin
-anterior, y el progreso del job se consulta en vivo. Un pin distinto de la
-versión en marcha muestra el aviso "Restart required": el cambio aplica al
-próximo arranque. Las rutas mutadoras exigen su header propio
-(`x-blockfire-update`), igual que el borrado de sesiones (`x-blockfire-delete`).
+## Verificación
 
-## Superficie Web (plugin propio)
-
-`web/` añade, sin tocar archivos upstream, cuatro piezas sobre slots reales del
-frontend:
-
-- **Stats de sesión** junto a la actividad: turns · steps, tiempo de LLM,
-  velocidad de decode, cache hit y tokens de entrada/salida, leídos de las
-  proyecciones `sessionStats`/`tokenUsage` — se actualizan mientras el agente
-  trabaja. Va encima del dock de To-Do (que de otro modo la tapa) y debajo de
-  la línea de estado; el strip que DSH monta debajo del composer queda
-  anulado por id + prioridad.
-- **Botón `+ New`** junto a Settings en el pie del sidebar: nueva sesión en el
-  workspace actual/reciente (el `+` por-fila de upstream solo aparece al
-  hover).
-- **Borrado permanente** de la sesión abierta (Dos clics: armar + confirmar)
-  vía `POST /blockfire/session/delete`: quita la cuenta del workspace por los
-  puntos de escritura del propio registro, borra el directorio del log y la
-  entrada del cache de proyecciones. Una sesión con agente en RUN se rechaza.
-  El seam mínimo que falta upstream: `sessionPersistence.delete(id)` +
-  `workspaceRegistry.removeSession(id)` como una operación durable.
-- **Update Center** (sin cambios).
-
-## Pruebas
-
-```
-harness/test.sh                 # suite de compatibilidad (sin llamadas al modelo)
-harness/test.sh --network       # además comprueba detección de updates real
-harness/test.sh --live          # además compara la superficie con sesiones reales
-harness/test.sh --self-test     # controles negativos: la suite DEBE fallar
-node harness/tests/plugins.test.mjs
-node harness/tests/report.test.mjs
-node harness/tests/mount.mjs
+```bash
+harness/test.sh
+harness/test.sh --live
+harness/test.sh --network
+harness/test.sh --self-test
 node harness/bin/session-report.mjs --last 5
 ```
 
-`test.sh` comprueba: estructura, sintaxis y tests unitarios de los plugins,
-fixtures de los contadores del report, resolución de cada fila (paquete
-instalado, archivo relativo, include, patch sin target), composición real del
-árbol con `dsh --profile web --patch ... --dump-config`, contrato del log de
-sesión (PASS / FAIL / SIN EVIDENCIA, con fixtures), contrato de superficie por
-espacio, sincronía de las copias instaladas y (con `--network`) el Update
-Center.
-
-`tests/mount.mjs` hace lo que la composición estática no puede: arranca un host
-Web aislado (DSH_HOME efímero, puerto loopback, sin telemetría ni llamadas al
-modelo), monta los dos presets de verdad y prueba contra el runtime vivo: la
-superficie de tools y skills de cada espacio, el ciclo completo de una
-capacidad (`on`/`list`/`off` dos veces, aislamiento entre sesiones), un plugin
-cuyo arranque rechaza (error original, nada quedó montado) y el cierre de una
-sesión con una capacidad activa (la entrada se libera; una sesión con el mismo
-id empieza OFF). Lo que sigue sin probar: comportamiento del modelo, el bundle
-cliente en un navegador, MCP externo (Blender) y Android.
-
-## Auto-mejora
-
-El agente puede modificar esta capa cuando el trabajo real demuestra que algo
-estorba: una skill inútil, contexto duplicado, una capacidad difícil de
-descubrir, cache degradado, una incompatibilidad upstream. Procedimiento:
-editar aquí → `install.sh` → `test.sh` → sesión nueva → commit. **Nunca** se
-edita la instalación de DSH ni un preset shipped.
+La suite comprueba composición, runtime, tools/skills montadas, plugins, router
+JIT, contrato de logs y sincronía de la instalación. `--live` añade evidencia de
+sesiones reales; ausencia de evidencia no se convierte en PASS.

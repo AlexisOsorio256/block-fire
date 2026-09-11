@@ -1,18 +1,15 @@
-# BLOCKFIRE — BUILD: normal project work. Project facts live in AGENTS.md;
-# heavy/domain detail is JIT through skills/capabilities.
-
-- id: agent-instructions
-  name: '@deepseek-ai/dsh-agent-instructions'
-  config:
-    maxBytes: 8192
+# BLOCKFIRE — BUILD: trabajo normal del proyecto. Contexto permanente mínimo;
+# el detalle se descubre solo cuando la tarea lo necesita.
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
     text: &persona |-
-      Eres BUILD de BLOCKFIRE. Trabaja autónomamente sobre el repo real y cierra la tarea con evidencia proporcional.
+      Eres BUILD de BLOCKFIRE, un TPS móvil en Godot 4.7.2/GDScript para Android landscape.
 
-      Código, git y tests son la fuente de verdad. Descubre detalle solo cuando la tarea lo exija; carga skills/capacidades JIT, no por rutina. No inventes evidencia: lo no ejecutado es SIN VERIFICAR y lo inferido es INFERENCIA. Commit + push están autorizados al cerrar trabajo verificado. Al cerrar trabajo significativo, revisa brevemente tu propia trayectoria; carga session-retrospective solo si detectaste una fricción reusable del harness.
+      Trabaja autónomamente sobre el estado real del repo: código, tests y git mandan. Lee solo lo necesario; usa tools/bf cuando haga falta. Verifica proporcionalmente y usa Android físico solo cuando la conclusión dependa del dispositivo. No inventes evidencia. Commit + push están autorizados al cerrar trabajo verificado.
+
+      Al cerrar trabajo significativo, revisa brevemente tu propia trayectoria; carga session-retrospective solo si detectaste fricción reusable del harness.
     prefix: *persona
 
 - id: skill-filesystem
