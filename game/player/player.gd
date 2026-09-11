@@ -345,11 +345,21 @@ func _update_look(delta: float) -> void:
 func _camera_relative_direction(input_vector: Vector2) -> Vector3:
 	if input_vector.length_squared() < 0.001:
 		return Vector3.ZERO
-	var direction := Vector3(input_vector.x, 0.0, input_vector.y)
-	if camera_pivot != null:
-		direction = camera_pivot.global_transform.basis * direction
-	direction.y = 0.0
-	return direction.normalized()
+	var local_direction := Vector3(input_vector.x, 0.0, input_vector.y)
+	if camera_pivot == null:
+		return local_direction.normalized()
+	# Movimiento TPS = heading horizontal de cámara. Multiplicar primero por
+	# la base completa incluía pitch: al mirar muy arriba/abajo el componente
+	# forward se encogía antes de normalizar y una diagonal cambiaba de ángulo.
+	var right := camera_pivot.global_transform.basis.x
+	var back := camera_pivot.global_transform.basis.z
+	right.y = 0.0
+	back.y = 0.0
+	if right.length_squared() < 0.0001 or back.length_squared() < 0.0001:
+		return local_direction.normalized()
+	right = right.normalized()
+	back = back.normalized()
+	return (right * input_vector.x + back * input_vector.y).normalized()
 
 func _update_body_rotation(delta: float, movement_direction: Vector3) -> void:
 	var target_yaw := rotation.y
@@ -460,10 +470,14 @@ func _create_collision() -> void:
 
 func _create_visual() -> void:
 	visual = OperatorVisual.new()
-	# El avatar del jugador no depende del operator_id deprecado: la ropa
-	# viene del loadout persistido en SettingsStore (claves cosmetic_*).
-	# is_human=true: único que puede leer el loadout persistido.
-	visual.configure(operator_id, team, _team_color(), {}, true)
+	# Configure ocurre antes de add_child(), así que OperatorVisual todavía no
+	# puede resolver SettingsStore por sí solo. Pásale el loadout persistido de
+	# forma explícita: la ropa elegida en lobby debe llegar realmente a partida.
+	var cosmetic_loadout := CosmeticCatalog.default_loadout()
+	var settings := _settings()
+	if settings != null:
+		cosmetic_loadout = settings.cosmetic_loadout()
+	visual.configure(operator_id, team, _team_color(), cosmetic_loadout, true)
 	visual.visible = true
 	add_child(visual)
 

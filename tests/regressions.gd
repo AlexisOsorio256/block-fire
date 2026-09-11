@@ -17,6 +17,9 @@ func _run() -> void:
 	_test_touch_pointer_ownership()
 	_test_touch_hit_geometry()
 	_test_ffa_spawn_ignores_corpses()
+	_test_overlay_restores_player_input()
+	_test_damage_hitbox_lifecycle()
+	_test_weapon_ray_includes_head_areas()
 	if failures.is_empty():
 		print("BLOCKFIRE TARGETED REGRESSIONS: PASS (%d checks)" % checks)
 		quit(0)
@@ -67,3 +70,38 @@ func _test_ffa_spawn_ignores_corpses() -> void:
 	actor.free()
 	corpse.free()
 	game_match.free()
+
+func _test_overlay_restores_player_input() -> void:
+	var game_match := MatchScript.new()
+	var actor := BlockfirePlayer.new()
+	actor.input_enabled = true
+	game_match.player = actor
+	var hud := BlockfireHud.new()
+	hud.match_context = game_match
+	hud.call("_freeze_for_overlay")
+	_check(not actor.input_enabled, "overlay freezes player input while open")
+	_check(bool(hud.get("_overlay_input_states").get(actor.get_instance_id(), false)), "overlay snapshots enabled input before clearing it")
+	hud.call("_resume_from_overlay")
+	_check(actor.input_enabled, "closing overlay restores the player's previous input state")
+	game_match.player = null
+	actor.free()
+	hud.free()
+	game_match.free()
+
+func _test_damage_hitbox_lifecycle() -> void:
+	var game_match := MatchScript.new()
+	var actor := Node3D.new()
+	var head := Area3D.new()
+	head.name = "HeadHitbox"
+	head.collision_layer = 4
+	actor.add_child(head)
+	game_match._set_damage_hitbox_enabled(actor, false)
+	_check(head.collision_layer == 0, "dead combatant head area stops blocking bullets")
+	game_match._set_damage_hitbox_enabled(actor, true)
+	_check(head.collision_layer == 4, "respawn restores the head damage layer")
+	actor.free()
+	game_match.free()
+
+func _test_weapon_ray_includes_head_areas() -> void:
+	var source := FileAccess.get_file_as_string("res://game/weapons/weapon_controller.gd")
+	_check(source.contains("query.collide_with_areas = true"), "weapon ray explicitly collides with Area3D head hitboxes")

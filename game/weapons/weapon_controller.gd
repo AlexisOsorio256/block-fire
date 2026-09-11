@@ -283,6 +283,10 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	var end := origin + direction * definition.range
 	var query := PhysicsRayQueryParameters3D.create(origin, end)
 	query.collision_mask = 1 | 2 | 4
+	# HeadHitbox es Area3D (capa 4). PhysicsRayQueryParameters3D ignora áreas
+	# por defecto; sin esta bandera todos los disparos a la cabeza pasaban por
+	# encima del body collider y el multiplicador de headshot era inalcanzable.
+	query.collide_with_areas = true
 	if actor is CollisionObject3D:
 		query.exclude = [actor.get_rid()]
 	var hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(query)

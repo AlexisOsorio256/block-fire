@@ -243,11 +243,21 @@ func _on_settings_requested() -> void:
 		hud.toggle_settings()
 
 func set_local_overlay_paused(paused: bool) -> void:
+	# El HUD es dueño del snapshot/restauración de input. Este setter sólo
+	# congela el reloj de la ronda; limpiar input aquí ocurría ANTES de que el
+	# HUD pudiera recordar `input_enabled` y dejaba al jugador bloqueado al
+	# cerrar Ajustes/Editor.
 	local_overlay_paused = paused
-	if paused:
-		_stop_combat_inputs()
+
+func _set_damage_hitbox_enabled(actor: Node, enabled: bool) -> void:
+	if not is_instance_valid(actor):
+		return
+	var head := actor.get_node_or_null("HeadHitbox") as Area3D
+	if head != null:
+		head.collision_layer = 4 if enabled else 0
 
 func _on_player_died(dead: Node, killer: Node) -> void:
+	_set_damage_hitbox_enabled(dead, false)
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "enemy"
 	hud.show_death("MUERTE")
 	if mode == "ffa":
@@ -259,6 +269,7 @@ func _on_player_died(dead: Node, killer: Node) -> void:
 	_evaluate_squad()
 
 func _on_bot_died(dead: Node, killer: Node) -> void:
+	_set_damage_hitbox_enabled(dead, false)
 	last_team = killer.get_team() if is_instance_valid(killer) and killer.has_method("get_team") else "ally"
 	last_victim_headshot = bool(dead.get("last_damage_headshot")) if dead != null and dead.has_method("get_team") else false
 	if mode == "ffa":
@@ -420,6 +431,7 @@ func _schedule_respawn(actor: Node) -> void:
 		if state != "COMBAT" or not is_instance_valid(actor):
 			return
 		actor.reset_at(_pick_free_spawn(arena.get_spawns("ffa"), actor), 1.2)
+		_set_damage_hitbox_enabled(actor, true)
 		if actor == player:
 			player.camera.current = true
 			hud.hide_spectator()
