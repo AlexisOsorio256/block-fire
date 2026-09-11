@@ -127,6 +127,10 @@ function timeMs(value) {
   return undefined
 }
 
+function round1(value) {
+  return Math.round(value * 10) / 10
+}
+
 function fold(file, events, parse) {
   const report = {
     file,
@@ -154,13 +158,18 @@ function fold(file, events, parse) {
     firstRequestInput: undefined,
     firstRequestCached: undefined,
     firstRequestCacheWrite: undefined,
+    promptTokensPerUsage: undefined,
+    cumulativePromptMultiple: undefined,
     systemChars: undefined,
     toolCount: undefined,
     toolSchemaChars: undefined,
     toolSchemaTop: [],
+    toolCalls: 0,
+    exactRepeatedToolCalls: 0,
     tools: {},
     capabilities: [],
     skillsLoaded: [],
+    duplicateSkillLoads: 0,
     subagents: [],
     userMessages: 0,
     lastEventTime: undefined,
@@ -170,6 +179,8 @@ function fold(file, events, parse) {
   }
 
   const openCompactions = new Set()
+  const toolCallSignatures = new Set()
+  const loadedSkills = new Set()
 
   for (const event of events) {
     const eventTime = timeMs(event.time)
@@ -256,11 +267,22 @@ function fold(file, events, parse) {
         }
         for (const block of event.data?.message?.content ?? []) {
           if (block.type !== 'tool-call') continue
+          report.toolCalls += 1
           report.tools[block.name] = (report.tools[block.name] ?? 0) + 1
+          const rawArguments = typeof block.arguments === 'string'
+            ? block.arguments
+            : JSON.stringify(block.arguments ?? null)
+          const signature = `${String(block.name)}\u0000${rawArguments}`
+          if (toolCallSignatures.has(signature)) report.exactRepeatedToolCalls += 1
+          else toolCallSignatures.add(signature)
           if (block.name === 'skill') {
             try {
               const parsed = JSON.parse(block.arguments)
-              if (typeof parsed?.name === 'string') report.skillsLoaded.push(parsed.name)
+              if (typeof parsed?.name === 'string') {
+                if (loadedSkills.has(parsed.name)) report.duplicateSkillLoads += 1
+                else loadedSkills.add(parsed.name)
+                report.skillsLoaded.push(parsed.name)
+              }
             } catch {}
           }
           if (block.name === 'bf_capability') {
@@ -284,8 +306,15 @@ function fold(file, events, parse) {
 
   report.compactionsIncomplete = openCompactions.size
   const billedPrompt = report.inputTokens + report.cacheReadTokens + report.cacheWriteTokens
+  const firstPrompt = (report.firstRequestInput ?? 0) + (report.firstRequestCached ?? 0) + (report.firstRequestCacheWrite ?? 0)
   report.cacheHitPercent = billedPrompt > 0
     ? Math.round((report.cacheReadTokens / billedPrompt) * 1000) / 10
+    : undefined
+  report.promptTokensPerUsage = report.usageReports > 0
+    ? Math.round(billedPrompt / report.usageReports)
+    : undefined
+  report.cumulativePromptMultiple = firstPrompt > 0
+    ? round1(billedPrompt / firstPrompt)
     : undefined
   report.wallMs = report.startedAt !== undefined && report.lastEventTime !== undefined
     ? report.lastEventTime - report.startedAt
@@ -324,6 +353,7 @@ for (const report of reports) {
   lines.push(`  compactions    ${report.compactions} attempts (ok ${report.compactionsOk}, failed ${report.compactionsFailed}, incomplete ${report.compactionsIncomplete})`)
   if (report.wallMs !== undefined) lines.push(`  wall time      ${(report.wallMs / 1000).toFixed(1)}s`)
   lines.push(`  prompt tokens  ${billedPrompt} billed | uncached ${report.inputTokens} | cache read ${report.cacheReadTokens} | cache write ${report.cacheWriteTokens} | hit ${pct(report.cacheHitPercent)}`)
+  lines.push(`  efficiency     avg prompt/usage ${report.promptTokensPerUsage ?? 'n/a'} | cumulative/first ${report.cumulativePromptMultiple === undefined ? 'n/a' : `${report.cumulativePromptMultiple}x`} | tool calls ${report.toolCalls} | exact repeats ${report.exactRepeatedToolCalls} | skill reloads ${report.duplicateSkillLoads}`)
   lines.push(`  output tokens  ${report.outputTokens} (reasoning ${report.reasoningTokens})`)
   if (report.systemChars !== undefined) {
     lines.push(`  first header   system ${report.systemChars} chars | ${report.toolCount} tools / ${report.toolSchemaChars} schema chars`)
