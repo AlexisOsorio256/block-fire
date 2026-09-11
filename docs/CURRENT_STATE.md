@@ -37,11 +37,23 @@ acabado con una regresión de locomoción.
 
 ## Pendiente técnico conocido
 
-`game/characters/operator_visual.gd` sigue siendo un archivo grande (1 385
-líneas): modelo/malla, armario, accesorios, montaje de arma e IK en un solo
-dueño. No existe un frente de extracción autorizado por tamaño: solo dividir
-cuando una frontera de dueño/bug concreta justifique el cambio y pueda probarse
-sin alterar pose, IK, montaje o armario.
+`game/characters/operator_visual.gd` ya no mezcla cadencias: 547 líneas
+(contrato + orden del frame + montaje del arma), con el asset en
+`character_asset.gd`, la pose en `operator_body.gd` y la ropa en
+`operator_wardrobe.gd`. El traslado está probado idéntico por
+`tools/probe-refactor-oracle.gd` (`1044286260` antes y después).
+
+Siguiente frontera del mismo tipo, **sin empezar**: `game/ui/hud.gd` (960
+líneas) mezcla cuatro cosas en un solo nodo y un solo espacio de estado — HUD de
+combate, panel de compra, ajustes/editor de controles (con su pausa de overlay,
+`_freeze_for_overlay`/`_overlay_input_states`) y espectador/fin de partida. Su
+riesgo no es la pose sino el LAYOUT: un split necesita capturas por pantalla
+antes/después (`qa_shot --hud`, `--settings`, `--armory`, `--editor`) además de
+la suite. No se toca sin ese plan.
+
+`game/world/arena.gd` (679) y `game/match/match.gd` (538) son grandes pero cada
+uno responde a un dueño único (geometría del mundo / reglas de partida); su
+tamaño es de contenido, no de fronteras mezcladas.
 
 Coste de construcción del personaje ya medido y cacheado: ver "Presupuesto de
 arranque de partida" en `docs/ARCHITECTURE.md` (9 actores: 15 505 → 1 611 ms).
@@ -56,3 +68,8 @@ El presupuesto de arranque de partida está medido en sobremesa (headless). Su
 equivalente en dispositivo está `SIN VERIFICAR`: el cambio reduce operaciones
 (texturas y cirugía de malla por actor) pero el reparto exacto en móvil no se ha
 cronometrado.
+
+## Herramientas
+
+`tools/audit-repo.mjs` tarda ~0,2 s (antes 39 s: lanzaba ~84 000 `grep` como
+subproceso). Se puede ejecutar antes de cada limpieza sin pensarlo.

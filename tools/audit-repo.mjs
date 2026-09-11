@@ -16,7 +16,7 @@
 //   3. refs que anclan basura ramas/refs que retienen objetos muertos
 //   4. caché regenerable     artefactos ignorados que se reconstruyen solos
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const args = process.argv.slice(2);
@@ -82,32 +82,34 @@ function allSources() {
   return out;
 }
 
+// El texto de cada fuente se lee UNA vez y las búsquedas son en memoria. La
+// versión anterior lanzaba un `grep` por asset y por fuente (~84 000 procesos
+// en este repo): 39 s de reloj para un comando que un modelo ejecuta antes de
+// cada limpieza. Misma semántica —substring literal, el `.import` del propio
+// asset excluido, respaldo por nombre sin extensión— y mismo resultado.
+function sourceTexts(sources) {
+  const out = [];
+  for (const { rel, abs } of sources) {
+    try {
+      out.push({ rel, text: readFileSync(abs, 'utf8') });
+    } catch {
+      out.push({ rel, text: '' });
+    }
+  }
+  return out;
+}
+
 function orphanAssets(files) {
-  const sources = allSources();
+  const sources = sourceTexts(allSources());
   const findings = [];
   const assets = files.filter((f) => ASSET_EXT.test(f));
   for (const asset of assets) {
     const base = path.basename(asset);
     const stem = base.replace(/\.[^.]+$/, '');
     let refs = 0;
-    for (const { rel, abs } of sources) {
+    for (const { rel, text } of sources) {
       if (rel === asset || rel.startsWith(`${asset}.`)) continue; // su propio .import
-      let text;
-      try {
-        text = execFileSync('grep', ['-l', '-F', base, abs], { encoding: 'utf8' });
-      } catch {
-        text = '';
-      }
-      if (text) refs += 1;
-      else {
-        // Segundo intento por nombre sin extensión: los .import de Godot y los
-        // prefijos de pipeline citan el fuente sin sufijo.
-        try {
-          if (execFileSync('grep', ['-l', '-F', stem, abs], { encoding: 'utf8' })) refs += 1;
-        } catch {
-          /* sin referencia */
-        }
-      }
+      if (text.includes(base) || text.includes(stem)) refs += 1;
     }
     if (refs === 0) findings.push({ path: asset, bytes: sizeOf(asset) });
   }

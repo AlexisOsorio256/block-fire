@@ -11,8 +11,9 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 |---|---|---|
 | Desplazamiento | `Player` / `Bot` (`CharacterBody3D`) | Decidir posición o velocidad. La animación **nunca** mueve al actor. |
 | Gameplay de arma | `WeaponController` | Decidir munición, `reload_timer` o si la recarga termina. |
-| Pose del personaje | `OperatorMotion` | Existir un segundo reloj de animación. `AnimationPlayer` es biblioteca/visor, nunca reloj. |
-| Montaje de arma + IK | `OperatorVisual` | Escribir la pose antes de componerla. El orden es: composición → mirada → arma → IK → manos. |
+| Pose del personaje | `OperatorMotion` (clips) + `OperatorBody` (intención, mirada, IK) | Existir un segundo reloj de animación. `AnimationPlayer` es biblioteca/visor, nunca reloj. |
+| Orden del frame del personaje | `OperatorVisual._process` (director) | Cambiar el orden: intención → clips → mirada → montaje → IK. Cada paso lo ejecuta su dueño y nadie más escribe el `Skeleton3D`. |
+| Montaje de arma | `OperatorVisual` | Escribir la pose del cuerpo. Aquí sólo se decide DÓNDE va el arma. |
 | HUD | `HUD` (observador) | Decidir gameplay. Solo lee señales. |
 | Velocidad implícita del clip | `tools/make_anim_clips.py` → `locomotion_speeds.json` | Inventar una segunda tabla de velocidades. Gameplay declara la clase (`sprint_intent`) y la velocidad real; el clip se reproduce a `real / implícita`. |
 
@@ -25,9 +26,11 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | Player | `game/player/player.gd` | InputMap, `MobileControls`, SettingsStore | salud, velocidades 4.8/7.0/2.6, cámara y FOV | `tools/test.sh`, `qa_touch`, `probe-aim` | stats de arma, clips, texto HUD |
 | Bot | `game/bots/bot.gd` + `bot_role.gd` | `match_context`, `NavigationAgent3D` | navegación y disparo; números por rol | `tools/test.sh`, `--qa-ffa` | spawns, daño, stats de arma |
 | WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh`, `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
-| OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | pose final del `Skeleton3D`, montaje, IK, armario; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `bf_char_lab`, `probe-ik-quality` | velocidad de gameplay, autoría de clips |
+| OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | contrato público del actor, orden del frame, montaje del arma; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `qa_shot`, `probe-ik-quality` | pose del cuerpo (eso es `OperatorBody`), clips |
+| OperatorBody | `game/characters/operator_body.gd` | velocidad real del actor, intención de sprint/crouch/aim, timers del arma, puntos de agarre del montaje | intención de capa, mirada suavizada, IK de los dos brazos, pose de muerte | `tools/test.sh` (`animation_layers`), `tools/probe-refactor-oracle.gd` | montaje del arma, qué ropa se ve, gameplay |
 | OperatorMotion | `game/characters/operator_motion.gd` | velocidad local, intención de sprint, timers del arma | pose compuesta, pesos de capa, elección de clip | `tools/test.sh` (`animation_layers`), `qa_motion` | constantes de velocidad, geometría del clip |
-| Cosmetics | `game/data/cosmetic_catalog.gd` + `settings_store.gd` + `operator_visual.gd` | selección del lobby | módulos visibles; datos en el catálogo | `tools/test.sh`, `probe-wardrobe` | armas |
+| CharacterAsset | `game/characters/character_asset.gd` | el GLB del personaje (`operator_adult_lod.glb`) | esqueleto listo, malla reparada, clips instalados, puños de agarre; cachés por asset | `tools/test.sh` (`_test_weapon_models_load`), `animation_layers` (`_test_repaired_mesh_replay`), `probe-build-cost`, `probe-weapon-load` | pose por fotograma, gameplay, cosméticos |
+| Cosmetics | `game/characters/operator_wardrobe.gd` + `game/data/cosmetic_catalog.gd` + `settings_store.gd` | selección del lobby | módulos visibles, tono de piel, accesorios; datos en el catálogo | `tools/test.sh`, `qa_shot --wardrobe` | armas, pose |
 | HUD | `game/ui/hud.gd` | señales de match/player/weapon | paneles, editor de controles | `qa_hud_lab`, `qa_shot`, `tools/test.sh` | persistencia, reglas de match |
 | MobileControls | `game/ui/mobile_controls.gd` + `control_editor.gd` | `InputEventScreenTouch/Drag` | vector de movimiento, look, FUEGO/ADS; layout en SettingsStore | `qa_touch`, `tools/test.sh` | matemática de cámara del player |
 | Settings | `game/settings_store.gd` (único autoload) | dos UIs escriben | `values`, layout, loadout | `tools/test.sh` | layout de HUD/lobby |
@@ -97,12 +100,29 @@ la vez, así que ese coste se multiplica por nueve. Medido con
 | 9 actores, `_build()` total | 15 505 ms | 1 611 ms |
 | texturas de detalle generadas | 124 por proceso | 2 por proceso |
 
-Dos cachés `static` lo sostienen, ambas sobre dato derivado del ASSET (idéntico
-en cada actor, nunca por instancia): `_DETAIL_TEXTURES` (dos mapas, uno de piel
-y otro de tejido) y `_REPAIR_CACHE` (cirugía de pesos por superficie, indexada
-por la posición en la malla reparada). Si se toca `_repair_mesh_hands`, la
-prueba `_test_repaired_mesh_replay` de `tests/animation_layers.gd` compara la
-malla del actor en frío con la del que copia caché: deben ser idénticas.
+Dos cachés `static` lo sostienen, ambas en `character_asset.gd` porque son dato
+derivado del ASSET (idéntico en cada actor, nunca por instancia):
+`_DETAIL_TEXTURES` (dos mapas, uno de piel y otro de tejido) y `_REPAIR_CACHE`
+(cirugía de pesos por superficie, indexada por la posición en la malla
+reparada). Si se toca `repair_module_weights`, la prueba
+`_test_repaired_mesh_replay` de `tests/animation_layers.gd` compara la malla del
+actor en frío con la del que copia caché: deben ser idénticas.
+
+## Refactor del personaje: cómo se prueba que no cambió nada
+
+Mover código entre archivos sólo es aceptable si el resultado es IDÉNTICO, no
+"parecido". La prueba es un número, no una impresión:
+
+1. `tools/probe-refactor-oracle.gd` recorre un guion fijo (4 armas × andar,
+   sprint, apuntar, agachado, recarga y frenada) y publica un hash de la pose de
+   los 22 huesos, del montaje y de la boca de cañón. **Antes**: se anota el
+   valor con el código viejo. **Después**: tiene que dar el mismo número.
+   Medido en el split de `operator_visual.gd`: `1044286260` en ambos.
+2. `tools/bf test`: smoke + regressions + animation_layers.
+3. `tools/qa_shot.gd` en `--closeup`/`--cluster-bots`: mismo encuadre y diff de
+   píxeles. Ojo: el render tiene jitter de temporal AA entre pasadas, así que la
+   referencia es "mismo asset, mismo encuadre" (≈0,2 % de píxeles con delta > 1
+   en el cierre de personaje), no "bytes iguales".
 
 ## Recetas
 

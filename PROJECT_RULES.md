@@ -4,6 +4,35 @@ Reglas estables del producto. Léelas solo cuando la tarea necesite una decisió
 de producto/arquitectura. Código y pruebas mandan sobre documentación obsoleta;
 atribuciones viven en `CREDITS.md`.
 
+## Quién mantiene esto
+
+BLOCKFIRE lo mantienen y lo escriben modelos de IA, guiados por una persona en
+las decisiones de producto. Eso decide cómo se escribe el código, no es una
+excusa para bajarlo de calidad.
+
+**La comprensión por parte de un modelo es un requisito de diseño, igual que
+los fps o el gamefeel.** Un archivo que un modelo no puede leer entero, un
+estado que vive en dos sitios, o un símbolo muerto que parece vivo cuestan
+trabajo real en cada tarea futura: son deuda, no estilo. La calidad del juego no
+se negocia para conseguirlo: si algo hay que reescribir, se reescribe **mejor**,
+no más pequeño ni más listo.
+
+Cómo se paga esto en concreto:
+
+- **Un archivo, un ciclo de vida.** Si dos cosas no cambian a la misma cadencia
+  (una vez por proceso, una vez por actor, una vez por fotograma), no van en el
+  mismo archivo. Un archivo de mil líneas que mezcla tres cadencias es ilegible
+  aunque cada función sea correcta.
+- **Frontera declarada en la cabecera.** Cada archivo dice en su comentario de
+  clase qué posee, qué NO posee y quién manda sobre qué, con el orden del frame
+  si participa en él.
+- **Cero símbolos muertos.** Nada de código comentado, funciones sin llamadas ni
+  metadata huérfana: se borran en el mismo commit que los deja sin uso. Lo que
+  no se puede borrar sin riesgo se prueba (`tools/audit-repo.mjs`).
+- **Lo que se mueve se prueba idéntico.** Mover código entre archivos sólo vale
+  si el resultado es el mismo número, no "parecido": ver el oráculo y las
+  capturas en `docs/ARCHITECTURE.md`.
+
 ## Producto
 
 TPS arcade estilizado para Android landscape. Prioridad:
