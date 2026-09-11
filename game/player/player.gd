@@ -27,7 +27,6 @@ var assist_target: Node
 var camera_recoil: float = 0.0
 ## Offset de cámara sobre el hombro derecho, en espacio del pivote.
 const CAMERA_OFFSET := Vector3(0.55, 0.20, 3.25)
-const CAMERA_MIN_DISTANCE := 1.35
 ## Offset de cámara en ADS (más cerca y más al hombro).
 const CAMERA_ADS_OFFSET := Vector3(0.72, 0.24, 2.35)
 ## Por debajo de esta distancia el avatar se oculta para no tapar la pantalla.
@@ -136,7 +135,7 @@ func _physics_process(delta: float) -> void:
 		visual.set_combat_state(horizontal_speed > 0.15, weapon != null and weapon.fire_held, weapon != null and weapon.aim_held, horizontal_speed, sprinting)
 	if camera != null:
 		var target_fov := 52.0 if (weapon != null and weapon.aim_held) else 68.0
-		camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
+		camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 12.0, 0.0, 1.0))
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled or is_bot:
@@ -489,7 +488,9 @@ func _create_camera() -> void:
 
 ## La cámara nunca debe atravesar muro, esquina ni cover: se lanza un rayo del
 ## pivote a la posición deseada contra el mundo (capa 1) y se acerca el brazo
-## de la cámara al primer impacto, con margen para no cortar el personaje.
+## de la cámara al primer impacto. El muro siempre gana: si está pegado al
+## pivote, la cámara puede acercarse más que la distancia de confort y el avatar
+## se oculta en vez de empujar la cámara a través de la geometría.
 func _update_camera_collision(delta: float) -> void:
 	if camera == null or camera_pivot == null:
 		return
@@ -501,7 +502,7 @@ func _update_camera_collision(delta: float) -> void:
 	if crouched:
 		desired_local.y -= 0.16
 	var pivot_transform := camera_pivot.global_transform
-	var from := pivot_transform * Vector3(0.0, 0.0, 0.0)
+	var from := pivot_transform * Vector3.ZERO
 	var desired := pivot_transform * desired_local
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, desired)
@@ -511,17 +512,17 @@ func _update_camera_collision(delta: float) -> void:
 	var target_local := desired_local
 	if not hit.is_empty():
 		var hit_local := pivot_transform.affine_inverse() * (hit["position"] as Vector3)
-		var direction := (hit_local - desired_local).normalized()
-		target_local = hit_local + direction * 0.35
-	# Nunca por debajo de la distancia mínima: pegada al cuerpo la espalda del
-	# personaje llena la pantalla y se pierde el mundo (visto con un árbol
-	# detrás del jugador en SM_S901E).
-	target_local.z = clampf(target_local.z, CAMERA_MIN_DISTANCE, desired_local.z)
+		var hit_distance := hit_local.length()
+		if hit_distance > 0.0001:
+			var clearance := minf(0.35, hit_distance * 0.5)
+			target_local = hit_local - hit_local.normalized() * clearance
+		else:
+			target_local = Vector3.ZERO
 	camera.position = camera.position.lerp(target_local, clampf(delta * 14.0, 0.0, 1.0))
 	# Si el entorno obliga a pegar la cámara, el cuerpo tapa toda la pantalla:
-	# se oculta mientras esté por debajo del umbral (práctica estándar en TPS).
+	# se oculta mientras el brazo real de cámara esté por debajo del umbral.
 	if visual != null:
-		visual.visible = camera.position.z > CAMERA_BODY_HIDE_DISTANCE
+		visual.visible = camera.position.length() > CAMERA_BODY_HIDE_DISTANCE
 
 
 func _update_crouch_visual() -> void:

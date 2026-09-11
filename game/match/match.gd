@@ -405,7 +405,7 @@ func _pick_free_spawn(spawns: Array[Vector3], actor: Node) -> Vector3:
 	for spawn: Vector3 in spawns:
 		var clearance := 999.0
 		for other: Node in get_combatants():
-			if other == actor or not is_instance_valid(other):
+			if other == actor or not is_instance_valid(other) or not bool(other.get("is_alive")):
 				continue
 			clearance = minf(clearance, spawn.distance_to((other as Node3D).global_position))
 		if clearance > best_clearance:

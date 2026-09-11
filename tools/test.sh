@@ -23,10 +23,10 @@ if [ -z "$GODOT_BIN" ]; then
 	exit 1
 fi
 
-# Dos suites, un proceso Godot cada una (el runner no reutiliza un árbol a medias).
-# smoke.gd: producto completo. animation_layers.gd: contrato de pose/velocidad.
+# Tres suites enfocadas, un proceso Godot cada una (el runner no reutiliza un
+# árbol a medias): producto, regresiones dirigidas y contrato de pose/velocidad.
 STATUS=0
-for suite in tests/smoke.gd tests/animation_layers.gd; do
+for suite in tests/smoke.gd tests/regressions.gd tests/animation_layers.gd; do
 	echo "── $suite"
 	if ! "$GODOT_BIN" --headless --path "$ROOT" --script "res://$suite"; then
 		STATUS=1

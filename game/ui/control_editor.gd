@@ -143,7 +143,9 @@ func _move_selected(position: Vector2) -> void:
 	if mobile_controls == null or size.x <= 0.0 or size.y <= 0.0:
 		return
 	var safe_rect := mobile_controls.get_safe_area_rect()
-	var margin := 46.0
+	# El centro no basta: a escala 1.45 un botón podía quedar parcialmente
+	# fuera del notch/borde aunque el editor dijera respetar el área segura.
+	var margin := mobile_controls.get_control_safe_radius(selected_id) + 8.0
 	var clamped_position := Vector2(
 		clampf(position.x, safe_rect.position.x + margin, safe_rect.end.x - margin),
 		clampf(position.y, safe_rect.position.y + margin, safe_rect.end.y - margin)

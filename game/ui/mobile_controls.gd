@@ -24,6 +24,10 @@ var look_pointer: int = -1
 var fire_pointer: int = -1
 var aim_pointer: int = -1
 var sprint_pointer: int = -1
+## Dedos capturados por acciones de un toque. Sin esta propiedad, al arrastrar
+## SALTO/RECARGAR/CAMBIAR/AGACHARSE/CORRER fuera de su círculo el mismo dedo
+## caía al fallback de cámara y producía un tirón de mira.
+var action_pointers: Dictionary = {}
 var touch_positions: Dictionary = {}
 var layout: Dictionary = {}
 
@@ -155,6 +159,14 @@ func get_control_scale(control_id: String) -> float:
 func get_control_opacity(control_id: String) -> float:
 	return float(layout.get(control_id, {}).get("opacity", 1.0))
 
+## Radio que debe caber dentro del safe area al editar. Es la misma autoridad
+## geométrica que usa el hit-test; evita que un control grande quede medio fuera
+## de pantalla aunque su centro sí esté dentro.
+func get_control_safe_radius(control_id: String) -> float:
+	if control_id == "joystick":
+		return 66.0 * _control_scale(control_id)
+	return _button_hit_radius(control_id) * _control_scale(control_id)
+
 func save_layout() -> void:
 	var settings := _settings()
 	if settings != null:
@@ -210,6 +222,7 @@ func release_all() -> void:
 	fire_pointer = -1
 	aim_pointer = -1
 	sprint_pointer = -1
+	action_pointers.clear()
 	touch_positions.clear()
 	move_vector = Vector2.ZERO
 	look_delta = Vector2.ZERO
@@ -234,15 +247,20 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			aim_pointer = pointer
 			aiming = not aiming
 		elif _in_jump(position):
+			action_pointers[pointer] = true
 			jump_request = true
 			jump_requested.emit()
 		elif _in_reload(position):
+			action_pointers[pointer] = true
 			reload_request = true
 		elif _in_switch(position):
+			action_pointers[pointer] = true
 			switch_request = true
 		elif _in_crouch(position):
+			action_pointers[pointer] = true
 			crouch_request = true
 		elif _in_sprint(position):
+			action_pointers[pointer] = true
 			sprint_pointer = pointer
 			# CORRER is a tap-to-toggle action. A quick mobile tap must persist
 			# through the next movement sample instead of requiring a long hold.
@@ -254,6 +272,7 @@ func _handle_touch(pointer: int, position: Vector2, pressed: bool) -> void:
 			look_pointer = pointer
 	else:
 		touch_positions.erase(pointer)
+		action_pointers.erase(pointer)
 		if pointer == move_pointer:
 			move_pointer = -1
 			move_vector = Vector2.ZERO
@@ -277,6 +296,10 @@ func _handle_drag(pointer: int, position: Vector2, relative: Vector2) -> void:
 	elif pointer == fire_pointer or pointer == look_pointer or pointer == aim_pointer:
 		look_delta += relative
 		look_dragged.emit(relative)
+	elif action_pointers.has(pointer):
+		# Un botón de acción conserva la propiedad del dedo hasta finger-up,
+		# incluso si el dedo sale visualmente del círculo.
+		pass
 	elif not _in_any_button(position):
 		look_delta += relative
 		look_dragged.emit(relative)
@@ -312,6 +335,16 @@ func _button_center(id: String) -> Vector2:
 	var value: Vector2 = _normalized_position(id, defaults.get(id, Vector2(0.5, 0.5)))
 	return Vector2(size.x * value.x, size.y * value.y)
 
+func _button_hit_radius(id: String) -> float:
+	match id:
+		"fire": return 58.0
+		"aim": return 48.0
+		"jump": return 42.0
+		"reload": return 38.0
+		"switch", "crouch": return 42.0
+		"sprint": return 68.0
+	return 0.0
+
 func _in_move(position: Vector2) -> bool:
 	# Use both the radial hit test and a broad lower-left lane. Android safe-area
 	# transforms can move the rendered joystick by a few dozen pixels; movement
@@ -324,29 +357,29 @@ func _in_move(position: Vector2) -> bool:
 		or (position.x < size.x * 0.34 and position.y > size.y * 0.55)
 
 func _in_fire(position: Vector2) -> bool:
-	return position.distance_to(_button_center("fire")) < 58.0 * _control_scale("fire")
+	return position.distance_to(_button_center("fire")) < _button_hit_radius("fire") * _control_scale("fire")
 
 func _in_aim(position: Vector2) -> bool:
-	return position.distance_to(_button_center("aim")) < 48.0 * _control_scale("aim")
+	return position.distance_to(_button_center("aim")) < _button_hit_radius("aim") * _control_scale("aim")
 
 func _in_jump(position: Vector2) -> bool:
-	return position.distance_to(_button_center("jump")) < 42.0 * _control_scale("jump")
+	return position.distance_to(_button_center("jump")) < _button_hit_radius("jump") * _control_scale("jump")
 
 func _in_reload(position: Vector2) -> bool:
-	return position.distance_to(_button_center("reload")) < 38.0 * _control_scale("reload")
+	return position.distance_to(_button_center("reload")) < _button_hit_radius("reload") * _control_scale("reload")
 
 func _in_switch(position: Vector2) -> bool:
-	return position.distance_to(_button_center("switch")) < 42.0 * _control_scale("switch")
+	return position.distance_to(_button_center("switch")) < _button_hit_radius("switch") * _control_scale("switch")
 
 func _in_crouch(position: Vector2) -> bool:
-	return position.distance_to(_button_center("crouch")) < 42.0 * _control_scale("crouch")
+	return position.distance_to(_button_center("crouch")) < _button_hit_radius("crouch") * _control_scale("crouch")
 
 func _in_sprint(position: Vector2) -> bool:
-	return position.distance_to(_button_center("sprint")) < 68.0 * _control_scale("sprint")
+	return position.distance_to(_button_center("sprint")) < _button_hit_radius("sprint") * _control_scale("sprint")
 
 func _in_any_button(position: Vector2) -> bool:
 	for id: String in ["fire", "aim", "jump", "reload", "switch", "crouch", "sprint"]:
-		if position.distance_to(_button_center(id)) < 62.0 * _control_scale(id):
+		if position.distance_to(_button_center(id)) < _button_hit_radius(id) * _control_scale(id):
 			return true
 	return false
 

@@ -305,8 +305,6 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 		return
 	if actor.has_method("get_team") and target.get_team() == actor.get_team():
 		return
-	if combat_fx != null:
-		combat_fx.impact(hit.position, hit.get("normal", Vector3.UP), true)
 	var distance: float = origin.distance_to(hit.position)
 	var multiplier: float = 1.0
 	var headshot := false
@@ -317,9 +315,14 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	if distance > definition.falloff_start:
 		falloff = lerpf(1.0, definition.falloff_min, inverse_lerp(definition.falloff_start, definition.range, distance))
 	var damage: float = definition.damage * multiplier * falloff
-	if target.has_method("take_damage"):
-		target.take_damage(damage, actor, headshot)
-		damage_confirmed.emit(damage, headshot)
+	if not target.has_method("take_damage") or not bool(target.take_damage(damage, actor, headshot)):
+		# Spawn shield / inactive combat rejected the hit. Do not lie to the
+		# shooter with blood, damage numbers or a hit marker for damage that did
+		# not actually enter the victim.
+		return
+	if combat_fx != null:
+		combat_fx.impact(hit.position, hit.get("normal", Vector3.UP), true)
+	damage_confirmed.emit(damage, headshot)
 
 func is_headshot_collider(collider: Object) -> bool:
 	return collider is Area3D and collider.get_meta("damage_zone", "") == "head"
