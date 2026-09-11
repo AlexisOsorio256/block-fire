@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Cheap regressions for host/update boundaries that must fail before side effects. */
+/** Cheap regressions for host/update/evidence boundaries that must fail safely. */
 import { strict as assert } from 'node:assert'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -12,6 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
 const GUARD = pathToFileURL(join(HARNESS, 'host', 'guard.js')).href
 const UPDATE = join(HARNESS, 'bin', 'update.mjs')
+const CONTRACT = join(HARNESS, 'lib', 'contract_check.mjs')
 
 async function guardFor() {
   const module = await import(GUARD)
@@ -68,5 +69,50 @@ test('updater: path-shaped versions are rejected before staging touches disk or 
     }
   } finally {
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('contract: dynamic system/message is valid evidence for current DSH headers', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bf-contract-system-'))
+  try {
+    const log = join(root, 'session.jsonl')
+    writeFileSync(log, [
+      JSON.stringify({ type: 'session', id: 's', cwd: '/x', agentPreset: 'build', createdAt: 0 }),
+      JSON.stringify({ type: 'request/header', data: { header: { tools: [], config: { model: 'm' } } } }),
+      JSON.stringify({ type: 'system/message', data: { message: { content: [{ type: 'text', text: 'system prompt' }] } } }),
+      '',
+    ].join('\n'))
+    const result = spawnSync(process.execPath, [CONTRACT, 'log', log], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    assert.match(result.stdout, /system prompt present via system\/message/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('contract: malformed middle JSON fails, but a truncated final live line is tolerated', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bf-contract-jsonl-'))
+  try {
+    const middle = join(root, 'middle.jsonl')
+    writeFileSync(middle, [
+      JSON.stringify({ type: 'session', id: 's', cwd: '/x', agentPreset: 'build', createdAt: 0 }),
+      '{broken-json',
+      JSON.stringify({ type: 'request/header', data: { header: { system: 'S', tools: [], config: { model: 'm' } } } }),
+      '',
+    ].join('\n'))
+    const broken = spawnSync(process.execPath, [CONTRACT, 'log', middle], { encoding: 'utf8' })
+    assert.notEqual(broken.status, 0, 'corruption before later events must fail the contract')
+    assert.match(broken.stdout, /malformed JSONL before end/)
+
+    const tail = join(root, 'tail.jsonl')
+    writeFileSync(tail, [
+      JSON.stringify({ type: 'session', id: 's', cwd: '/x', agentPreset: 'build', createdAt: 0 }),
+      JSON.stringify({ type: 'request/header', data: { header: { system: 'S', tools: [], config: { model: 'm' } } } }),
+      '{"type":',
+    ].join('\n'))
+    const live = spawnSync(process.execPath, [CONTRACT, 'log', tail], { encoding: 'utf8' })
+    assert.equal(live.status, 0, live.stdout + live.stderr)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })
