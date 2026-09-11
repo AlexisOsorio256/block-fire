@@ -57,10 +57,37 @@ test('usage includes cache writes in billed prompt and cache denominator', () =>
     assert.equal(r.usageReports, 1)
     assert.equal(r.requestHeaders, 1)
     assert.equal(r.tools.bash, 1)
+    assert.equal(r.toolCalls, 1)
+    assert.equal(r.exactRepeatedToolCalls, 0)
     assert.equal(r.inputTokens, 10)
     assert.equal(r.cacheReadTokens, 5)
     assert.equal(r.cacheWriteTokens, 5)
     assert.equal(r.cacheHitPercent, 25)
+    assert.equal(r.promptTokensPerUsage, 20)
+    assert.equal(r.cumulativePromptMultiple, 1)
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('efficiency accounting exposes repeated calls, skill reloads and cumulative prompt growth', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    const readCall = { type: 'tool-call', name: 'read', arguments: '{"file_path":"x"}' }
+    const skillCall = { type: 'tool-call', name: 'skill', arguments: '{"name":"blockfire-evidence"}' }
+    writeLog(file, [
+      sessionEvent('efficiency-fixture'),
+      { type: 'assistant/message', data: { usage: { inputTokens: 100 }, message: { content: [readCall] } }, time: 1 },
+      { type: 'assistant/message', data: { usage: { inputTokens: 150 }, message: { content: [readCall] } }, time: 2 },
+      { type: 'assistant/message', data: { usage: { inputTokens: 150 }, message: { content: [skillCall] } }, time: 3 },
+      { type: 'assistant/message', data: { usage: { inputTokens: 100 }, message: { content: [skillCall] } }, time: 4 },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.toolCalls, 4)
+    assert.equal(r.exactRepeatedToolCalls, 2)
+    assert.equal(r.duplicateSkillLoads, 1)
+    assert.deepEqual(r.skillsLoaded, ['blockfire-evidence', 'blockfire-evidence'])
+    assert.equal(r.promptTokensPerUsage, 125)
+    assert.equal(r.cumulativePromptMultiple, 5)
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
