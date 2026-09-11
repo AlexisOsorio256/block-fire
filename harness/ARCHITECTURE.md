@@ -4,7 +4,9 @@
 
 1. DSH es el motor; BLOCKFIRE compone, no forkea ni edita `node_modules`.
 2. Solo hay BUILD (juego) y CREATOR (`harness/`).
-3. Atención primero: prefijo/toolset permanente mínimo; detalle pesado JIT.
+3. Atención primero: el prefijo permanente se mide y se reduce hasta donde deja
+   de ser gratis; nunca se canjea una regla, un marcador de resultado ni la
+   semántica de un parámetro por texto más corto. Detalle pesado, JIT.
 4. Sin plan mode obligatorio, manager paralelo ni workflow DSL.
 5. Evidencia proporcional; lo no ejecutado no se llama verificado.
 6. Un dueño por mecanismo: runtime, updater, surface y Web no se duplican.

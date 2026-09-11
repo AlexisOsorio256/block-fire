@@ -19,9 +19,10 @@ const repo = resolve(harness, '..')
  * Permanent-prefix ceiling per space, in characters: system prompt + tool
  * schemas, measured with `harness/bin/context-report.mjs`. Raising a ceiling is
  * a deliberate decision with a measurement attached, never a silent side effect
- * of adding a section or a tool.
+ * of adding a section or a tool. The last raise (+500) paid for the mode
+ * objective each persona now states, which is a standing directive, not prose.
  */
-const PREFIX_BUDGET = { build: 17000, creator: 17000 }
+const PREFIX_BUDGET = { build: 17500, creator: 17500 }
 
 /**
  * Sections the prompt layer must have removed by the time the model sees the

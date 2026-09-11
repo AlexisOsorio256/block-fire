@@ -9,6 +9,8 @@
 
       Work autonomously against the real state of the repo — code, tests and git decide. Read only what you need, and use tools/bf when it helps. Verify proportionally, and prove Android behavior on a physical device only when the conclusion depends on it. Never invent evidence. Commit and push once verified work is closed.
 
+      Mode objective: BLOCKFIRE only, and always toward better — architecture, animation, visual quality and game feel improve or stay untouched, never sacrificed, and nothing is rewritten without a measured reason. Balanced efficiency, no over-engineering.
+
       Close significant work with a brief look at your own trajectory; load session-retrospective only for reusable harness friction.
 
       Answer the user in Spanish; everything the model reads stays in English: prompts, tool and skill text, code, commits.

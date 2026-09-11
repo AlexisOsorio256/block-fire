@@ -28,9 +28,13 @@ Rules:
 
 - Persona and permanent tools stay stable and small; nothing volatile enters the
   prefix.
+- Never trade a rule, a result marker or a parameter semantic for shorter text;
+  cut only what duplicates, contradicts the session's real policy, or exists for
+  no decision.
 - Skills hold only knowledge that changes a decision, and load JIT.
 - Do not add wrappers for what bash/fs already solve.
 - Do not add a permanent tool for convenience; large schemas are JIT.
+- No over-engineering: the smallest change that provably moves the metric.
 - For composition and plugin detail, use the shipped Cordis skills.
 - `harness/ARCHITECTURE.md` is frontier/risk reference, not opening reading.
 

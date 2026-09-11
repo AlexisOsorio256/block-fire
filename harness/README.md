@@ -38,13 +38,20 @@ permanente de cada espacio (system + contexto + schemas + catálogo de skills) y
 lo desglosa por dueño con `--details`. Es la evidencia antes de tocar el prompt;
 el token real de una sesión lo da `session-report.mjs --last 1`.
 
-Medido con DSH 0.1.5-rc.2, system + schemas pasó de 21.381 a 16.531 caracteres
-en BUILD (−22,7%) y de 21.171 a 16.534 en CREATOR (−21,9%): se elimina la prosa
+Medido con DSH 0.1.5-rc.2, system + schemas pasó de 21.381 a 16.976 caracteres
+en BUILD (−20,6%) y de 21.171 a 17.134 en CREATOR (−19,1%): se elimina la prosa
 duplicada y las descripciones quedan en el hecho operativo, conservando los
 marcadores que el modelo tiene que reconocer en los resultados (`[exit code: N]`,
-`[sandbox: ...]`, `[status: ...]`, `wait: true`). El techo vive en
-`tests/mount.mjs`, que falla si el prefijo crece en silencio o si una tool pierde
-sus parámetros.
+`[sandbox: ...]`, `[status: ...]`, `wait: true`). El prefijo completo
+(system + contexto + schemas + catálogo de skills) queda en 18.541 y 19.192
+caracteres. El techo vive en `tests/mount.mjs`, que falla si el prefijo crece en
+silencio o si una tool pierde sus parámetros.
+
+Cada persona declara además el objetivo de su modo, porque es una directiva
+permanente y no prosa: CREATOR hace medible la eficiencia de todo lo que lee el
+modelo sin canjear reglas, marcadores ni semántica de parámetros por texto más
+corto; BUILD mejora el juego sin sacrificar animación, calidad visual ni game
+feel, y no reescribe nada sin una razón medida.
 
 ## Web
 

@@ -328,7 +328,7 @@ test('prompt: a known tool gets a terse English description and keeps its parame
   const glob = fitted.tools.find(tool => tool.name === 'glob')
   assert(bash.description.length < UPSTREAM_BASH.length * 0.6,
     `bash must shrink substantially (${UPSTREAM_BASH.length} -> ${bash.description.length})`)
-  assert(glob.description.length < UPSTREAM_GLOB.length * 0.8, 'glob must shrink')
+  assert(glob.description.length < UPSTREAM_GLOB.length * 0.85, 'glob must shrink')
   for (const marker of ['[exit code: N]', 'workdir', 'run_in_background', 'job_output', 'job_kill', DENIAL, '$DSH_*']) {
     assert(bash.description.includes(marker), `bash keeps ${marker} so the model recognizes it in results`)
   }
