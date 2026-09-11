@@ -47,6 +47,36 @@ func run() -> void:
 	v.debug_manual_state = true
 	var m := v.motion
 	check(not v.animation_player.active, "No parallel animation clock")
+	# El camino público de gameplay debe transmitir sprint (sin debug manual).
+	v.debug_manual_state = false
+	v.set_combat_state(true, false, false, 7.0, true)
+	v._process(1.0 / 60.0)
+	check(v.sprinting and m.sprint_intent, "Gameplay sprint reaches the motion evaluator")
+	v.set_combat_state(true, false, false, 4.8, false)
+	v._process(1.0 / 60.0)
+	check(not v.sprinting and not m.sprint_intent, "Gameplay sprint release reaches the motion evaluator")
+	v.debug_manual_state = true
+	m.reset()
+	m.local_velocity = Vector3(0, 0, -4.8)
+	for i in 120: m.evaluate(1.0 / 60.0)
+	# Cambiar intención sin avanzar tiempo no puede saltar a otra pose.
+	var standing_pose := m._pose.duplicate()
+	m.crouched = true
+	m.evaluate(0.0)
+	var crouch_pop := 0.0
+	for bone in standing_pose.size():
+		crouch_pop = maxf(crouch_pop, standing_pose[bone].origin.distance_to(m._pose[bone].origin))
+		crouch_pop = maxf(crouch_pop, standing_pose[bone].basis.get_rotation_quaternion().angle_to(m._pose[bone].basis.get_rotation_quaternion()))
+	check(crouch_pop < 0.001, "Crouch intent does not snap the moving pose")
+	m.crouched = false
+	m.aiming = true
+	m.evaluate(0.0)
+	var aim_pop := 0.0
+	for bone in standing_pose.size():
+		aim_pop = maxf(aim_pop, standing_pose[bone].basis.get_rotation_quaternion().angle_to(m._pose[bone].basis.get_rotation_quaternion()))
+	check(aim_pop < 0.001, "ADS intent does not snap torso stabilization")
+	m.reset()
+
 	for clip in ["ReloadRifle","ReloadPistol","StrafeLeft","StrafeRight","CrouchWalk","JumpStart","AirLoop","Land","WalkFwd","SprintFwd"]:
 		check(v.animation_player.has_animation("ual/"+clip), "Required clip "+clip)
 	# --- Recarga por arma: una sola tabla decide clip y recorrido de mano -----

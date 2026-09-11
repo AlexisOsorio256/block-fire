@@ -294,13 +294,12 @@ func evaluate(delta: float) -> void:
 	var sprint_weight := fwd * _sprint_weight
 	var implied := 0.0
 	var cycle := 0.0
-	var entries: Array = []
-	if crouched:
-		entries = [[CROUCH_FWD, fwd], [CROUCH_BACK, back],
-			[CROUCH_SIDE_R if _direction.x > 0.0 else CROUCH_SIDE_L, side]]
-	else:
-		entries = [[LOCO_WALK, walk_weight], [LOCO_SPRINT, sprint_weight], [LOCO_BACK, back],
-			[LOCO_SIDE_R if _direction.x > 0.0 else LOCO_SIDE_L, side]]
+	# La base sigue de pie mientras la capa baja entra/sale; seleccionar aquí
+	# por el booleano crouched saltaba directamente al clip bajo en un frame.
+	var entries: Array = [[LOCO_WALK, walk_weight], [LOCO_SPRINT, sprint_weight], [LOCO_BACK, back],
+		[LOCO_SIDE_R if _direction.x > 0.0 else LOCO_SIDE_L, side]]
+	var crouch_entries: Array = [[CROUCH_FWD, fwd], [CROUCH_BACK, back],
+		[CROUCH_SIDE_R if _direction.x > 0.0 else CROUCH_SIDE_L, side]]
 	for entry: Array in entries:
 		var weight: float = entry[1]
 		if weight <= 0.0001 or not _clips.has(entry[0]): continue
@@ -309,7 +308,11 @@ func evaluate(delta: float) -> void:
 	if implied <= 0.0001:
 		implied = walk_speed
 		cycle = length_of(LOCO_WALK)
-	phase = fposmod(phase + delta * speed / maxf(implied * cycle, 0.01), 1.0)
+	var crouch_stride := 0.0
+	for entry: Array in crouch_entries:
+		crouch_stride += entry[1] * declared_speed(entry[0]) * length_of(entry[0])
+	var stride := lerpf(implied * cycle, crouch_stride, _crouch_weight)
+	phase = fposmod(phase + delta * speed / maxf(stride, 0.01), 1.0)
 	# Idle_Gun se samplea UNA vez por fotograma y sirve de base y de capa de arma.
 	var idle := _sample_into(0, "Idle_Gun", _clock, true)
 	_pose.assign(idle)
@@ -317,8 +320,7 @@ func evaluate(delta: float) -> void:
 		_blend(_pose, _blend_clips(entries, 2), _move_weight)
 	if _crouch_weight > 0.0:
 		var low := _sample_into(5, "ual/CrouchIdle", _clock, true)
-		var crouch_move := _blend_clips([[CROUCH_FWD, fwd], [CROUCH_BACK, back],
-			[CROUCH_SIDE_R if _direction.x > 0.0 else CROUCH_SIDE_L, side]], 6)
+		var crouch_move := _blend_clips(crouch_entries, 6)
 		_blend(low, crouch_move, _move_weight)
 		_blend(_pose, low, _crouch_weight)
 	base_state = "Crouch" if crouched else ("Move" if speed > 0.15 else "Idle")
@@ -335,13 +337,18 @@ func evaluate(delta: float) -> void:
 		base_state = "Land"
 	# A alta velocidad el torso autorado (inclinación, contrarrotación) tiene que
 	# sobrevivir: la capa de arma baja de peso en vez de congelar la espalda.
-	var upper_weight := 0.85 if aiming else lerpf(0.65, 0.42, clampf(speed / maxf(sprint_speed, 0.1), 0.0, 1.0))
+	var upper_weight := lerpf(lerpf(0.65, 0.42, clampf(speed / maxf(sprint_speed, 0.1), 0.0, 1.0)), 0.85, aim_weight)
+	var hold := idle
 	if aim_weight > 0.0:
-		var aim := _sample_into(1, "Idle_Aim", _clock, true)
-		_blend(aim, idle, 1.0 - aim_weight, _upper)
-		_blend(_pose, aim, upper_weight, _upper)
-	else:
-		_blend(_pose, idle, upper_weight, _upper)
+		hold = _sample_into(1, "Idle_Aim", _clock, true)
+		_blend(hold, idle, 1.0 - aim_weight, _upper)
+	# La espalda conserva el impulso/contrapeso del clip. Brazos mantienen
+	# su estabilización y OperatorVisual resuelve el agarre después de esta capa.
+	for bone in _upper:
+		var weight := upper_weight
+		if bone in _reaction:
+			weight *= lerpf(1.0, 0.45, _move_weight)
+		_pose[bone] = _pose[bone].interpolate_with(hold[bone], weight)
 	_add_clip(reload_clip(), reload_phase * length_of(reload_clip()), reload_weight, _upper)
 	_add_clip("ual/Flinch", _flinch_time, _flinch_strength * (0.35 if action != Action.READY else 0.55), _reaction)
 	var chest := _skel.find_bone("Chest")

@@ -256,7 +256,7 @@ func set_combat_state(is_moving: bool, is_firing: bool, is_aiming: bool = false,
 	moving = is_moving
 	firing = is_firing
 	aiming = is_aiming
-	sprinting = sprinting
+	self.sprinting = sprinting
 	# Velocidad real en metros por segundo (la animación se calibra con ella).
 	locomotion_speed_scale = maxf(locomotion_speed, 0.0)
 	_refresh_animation_state()
