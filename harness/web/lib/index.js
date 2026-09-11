@@ -1,11 +1,11 @@
 /** BLOCKFIRE Web host: updater bridge + safe permanent-session delete. */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'blockfire-update-center'
-export const inject = ['webServer', 'sessionPersistence', 'workspaceRegistry']
+export const inject = ['webServer', 'sessionPersistence', 'workspaceRegistry', 'storageDomain']
 
 const DEFAULT_REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const CHECK_TTL_MS = 10 * 60 * 1000
@@ -77,11 +77,46 @@ function queuePhysicalDelete(sessionId) {
   renameSync(tmp, file)
 }
 
+/** Old pre-snapshot DSH fallback, used only when the runtime lacks registry APIs. */
+async function legacyDelete(ctx, header, sessionId) {
+  const registry = ctx.get('workspaceRegistry')
+  const domain = ctx.storageDomain?.get?.('workspace')
+  if (domain !== undefined && domain !== null) {
+    const table = domain.table('workspaces')
+    for (const [id, record] of table.entries()) {
+      if (!Array.isArray(record?.sessionIds) || !record.sessionIds.includes(sessionId)) continue
+      await table.put(id, {
+        ...record,
+        sessionIds: record.sessionIds.filter((member) => member !== sessionId),
+        updatedAt: new Date().toISOString(),
+      })
+    }
+    const state = domain.global.get()
+    if (Array.isArray(state?.archivedSessionIds) && state.archivedSessionIds.includes(sessionId)) {
+      const next = { ...state, archivedSessionIds: state.archivedSessionIds.filter((member) => member !== sessionId) }
+      if (typeof registry?.setState === 'function') await registry.setState(next)
+      else await domain.global.set(next)
+    }
+    if (typeof registry?.rebuildEntities === 'function') registry.rebuildEntities()
+  }
+
+  let logDir = null
+  if (typeof ctx.sessionPersistence.locate === 'function') {
+    try {
+      const location = ctx.sessionPersistence.locate(header)
+      if (typeof location?.path === 'string' && location.path.includes(sessionId)) logDir = dirname(location.path)
+    } catch {}
+  }
+  if (logDir !== null && existsSync(logDir)) rmSync(logDir, { recursive: true, force: true })
+  const home = process.env.DSH_HOME ?? resolve(process.env.HOME ?? '', '.dsh')
+  const cacheEntry = resolve(home, 'storages', 'session_projcache', 'sessions', `${sessionId}.json`)
+  if (existsSync(cacheEntry)) rmSync(cacheEntry, { force: true })
+  return { status: 200, value: { ok: true, sessionId, legacy: true, logDir, cacheEntry } }
+}
+
 /**
- * DSH persistence is append-only and deliberately has no delete API. Current
- * hosts list SessionPersistenceSnapshot ({header, revision}); old hosts listed
- * bare headers. We hide/detach through official workspace APIs now, then queue
- * physical artifacts for the NEXT launcher start, before new handles exist.
+ * Current DSH: list() returns snapshots and persistence has no delete/locate API.
+ * Hide/detach durably now, then purge physical artifacts at next launcher boot.
  */
 async function deleteSession(ctx, sessionId) {
   const agent = ctx.get('agents')?.get(sessionId)
@@ -90,12 +125,15 @@ async function deleteSession(ctx, sessionId) {
   }
 
   const listed = await ctx.sessionPersistence.list()
-  const snapshot = listed.find((item) => (item?.header ?? item)?.id === sessionId)
-  if (snapshot === undefined) {
-    return { status: 404, value: { ok: false, error: `unknown session "${sessionId}"` } }
+  const item = listed.find((candidate) => (candidate?.header ?? candidate)?.id === sessionId)
+  if (item === undefined) return { status: 404, value: { ok: false, error: `unknown session "${sessionId}"` } }
+
+  const isSnapshot = item?.header !== undefined
+  const registry = ctx.workspaceRegistry ?? ctx.get('workspaceRegistry')
+  if (!isSnapshot || typeof registry?.archiveSession !== 'function' || typeof registry?.list !== 'function') {
+    return legacyDelete(ctx, item?.header ?? item, sessionId)
   }
 
-  const registry = ctx.workspaceRegistry
   await registry.archiveSession(sessionId)
   const detached = []
   for (const workspace of registry.list()) {
@@ -104,10 +142,7 @@ async function deleteSession(ctx, sessionId) {
     detached.push(String(workspace.id))
   }
   queuePhysicalDelete(sessionId)
-  return {
-    status: 200,
-    value: { ok: true, sessionId, detached, pendingPurge: true },
-  }
+  return { status: 200, value: { ok: true, sessionId, detached, pendingPurge: true } }
 }
 
 export function apply(ctx, config) {
@@ -122,10 +157,7 @@ export function apply(ctx, config) {
       const child = spawn(process.execPath, [cli, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
       if (job !== null) job.child = child
       let timedOut = false
-      const timer = setTimeout(() => {
-        timedOut = true
-        child.kill('SIGKILL')
-      }, JOB_TIMEOUT_MS)
+      const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, JOB_TIMEOUT_MS)
       const forward = (chunk) => onChunk(chunk.toString('utf8'))
       child.stdout.on('data', forward)
       child.stderr.on('data', forward)
@@ -135,12 +167,7 @@ export function apply(ctx, config) {
       })
       child.on('close', (code) => {
         clearTimeout(timer)
-        settle({
-          ok: code === 0 && !timedOut,
-          note: timedOut
-            ? `step killed after ${Math.round(JOB_TIMEOUT_MS / 60000)} minutes`
-            : code === 0 ? undefined : `step exited with code ${code}`,
-        })
+        settle({ ok: code === 0 && !timedOut, note: timedOut ? `step killed after ${Math.round(JOB_TIMEOUT_MS / 60000)} minutes` : code === 0 ? undefined : `step exited with code ${code}` })
       })
     })
   }
@@ -154,63 +181,39 @@ export function apply(ctx, config) {
       append(`\n── ${step.label} ──\n`)
       const result = await spawnStep(step.args, append)
       if (result.note) append(`${result.note}\n`)
-      if (!result.ok) {
-        append('update stopped; nothing was activated\n')
-        return false
-      }
+      if (!result.ok) { append('update stopped; nothing was activated\n'); return false }
     }
     return true
   }
 
   function beginJob(action, version, steps) {
-    const running = {
-      id: `u${++jobSeq}`,
-      action,
-      version: version ?? null,
-      state: 'running',
-      ok: null,
-      startedAt: new Date().toISOString(),
-      endedAt: null,
-      output: '',
-      child: undefined,
-    }
+    const running = { id: `u${++jobSeq}`, action, version: version ?? null, state: 'running', ok: null, startedAt: new Date().toISOString(), endedAt: null, output: '', child: undefined }
     job = running
     runJob(running, steps).then((ok) => {
       if (job !== running) return
-      running.state = 'done'
-      running.ok = ok
-      running.endedAt = new Date().toISOString()
+      running.state = 'done'; running.ok = ok; running.endedAt = new Date().toISOString()
     }).catch((error) => {
       if (job !== running) return
-      running.state = 'done'
-      running.ok = false
-      running.output += `\n${String(error?.message ?? error)}\n`
-      running.endedAt = new Date().toISOString()
+      running.state = 'done'; running.ok = false; running.output += `\n${String(error?.message ?? error)}\n`; running.endedAt = new Date().toISOString()
     })
     return running
   }
 
   const statusHandler = async (req, res) => {
     if (!existsSync(cli)) return send(res, 500, { ok: false, error: `update.mjs not found at ${cli}` })
-    const url = new URL(req.url ?? '/', 'http://localhost')
-    const wantsCheck = url.searchParams.get('check') === '1'
+    const wantsCheck = new URL(req.url ?? '/', 'http://localhost').searchParams.get('check') === '1'
     const status = await runCli(cli, ['status', '--json'], 30000)
     if (!status.ok) return send(res, 500, { ok: false, error: status.error })
     if (!wantsCheck) return send(res, 200, { ok: true, status: status.value, check: cache.value ?? null, checkedAt: cache.at || null })
-    if (cache.value !== undefined && Date.now() - cache.at < CHECK_TTL_MS) {
-      return send(res, 200, { ok: true, status: status.value, check: cache.value, checkedAt: cache.at })
-    }
+    if (cache.value !== undefined && Date.now() - cache.at < CHECK_TTL_MS) return send(res, 200, { ok: true, status: status.value, check: cache.value, checkedAt: cache.at })
     const checked = await runCli(cli, ['check', '--json'], 180000)
     if (!checked.ok) return send(res, 200, { ok: true, status: status.value, check: null, checkError: checked.error })
-    cache.value = checked.value
-    cache.at = Date.now()
+    cache.value = checked.value; cache.at = Date.now()
     send(res, 200, { ok: true, status: status.value, check: cache.value, checkedAt: cache.at })
   }
 
   const deleteHandler = async (req, res) => {
-    if (req.method !== 'POST' || req.headers['x-blockfire-delete'] !== '1') {
-      return send(res, 405, { ok: false, error: 'POST with x-blockfire-delete: 1 required' })
-    }
+    if (req.method !== 'POST' || req.headers['x-blockfire-delete'] !== '1') return send(res, 405, { ok: false, error: 'POST with x-blockfire-delete: 1 required' })
     const body = await readJsonBody(req)
     if (!body.ok) return send(res, 400, { ok: false, error: body.error })
     const sessionId = typeof body.value?.sessionId === 'string' ? body.value.sessionId : ''
@@ -218,34 +221,21 @@ export function apply(ctx, config) {
     try {
       const outcome = await deleteSession(ctx, sessionId)
       send(res, outcome.status, outcome.value)
-    } catch (error) {
-      send(res, 500, { ok: false, error: String(error?.message ?? error).slice(0, 500) })
-    }
+    } catch (error) { send(res, 500, { ok: false, error: String(error?.message ?? error).slice(0, 500) }) }
   }
 
   const actionHandler = async (req, res) => {
-    if (req.method !== 'POST' || req.headers['x-blockfire-update'] !== '1') {
-      return send(res, 405, { ok: false, error: 'POST with x-blockfire-update: 1 required' })
-    }
+    if (req.method !== 'POST' || req.headers['x-blockfire-update'] !== '1') return send(res, 405, { ok: false, error: 'POST with x-blockfire-update: 1 required' })
     if (!existsSync(cli)) return send(res, 500, { ok: false, error: `update.mjs not found at ${cli}` })
     const body = await readJsonBody(req)
     if (!body.ok) return send(res, 400, { ok: false, error: body.error })
     const action = body.value?.action
     const version = typeof body.value?.version === 'string' ? body.value.version : undefined
-    if (typeof action !== 'string' || !UPDATE_ACTIONS.has(action)) {
-      return send(res, 400, { ok: false, error: `action must be one of: ${[...UPDATE_ACTIONS].sort().join(', ')}` })
-    }
-    if (['stage', 'verify', 'activate', 'update'].includes(action) && (version === undefined || !VERSION_RE.test(version))) {
-      return send(res, 400, { ok: false, error: 'a valid version is required' })
-    }
+    if (typeof action !== 'string' || !UPDATE_ACTIONS.has(action)) return send(res, 400, { ok: false, error: `action must be one of: ${[...UPDATE_ACTIONS].sort().join(', ')}` })
+    if (['stage', 'verify', 'activate', 'update'].includes(action) && (version === undefined || !VERSION_RE.test(version))) return send(res, 400, { ok: false, error: 'a valid version is required' })
     if (job?.state === 'running') return send(res, 409, { ok: false, error: 'an update operation is already running' })
-
     const steps = action === 'update'
-      ? [
-          { label: `stage ${version}`, args: ['stage', version] },
-          { label: `verify ${version}`, args: ['verify', version] },
-          { label: `activate ${version}`, args: ['activate', version] },
-        ]
+      ? [{ label: `stage ${version}`, args: ['stage', version] }, { label: `verify ${version}`, args: ['verify', version] }, { label: `activate ${version}`, args: ['activate', version] }]
       : [{ label: action === 'rollback' ? 'rollback' : `${action}${version ? ` ${version}` : ''}`, args: version ? [action, version] : [action] }]
     const started = beginJob(action, version, steps)
     send(res, 200, { ok: true, jobId: started.id })
@@ -254,26 +244,12 @@ export function apply(ctx, config) {
   const jobHandler = async (req, res) => {
     const wanted = new URL(req.url ?? '/', 'http://localhost').searchParams.get('job')
     if (job === null || (wanted !== null && job.id !== wanted)) return send(res, 404, { ok: false, error: 'no such job' })
-    send(res, 200, {
-      ok: true,
-      job: {
-        id: job.id,
-        action: job.action,
-        version: job.version,
-        state: job.state,
-        ok: job.ok,
-        startedAt: job.startedAt,
-        endedAt: job.endedAt,
-        output: job.output,
-      },
-    })
+    send(res, 200, { ok: true, job: { id: job.id, action: job.action, version: job.version, state: job.state, ok: job.ok, startedAt: job.startedAt, endedAt: job.endedAt, output: job.output } })
   }
 
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/update', handler: statusHandler }), 'blockfire:update')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/update/action', handler: actionHandler }), 'blockfire:update-action')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/update/job', handler: jobHandler }), 'blockfire:update-job')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/blockfire/session/delete', handler: deleteHandler }), 'blockfire:delete')
-  ctx.effect(() => () => {
-    if (job?.state === 'running' && job.child !== undefined) job.child.kill('SIGKILL')
-  }, 'blockfire:update-kill')
+  ctx.effect(() => () => { if (job?.state === 'running' && job.child !== undefined) job.child.kill('SIGKILL') }, 'blockfire:update-kill')
 }
