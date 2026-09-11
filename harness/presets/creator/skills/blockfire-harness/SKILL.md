@@ -1,92 +1,38 @@
 ---
 name: blockfire-harness
 description: >-
-  Cómo mejorar la propia capa BLOCKFIRE del harness (harness/) sin tocar DSH:
-  layout, instalar, probar, qué es upstream y qué reglas mantienen el cache.
+  Frontera mínima para cambiar harness/, medir su superficie y mantenerlo
+  compatible con upstream DSH.
 whenToUse: >-
-  Cuando una skill estorba o falta, una tool no existe, el prompt desperdicia
-  tokens, una capacidad es difícil de descubrir, o hay que cambiar el preset.
+  Cuando la tarea modifica presets, host/web, runtime resolver, updater,
+  capacidades JIT, métricas o tests del harness.
 ---
 
-# Mejorar la capa BLOCKFIRE
+# BLOCKFIRE Harness
 
-El agente puede modificar esta capa cuando el trabajo real demuestra que algo
-está mal. No es un privilegio decorativo: es el mecanismo de evolución.
+Trabaja en `harness/`; nunca edites `node_modules` ni la copia instalada en
+`$DSH_HOME`. Upstream DSH es dependencia, no fork.
 
-## Qué es de quién
+Flujo normal:
 
-| Capa | Dónde vive | ¿Se edita? |
-|---|---|---|
-| DSH upstream (paquetes) | `node_modules/@deepseek-ai/*` | **Nunca** |
-| Presets shipped (`standard`, `cordis`, ...) | dentro de `dsh-agent-presets` | **Nunca** |
-| Capa BLOCKFIRE | `<repo>/harness/` | Sí, aquí |
-| Proyecto BLOCKFIRE | `game/`, `docs/`, `tools/bf`, ... | Solo si la tarea lo pide |
+1. Inspecciona solo el código dueño del problema.
+2. Haz el cambio mínimo; capacidades pesadas van detrás de `bf_capability`.
+3. `harness/install.sh` sincroniza repo → instalación.
+4. `harness/test.sh` prueba composición/runtime; usa `--live` solo cuando una
+   sesión real aporta evidencia relevante.
+5. Mide el efecto con `node harness/bin/session-report.mjs --last 1` cuando el
+   cambio trate de contexto/herramientas.
 
-El mapa completo de componentes, la frontera con DSH y los riesgos abiertos
-están en `harness/ARCHITECTURE.md` — no se duplican aquí.
+Reglas:
 
-La instalación activa es una **copia** materializada por `harness/install.sh`:
-los presets de cada espacio en `$DSH_HOME/.agent-presets/build|creator/` y las
-filas host en `$DSH_HOME/profiles/web/`. Editar la copia se pierde; editar el
-repo y sincronizar es el camino.
+- Persona y tools permanentes deben ser estables y pequeños; nada volátil entra
+  al prefijo.
+- Skills contienen solo conocimiento que cambia una decisión y se carga JIT.
+- No añadas wrappers para cosas que bash/fs ya resuelven.
+- No añadas una tool permanente por comodidad; schemas grandes son JIT.
+- Si necesitas detalle de composición/plugin, usa las skills shipped de Cordis.
+- `harness/ARCHITECTURE.md` es referencia de frontera/riesgos, no lectura de
+  inicio.
 
-```
-harness/
-  presets/build/        # espacio BUILD: persona, superficie compartida, skills, plugins/
-  presets/creator/      # espacio CREATOR: persona + deltas sobre la superficie de BUILD
-  host/                 # capa de parche del perfil Web (guard, Update Center, roster)
-  web/                  # página Settings → BLOCKFIRE y ruta /blockfire/update
-  bin/                  # launcher, Update Center, session-report
-  lib/                  # resolutor de runtime, chequeos de composición y contrato
-  tests/                # unit tests de plugins, fixtures del report, montaje real
-  install.sh            # repo -> $DSH_HOME (idempotente)
-  test.sh               # suite de compatibilidad: montaje real + controles negativos
-```
-
-## Ciclo de cambio
-
-1. Edita en `harness/` (nunca en `$DSH_HOME`).
-2. `harness/install.sh` — sincroniza la copia activa. Ojo: los presets que el
-   roster monta son `SPACES`; cualquier directorio nuevo bajo `presets/` (p. ej.
-   `shared/`) necesita su propio paso de copia y su check de drift, o la suite
-   (que copia el árbol completo) pasa y la instalación real se queda sin él.
-3. `harness/test.sh` — boots reales: `tests/mount.mjs` arranca un host Web
-   aislado con los dos presets y prueba la superficie y el ciclo de capacidades
-   sin llamadas al modelo; los controles negativos deben fallar con
-   `--self-test`.
-4. Sesión nueva en la GUI (el preset se monta al crearla; una sesión viva no se
-   recompone) para confirmar el efecto real. Después:
-   `node harness/bin/session-report.mjs --last 1`.
-5. commit + push del cambio de capa.
-
-## Reglas que mantienen el diseño sano
-
-- **Prefijo estable**: la persona y el catálogo de tools no cambian dentro de
-  una sesión. Nada volátil (HEAD, P0, listas de archivos, capturas, logs) entra
-  en la persona. Eso vive en el repo y se lee bajo demanda.
-- **Progressive disclosure**: el catálogo de skills es barato; el cuerpo se
-  carga cuando la tarea encaja. Una skill nueva debe cambiar una decisión real,
-  no repetir lo que ya dice `docs/ARCHITECTURE.md`.
-- **Schemas caros = capacidades opcionales**: si un puente añade miles de
-  tokens de esquema, decláralo en `config.capabilities` del preset y actívalo
-  con `bf_capability`, no en la fila estática.
-- **Una fila publica servicio ⇒ necesita `isolate`; una fila que solo consume
-  servicio host ⇒ fuera de todo `isolate`.** Romper esto hace fallar el mount.
-- **Pocos componentes**: antes de añadir un plugin o una tool, escribe qué
-  problema real resuelve. Si la respuesta es "quizá sirva", no se añade.
-- **No reimplementar el proyecto**: `tools/bf` sigue siendo el punto de entrada
-  de verificación; bash sigue siendo la herramienta general.
-
-## Portabilidad de modelo
-
-El preset no menciona proveedor ni modelo. Cambiar de modelo es cambiar la
-selección (`/model`, o `agent-default-model` en `settings.yaml`) — la capa
-BLOCKFIRE no cambia. Si un modelo nuevo necesita otro *tuning* (por ejemplo más
-o menos skills cargadas de golpe), eso se ajusta aquí y se documenta como
-tuning, no como dependencia estructural.
-
-## Antes de declarar la mejora hecha
-
-`harness/test.sh` verde, copia sincronizada, y una frase en el commit que diga
-qué problema real resolvía y cómo se comprobó. Si no puedes demostrarlo, no era
-una mejora: era una opinión.
+Cierre: prueba proporcional, instalación en sync cuando corresponda y reporte
+honesto de lo no verificado.
