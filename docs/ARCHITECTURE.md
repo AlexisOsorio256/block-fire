@@ -23,7 +23,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 |---|---|---|---|---|---|
 | App | `game/app.gd`, `game/app.tscn` | flags `--qa-*`, señales de lobby/match | pantalla actual, tema | `tools/test.sh`, `--qa-ffa` | gameplay, UI |
 | Match | `game/match/match.gd` + `*_rules.gd` | `configure()`, señales HUD/player | rondas, economía, respawn; estado en `match.gd` | `tools/test.sh` (smoke) | daño, IA, layout HUD |
-| Player | `game/player/player.gd` | InputMap, `MobileControls`, SettingsStore | salud, velocidades 4.8/7.0/2.6, cámara y FOV | `tools/test.sh`, `qa_touch`, `probe-aim` | stats de arma, clips, texto HUD |
+| Player | `game/player/player.gd` | InputMap, `MobileControls`, SettingsStore | salud, velocidades 4.8/7.0/2.6, cámara y FOV | `tools/test.sh`, `qa_touch`, `tools/probe-player-feel.gd` | stats de arma, clips, texto HUD |
 | Bot | `game/bots/bot.gd` + `bot_role.gd` | `match_context`, `NavigationAgent3D` | navegación y disparo; números por rol | `tools/test.sh`, `--qa-ffa` | spawns, daño, stats de arma |
 | WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh`, `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
 | OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | contrato público del actor, orden del frame, montaje del arma; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `qa_shot`, `probe-ik-quality` | pose del cuerpo (eso es `OperatorBody`), clips |
@@ -84,7 +84,8 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | HUD / lobby | `tools/bf qa hud` + `tools/bf test` |
 | antes de publicar | `tools/bf test` + `tools/bf qa touch` + `tools/bf build android` |
 
-La suite (`tests/smoke.gd`, `tests/animation_layers.gd`) es la puerta; los
+La suite (`tests/smoke.gd`, `tests/regressions.gd`, `tests/animation_layers.gd`
+y `tools/probe-player-feel.gd`) es la puerta; los
 `tools/qa_*` son las comprobaciones de experiencia y `tools/probe-*` son
 mediciones de diagnóstico. Punto de entrada único: `tools/bf`.
 
@@ -134,3 +135,11 @@ Mover código entre archivos sólo es aceptable si el resultado es IDÉNTICO, no
 - **Ver la pose real**: `tools/bf qa motion --mode=reload --weapon=pistol`.
 - **Medir el recorrido de la mano**: `tools/probe-reload-hand.gd` (imprime
   cuánto baja la mano por clase de arma).
+
+## Cámara del jugador
+
+`Player` conserva `look_yaw` como rumbo mundial. Orden de física: input/mirada →
+velocidad/giro del cuerpo → `move_and_slide` → órbita/colisión de cámara. El
+pivote hijo se compensa después del giro; la colisión limita tanto el destino
+del brazo como la posición interpolada. `CameraFX` conserva la sacudida.
+Auditoría y siguientes pasos medibles: `docs/PLAYER_FEEL_AUDIT.md`.

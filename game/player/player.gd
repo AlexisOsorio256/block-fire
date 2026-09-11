@@ -1,6 +1,10 @@
 class_name BlockfirePlayer
 extends CharacterBody3D
 
+## Owns gameplay displacement and camera orbit/collision. Physics order:
+## look/input → velocity/body turn → move_and_slide → camera orbit/collision.
+## Animation only reads movement; CameraFX owns camera shake, never the pivot.
+
 signal health_changed(value: float, maximum: float)
 signal player_died(player: Node, killer: Node)
 
@@ -87,12 +91,12 @@ func _notification(what: int) -> void:
 			weapon.clear_combat_input()
 
 func _physics_process(delta: float) -> void:
-	_update_camera_collision(delta)
 	assist_break_timer = maxf(0.0, assist_break_timer - delta)
 	camera_recoil = move_toward(camera_recoil, 0.0, delta * 5.0)
 	if spawn_immunity > 0.0:
 		spawn_immunity = maxf(0.0, spawn_immunity - delta)
 	if not is_alive:
+		_update_camera_pose(delta)
 		return
 	if match_context != null and match_context.has_method("is_combat_active") and not match_context.is_combat_active():
 		input_enabled = false
@@ -102,6 +106,7 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
 		_apply_gravity(delta)
 		move_and_slide()
+		_update_camera_pose(delta)
 		return
 	_update_look(delta)
 	if not input_enabled:
@@ -109,6 +114,7 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
 		_apply_gravity(delta)
 		move_and_slide()
+		_update_camera_pose(delta)
 		return
 	var input_vector := _movement_input()
 	var wish_direction := _camera_relative_direction(input_vector)
@@ -145,6 +151,7 @@ func _physics_process(delta: float) -> void:
 			weapon.switch_to(0)
 	_update_body_rotation(delta, wish_direction)
 	move_and_slide()
+	_update_camera_pose(delta)
 	_update_footsteps(delta)
 	if visual != null:
 		var horizontal_speed := Vector2(velocity.x, velocity.z).length()
@@ -351,6 +358,15 @@ func _update_look(delta: float) -> void:
 	look_yaw -= look.x * sensitivity
 	look_pitch = clampf(look_pitch - look.y * sensitivity, -78.0, 78.0)
 	_apply_rotational_assist(delta, look)
+	_sync_camera_orbit()
+
+func _update_camera_pose(delta: float) -> void:
+	# Body rotation changes the parent basis after look input. Restore the
+	# absolute orbit before testing collision at the actor's NEW position.
+	_sync_camera_orbit()
+	_update_camera_collision(delta)
+
+func _sync_camera_orbit() -> void:
 	if camera_pivot != null:
 		# look_yaw is an absolute world heading; the pivot is a child of the
 		# actor, so convert it to a local orbit. Looking around no longer rotates
@@ -554,28 +570,32 @@ func _update_camera_collision(delta: float) -> void:
 		desired_local = CAMERA_ADS_OFFSET
 	if crouched:
 		desired_local.y -= 0.16
+	# Resolve the full arm first so a persistent obstacle gives a stable target.
+	# Then constrain the smoothed candidate too: smoothing alone can leave the
+	# camera behind the wall for several frames after a pan or actor movement.
+	var target_local := _camera_clear_offset(desired_local)
+	var candidate := camera.position.lerp(target_local, clampf(delta * 14.0, 0.0, 1.0))
+	camera.position = _camera_clear_offset(candidate)
+	if visual != null:
+		visual.visible = camera.position.length() > CAMERA_BODY_HIDE_DISTANCE
+
+## World collision owns the limit; only unobstructed extension is smoothed.
+func _camera_clear_offset(offset: Vector3) -> Vector3:
 	var pivot_transform := camera_pivot.global_transform
-	var from := pivot_transform * Vector3.ZERO
-	var desired := pivot_transform * desired_local
-	var space := get_world_3d().direct_space_state
+	var from := pivot_transform.origin
+	var desired := pivot_transform * offset
 	var query := PhysicsRayQueryParameters3D.create(from, desired)
 	query.collision_mask = 1
 	query.exclude = [get_rid()]
-	var hit := space.intersect_ray(query)
-	var target_local := desired_local
-	if not hit.is_empty():
-		var hit_local := pivot_transform.affine_inverse() * (hit["position"] as Vector3)
-		var hit_distance := hit_local.length()
-		if hit_distance > 0.0001:
-			var clearance := minf(0.35, hit_distance * 0.5)
-			target_local = hit_local - hit_local.normalized() * clearance
-		else:
-			target_local = Vector3.ZERO
-	camera.position = camera.position.lerp(target_local, clampf(delta * 14.0, 0.0, 1.0))
-	# Si el entorno obliga a pegar la cámara, el cuerpo tapa toda la pantalla:
-	# se oculta mientras el brazo real de cámara esté por debajo del umbral.
-	if visual != null:
-		visual.visible = camera.position.length() > CAMERA_BODY_HIDE_DISTANCE
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return offset
+	var hit_local := pivot_transform.affine_inverse() * (hit["position"] as Vector3)
+	var hit_distance := hit_local.length()
+	if hit_distance <= 0.0001:
+		return Vector3.ZERO
+	var clearance := minf(0.35, hit_distance * 0.5)
+	return hit_local - hit_local.normalized() * clearance
 
 
 func _update_crouch_visual() -> void:

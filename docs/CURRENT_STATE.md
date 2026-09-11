@@ -79,3 +79,23 @@ cronometrado.
 
 `tools/audit-repo.mjs` tarda ~0,2 s (antes 39 s: lanzaba ~84 000 `grep` como
 subproceso). Se puede ejecutar antes de cada limpieza sin pensarlo.
+
+## Auditoría de respuesta del personaje
+
+Cámara corregida: girar el cuerpo ya no desvía el rumbo mundial de cámara;
+colisión se resuelve después del movimiento y limita la interpolación. Prueba
+`tools/probe-player-feel.gd` incluida en `tools/bf test`: error de rumbo <0.001°
+a pasos 30/60/120 Hz; retracción ante muro inmediata, sin bombeo en reposo.
+Suite smoke 310 + regressions 29 + animation_layers + prueba de cámara PASS;
+oráculo `1044286260` y métricas de apoyo anteriores revalidados sin cambios.
+
+Pendiente VERIFICADO: joystick parcial se normaliza a magnitud 1; inicio/parada
+cardinal 150 ms frente a diagonal 116.7 ms (60 Hz); cero frames de frenada por
+la ruta real Player→visual. No alterar clips para tapar estos defectos. Dueños,
+orden de trabajo y criterios para DeepSeek en `docs/PLAYER_FEEL_AUDIT.md`.
+
+APK de esta auditoría exportado e instalado en Samsung SM-S901E: lobby y FFA
+inspeccionados en capturas. Prueba de pan confundida por muerte a manos de bots;
+respuesta táctil física, latencia y estrés en esquinas siguen SIN VERIFICAR.
+`qa_touch` headless PASS (0 fallos), con avisos de recursos al salir registrados
+en la auditoría; no equivale a prueba de multitouch físico.
