@@ -1,7 +1,9 @@
 # BLOCKFIRE — estado operativo
 
-Solo hechos volátiles útiles para trabajo del juego. Historia en `docs/history/`;
-dueños/contratos en `docs/ARCHITECTURE.md`. No contiene estado del harness.
+Solo hechos volátiles útiles para trabajo del juego. Dueños/contratos en
+`docs/ARCHITECTURE.md`. No contiene estado del harness. El historial de sesiones
+vive en git (`git log`), no en documentos: un traspaso viejo se lee como estado
+vigente y desinforma.
 
 ## Verde conocido
 

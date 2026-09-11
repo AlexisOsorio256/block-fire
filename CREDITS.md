@@ -25,8 +25,8 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 
 ## Fuente de rig y animaciones — Universal Animation Library (CC0)
 
-`assets/models/animation_library/UAL1_Standard.glb`,
-`UAL2_Standard.glb` y `Mannequin_F.glb`
+`assets/models/animation_library/UAL1_Standard.glb` y
+`UAL2_Standard.glb`
 
 - **Autor**: Quaternius
 - **Fuente**: [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) y
@@ -50,9 +50,8 @@ legal de las licencias: borrarla sin reemplazar los assets es una violación.**
 
 ## Malla jugable derivada del pack modular (CC0 → CC0)
 
-`assets/models/skins/operator_adult_smooth.glb` (soldada + subdividida) y
-`assets/models/skins/operator_adult_lod.glb` (**la que usa el juego**, misma
-malla decimada a ~48 k triángulos para rendimiento móvil)
+`assets/models/skins/operator_adult_lod.glb` (**la que usa el juego**, malla
+soldada, subdividida y decimada a ~48 k triángulos para rendimiento móvil)
 
 - **Origen**: derivada de `assets/models/quaternius_modular/avatar_rig.gltf`
   (Quaternius, CC0) con `tools/blender-smooth-character.py`: soldado de
@@ -73,9 +72,10 @@ SpaceSuit, King, Beach, Adventurer, Casual2; 8 animaciones)
 - **Fuente**: Quaternius, [Ultimate Modular Men Pack](https://quaternius.com/packs/ultimatemodularcharacters.html)
 - **Licencia**: Creative Commons Zero (CC0) 1.0; copia local en
   `assets/models/quaternius_modular/LICENSE-QUATERNIUS-UMC.txt`
-- **Sí es la base de la malla jugable**: `operator_adult_smooth.glb` y
-  `operator_adult_lod.glb` derivan de este rig (soldado, subdividido y
-  decimado). Se conserva como fuente original del pack.
+- **Sí es la base de la malla jugable**: `operator_adult_lod.glb` deriva de este
+  rig (soldado, subdividido y decimado). Se conserva como fuente original del
+  pack; la malla intermedia sin decimar no se guarda porque es regenerable con
+  `tools/blender-smooth-character.py`.
 
 ## Clips de animación propios — derivados del rig CC0
 
@@ -83,8 +83,7 @@ SpaceSuit, King, Beach, Adventurer, Casual2; 8 animaciones)
 
 - **Autoría**: generados para BLOCKFIRE con `tools/make_anim_clips.py` (Blender
   4.0.2, API Python) sobre el rig de 22 huesos de
-  `assets/models/skins/operator_adult_smooth.glb`, derivado a su vez del pack
-  Quaternius CC0.
+  `assets/models/quaternius_modular/avatar_rig.gltf`, del pack Quaternius CC0.
 - **Licencia**: CC0 1.0, igual que el rig de origen; sin condiciones añadidas.
 - Cada archivo contiene **una sola animación** con el nombre exacto del clip,
   30 fps, rotación local por hueso (cuaternión) y sin root motion salvo la
@@ -95,7 +94,6 @@ SpaceSuit, King, Beach, Adventurer, Casual2; 8 animaciones)
 
 ## Armas PBR de integración — Sketchfab (CC-BY 4.0)
 
-`assets/models/weapons/real/desert_eagle.glb`,
 `assets/models/weapons/real/mpx_smg.glb`
 
 - **Desert Eagle**: autor attix84work — [fuente Sketchfab](https://sketchfab.com/3d-models/desert-eagle-gun-1605b6c38826433fb3fe564e1d043199)
@@ -143,7 +141,8 @@ aportados por el equipo, sin restricciones conocidas.
 
 `assets/models/weapons/real/desert_eagle_dec.glb`
 
-- **Autoría/licencia**: idénticas al `desert_eagle.glb` original (attix84work,
-  CC-BY 4.0) — es la misma obra reducida de 459 696 a 14 991 triángulos para
-  móvil, sin cambio visual apreciable a distancia de juego.
+- **Autoría/licencia**: attix84work, CC-BY 4.0. Es la obra original reducida a
+  14 991 triángulos para móvil, sin cambio visual apreciable a distancia de
+  juego; el GLB sin decimar no se guarda porque es regenerable con
+  `tools/decimate_assets.py`.
 - El original se conserva para comparación A/B.

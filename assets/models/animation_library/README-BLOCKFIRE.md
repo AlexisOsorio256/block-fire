@@ -13,8 +13,6 @@ están publicados bajo CC0 1.0; la atribución completa está en
 - `UAL2_Standard.glb`: segunda biblioteca de 43 clips para gestos, melee y
   estados adicionales (`Idle_FoldArms`, `Melee_Hook`, `Slide`, etc.). Se
   conserva como ampliación, no como locomoción base.
-- `Mannequin_F.glb`: maniquí femenino desnudo para comprobar proporciones y
-  compatibilidad del rig. No se carga como skin jugable.
 
 Se usa la variante sin sufijo `_RM`: el jugador ya se mueve por código y no
 debe duplicar el desplazamiento con root motion. Las variantes `_RM` quedan
