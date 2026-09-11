@@ -22,9 +22,10 @@ fi
 [ -f "$PURGER" ] || { echo "blockfire: missing $PURGER — harness checkout is incomplete" >&2; exit 1; }
 export DSH_PERMISSION_MODE="${DSH_PERMISSION_MODE:-danger-full-access}"
 
-# Session persistence is append-only. Web Delete hides/detaches immediately and
-# queues disk artifacts; remove them only at this clean pre-boot boundary.
-node "$PURGER" || echo "blockfire: warning: some deleted-session artifacts will retry next launch" >&2
+# Session persistence is append-only. Web Delete records durable delete intent
+# and hides/detaches the snapshot; remove disk artifacts only at this clean
+# pre-boot boundary. A failed purge keeps its queue for diagnosis/retry.
+node "$PURGER" || echo "blockfire: warning: session purge failed; queue preserved — inspect the error above" >&2
 
 # shellcheck source=lib/runtime.sh
 . "$HARNESS/lib/runtime.sh"
