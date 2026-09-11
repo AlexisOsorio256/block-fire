@@ -54,7 +54,7 @@ static var WEAPON_CONFIG := {
 		# Underside of the rifle handguard, measured in the normalized mesh.
 		"foregrip": Vector3(0.0, 0.175, 0.28),
 		"support_wrist": Vector3(0.040, -0.025, -0.065),
-		"muzzle": Vector3(0.0, 0.0, 0.46),
+		"muzzle": Vector3(0.0, 0.0, 0.67),
 	},
 	"pistol": {
 		"body_kick": 1.35, "recovery": 14,
@@ -62,14 +62,14 @@ static var WEAPON_CONFIG := {
 		"pole_r": Vector3(-0.38, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/desert_eagle_dec.glb",
 		"length": 0.27,
-		"pivot": Vector3(0.0, -0.06, 0.07),
+		"pivot": Vector3(-0.001, -0.030, -0.099),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
 		"ready": Vector3(-0.11, -0.08, 0.22),
 		"aim": Vector3(-0.08, 0.05, 0.30),
 		"grip": Vector3(0.0, -0.015, 0.0),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(-0.02, 0.02, 0.045),
-		"muzzle": Vector3(0.0, 0.0, 0.13),
+		"muzzle": Vector3(0.0, 0.0, 0.21),
 	},
 	"shotgun": {
 		"body_kick": 2.2, "recovery": 10,
@@ -84,7 +84,7 @@ static var WEAPON_CONFIG := {
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.22),
-		"muzzle": Vector3(0.0, 0.0, 0.52),
+		"muzzle": Vector3(0.0, 0.0, 0.76),
 	},
 	"smg": {
 		"body_kick": 0.65, "recovery": 22,
@@ -92,14 +92,14 @@ static var WEAPON_CONFIG := {
 		"pole_r": Vector3(-0.48, -1.0, -0.30),
 		"path": "res://assets/models/weapons/real/mpx_smg.glb",
 		"length": 0.62,
-		"pivot": Vector3(0.0, -0.08, 0.08),
+		"pivot": Vector3(0.0, -0.095, -0.028),
 		"asset_rot": Vector3(0.0, 0.0, 0.0),
 		"ready": Vector3(-0.10, -0.06, 0.14),
 		"aim": Vector3(-0.08, 0.05, 0.24),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.18),
-		"muzzle": Vector3(0.0, 0.0, 0.31),
+		"muzzle": Vector3(0.0, 0.0, 0.42),
 	},
 }
 

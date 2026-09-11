@@ -63,7 +63,7 @@ func run() -> void:
 			print("AIM weapon=%s pitch=%.0f error_deg=%.6f socket_mm=%.6f position=%s grounded=%s" % [id, pitch, error, socket_error * 1000, player.position, player.is_on_floor()])
 			check(player.is_on_floor(), "aim fixture stays grounded")
 			check(feet_unchanged(visual), "aim never moves feet or their ancestors")
-			if "--capture" in OS.get_cmdline_user_args() and pitch in [-45.0, 0.0, 45.0]:
+			if "--capture" in OS.get_cmdline_user_args() and pitch in [-78.0, -45.0, 0.0, 45.0, 78.0]:
 				await capture_pose(player, id, pitch)
 			check(error < 2.0, "settled barrel tracks intended aim")
 			check(socket_error < 0.005, "support wrist stays on socket")
