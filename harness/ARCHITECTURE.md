@@ -48,10 +48,11 @@ arranque; el proceso vivo no cambia.
 
 ## Web
 
-El plugin propio usa slots/servicios upstream. Añade Update Center, `+ New`,
-Delete y stats vivos: turns, steps, LLM, tools, TTFT, TPS con
+El plugin propio usa slots/servicios upstream. Añade Update Center, Delete y
+stats vivos: turns, steps, LLM, tools, TTFT, TPS con
 `IconGaugeOutline16`, cache e input/output. No hay fork de ChatView ni scraping
-DOM.
+DOM. New Session es el botón propio del sidebar upstream (mismo seam
+`startSession`); el harness no duplica ese control.
 
 ## Delete: dos fases por diseño
 
@@ -70,6 +71,11 @@ Por eso:
 
 Runtimes antiguos con header/`locate()` conservan un fallback legacy. Attachments
 compartidos no se borran: requieren GC propio upstream.
+
+El id archivado permanece en `archivedSessionIds` tras el purge/restart:
+upstream no ofrece `unarchive` ni ninguna seam para retirarlo, y el set solo
+guarda ids (bytes, sin logs ni adjuntos). No se tocan los internals del
+storage domain para limpiarlo.
 
 ## Riesgos abiertos
 

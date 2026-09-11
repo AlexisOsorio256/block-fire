@@ -64,6 +64,23 @@ test('usage includes cache writes in billed prompt and cache denominator', () =>
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
+test('current runtime shapes: system/message sizes the prompt, systemless headers still yield tool cost', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    writeLog(file, [
+      sessionEvent('current-shapes'),
+      { type: 'system/message', data: { message: { content: [{ type: 'text', text: 'ABCD' }] } }, time: 1 },
+      { type: 'request/header', data: { header: { tools: [{ name: 'bash' }], config: { model: 'm' } } }, time: 2 },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.systemChars, 4)
+    assert.equal(r.toolCount, 1)
+    assert.ok(r.toolSchemaChars > 10)
+    assert.deepEqual(r.toolSchemaTop.map(([name]) => name), ['bash'])
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
 test('--last prefers current session.v3 logs and still sees legacy logs', () => {
   const home = mkdtempSync(join(tmpdir(), 'blockfire-report-home-'))
   try {

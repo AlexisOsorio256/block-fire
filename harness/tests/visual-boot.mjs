@@ -76,17 +76,32 @@ if (process.env.BF_SKIP_FIXTURE !== '1') {
 const sessionId = 'session-0b5e5ee1-7a70-4a12-9a3c-3f01c5a4b9a1'
 const persistence = ctx.get('sessionPersistence')
 const now = Date.now()
-// No `version` in the meta: the runtime stamps its current session format —
-// 0.1.5 rejects an explicit 0 (encodeCurrent requires the chain's current
-// version). Same shape mount.mjs uses, so this boots on both pinned versions.
-const meta = { id: sessionId, cwd: repo, createdAt: now, agentPreset: 'build', delegationDepth: 0 }
-await persistence.create(meta)
+// persistence.create takes the full stored header and returns its write
+// handle; there is no service-level append. The version is read from the
+// runtime itself so the fixture tracks upstream format bumps.
+const { SESSION_FORMAT_VERSION } = await fromRuntime('@deepseek-ai/dsh-session')
+const meta = { version: SESSION_FORMAT_VERSION, id: sessionId, cwd: repo, createdAt: now, isSeeded: false, agentPreset: 'build', delegationDepth: 0 }
+const fixtureHandle = await persistence.create(meta)
 // Real event shapes from a recorded BUILD session (first steps), rebased —
 // guarantees the log passes the gateway's stored-session validation.
+// Streaming fragments (`assistant/chunk`) are transient: the stored-log
+// reader refuses them fail-closed, so they are never written.
 const { readFileSync } = await import('node:fs')
 const events = JSON.parse(readFileSync(join(harness, 'tests', 'fixtures', 'session-log-fragment.json'), 'utf8'))
+  .filter((event) => event.type !== 'assistant/chunk')
 
-await persistence.append(sessionId, events.map((event, seq) => ({ ...event, seq })))
+await fixtureHandle.append(events.map((event, seq) => {
+  const rebased = { ...event, seq }
+  // The recorder captured the message before its settlement trace; the
+  // gateway requires turn/step/stream at the seed boundary. The trace itself
+  // is timing data with no visual meaning, so an empty settlement stands in.
+  if (rebased.type === 'assistant/message' && !Array.isArray(rebased.data?.stream)) {
+    rebased.data = { ...rebased.data, stream: [] }
+  }
+  return rebased
+}))
+await fixtureHandle.flush()
+await fixtureHandle.close()
 console.log('visual boot ready: session', sessionId)
 console.log(`visual boot session title: Revisa el estado real`)
 
@@ -99,10 +114,10 @@ setTimeout(async () => {
     const workspaces = ctx.workspaceRegistry.list().map(w => ({ id: String(w.id), path: w.path, sessions: [...w.sessionIds] }))
     const persistence = ctx.get('sessionPersistence')
     const headers = await persistence.list()
-    console.log('visual diagnostics persistence.list:', JSON.stringify(headers.map(h => ({ id: h.id }))))
+    console.log('visual diagnostics persistence.list:', JSON.stringify(headers.map(h => ({ id: (h.header ?? h).id }))))
     const query = await ctx.get('sessionQuery').listSessions()
     console.log('visual diagnostics workspaces:', JSON.stringify(workspaces))
-    console.log('visual diagnostics sessions:', JSON.stringify(headers.map(h => ({ id: h.id, cwd: h.cwd, origin: h.origin }))))
+    console.log('visual diagnostics sessions:', JSON.stringify(headers.map(h => ({ id: (h.header ?? h).id, cwd: (h.header ?? h).cwd, origin: (h.header ?? h).origin }))))
   } catch (error) {
     console.log('visual diagnostics failed:', String(error && error.stack ? error.stack : error))
   }

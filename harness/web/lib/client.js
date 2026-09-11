@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
     /**
      * BLOCKFIRE Harness Web surface.
      *
-     * Four pieces, all additive seats in the shipped slot tree (no upstream
+     * Three pieces, all additive seats in the shipped slot tree (no upstream
      * file is modified, no ChatView fork):
      *
      * 1. Update Center (Settings → BLOCKFIRE) — reads the same status the CLI
@@ -24,15 +24,15 @@ window.__ModuleLoader__.load({
      *    appear exactly once, next to the work instead of under the input.
      *    The velocity entry keeps the shipped TPS icon exactly
      *    (`IconGaugeOutline16`).
-     * 3. "New session" button at `sidebar.footer.action` — a small, always
-     *    visible + beside Settings; upstream's per-workspace + only appears
-     *    on row hover.
-     * 4. Permanent delete at `conversation.session.header.utilities` — a
+     * 3. Permanent delete at `conversation.session.header.utilities` — a
      *    two-step confirm that calls the host route `POST
-     *    /blockfire/session/delete`, which removes the log, the projection
-     *    cache entry, and the workspace accounting through the workspace
-     *    storage domain (the same facility the registry writes through), so
-     *    the sidebar updates live over its own change feed.
+     *    /blockfire/session/delete`, which archives the session out of every
+     *    grouping surface and queues its log + projection-cache entry for the
+     *    clean pre-boot purge, so the sidebar updates live over its own
+     *    change feed.
+     *
+     * New sessions are upstream's own sidebar button (same `startSession`
+     * seam); the harness adds no second one.
      */
 
     const inject = ["slots"];
@@ -390,51 +390,7 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    // ── 3. new-session button (sidebar footer) ───────────────────────────────
-
-    function NewSessionButton({ pluginCtx }) {
-      const [busy, setBusy] = React.useState(false);
-      const uiWorkspace = pluginCtx.get("uiWorkspace");
-      if (uiWorkspace === undefined) return null;
-      const onClick = () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-          uiWorkspace.startSession();
-        } finally {
-          setBusy(false);
-        }
-      };
-      return h(
-        "button",
-        {
-          type: "button",
-          "aria-label": "New session",
-          title: "New session",
-          onClick,
-          style: {
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 5,
-            cursor: "pointer",
-            border: "1px solid var(--dsw-alias-border-l2)",
-            borderRadius: 8,
-            background: "var(--dsw-alias-bg-layer-2)",
-            color: "var(--dsw-alias-label-primary)",
-            padding: "4px 8px",
-            fontSize: 12,
-            lineHeight: "16px",
-          },
-        },
-        [
-          h("span", { style: { display: "inline-flex", alignItems: "center" }, key: "i" }, h(primitives.IconPlusOutline16, { key: "p" })),
-          h("span", { key: "t" }, "New"),
-        ],
-      );
-    }
-
-    // ── 4. permanent delete (session header utilities) ───────────────────────
+    // ── 3. permanent delete (session header utilities) ───────────────────────
 
     const DELETE = {
       display: "inline-flex",
@@ -547,13 +503,6 @@ window.__ModuleLoader__.load({
       );
 
       const workspaces = ctx.get("workspaces");
-
-      slots.inject("sidebar.footer.action", () =>
-        slots.register(
-          { name: "sidebar.footer.action", id: "blockfire-new-session", order: 0, label: "New session" },
-          () => NewSessionButton({ pluginCtx: ctx }),
-        ),
-      );
 
       slots.inject("conversation.input.dock", () =>
         slots.register({ name: "conversation.input.dock", id: "blockfire-stats", order: -10, label: "Session stats" }, StatsStrip),
