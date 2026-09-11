@@ -51,7 +51,7 @@ function readJsonBody(req, limit = BODY_LIMIT) {
     })
     req.on('end', () => {
       if (chunks.length === 0) return settle({ ok: false, error: 'empty body' })
-      try { settle({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8')) }) }
+      try { settle({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
       catch (error) { settle({ ok: false, error: `invalid JSON: ${String(error?.message ?? error)}` }) }
     })
     req.on('error', () => settle({ ok: false, error: 'request error' }))
@@ -193,7 +193,10 @@ export function apply(ctx, config) {
       append(`\n── ${step.label} ──\n`)
       const result = await spawnStep(step.args, append)
       if (result.note) append(`${result.note}\n`)
-      if (!result.ok) { append('update stopped — nothing further was activated\n'); return false }
+      if (!result.ok) {
+        append(stopping ? 'update canceled — no further step will run\n' : 'update stopped — nothing was activated\n')
+        return false
+      }
     }
     return true
   }
