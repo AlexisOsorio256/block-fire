@@ -15,6 +15,7 @@ const STATE_DIR = join(DSH_HOME, '.blockfire-harness')
 const STATE_FILE = join(STATE_DIR, 'state.json')
 const STAGING_DIR = join(STATE_DIR, 'staging')
 const RELEASES_URL = 'https://api.github.com/repos/deepseek-ai/deepseek-harness/releases'
+const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/
 
 process.stdout.on('error', (error) => { if (error?.code === 'EPIPE') process.exit(0) })
 const argv = process.argv.slice(2)
@@ -26,6 +27,15 @@ const operand = argv.filter((arg) => !arg.startsWith('--'))[1]
 function fail(message) {
   process.stderr.write(`update: ${message}\n`)
   process.exit(2)
+}
+
+/** Versions/tags become staging directory names; path syntax is never valid here. */
+function safeVersion(version, action) {
+  if (version === undefined) fail(`${action} needs a version`)
+  if (!SAFE_VERSION.test(version) || version.includes('..')) {
+    fail(`${action} version must be an npm version/tag without path syntax`)
+  }
+  return version
 }
 
 function readState() {
@@ -162,8 +172,8 @@ function status() {
   }
 }
 
-function stage(version) {
-  if (version === undefined) fail('stage needs a version')
+function stage(rawVersion) {
+  const version = safeVersion(rawVersion, 'stage')
   const dir = join(STAGING_DIR, version)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
@@ -182,8 +192,8 @@ function stage(version) {
   process.stdout.write(`staged ${version}\n`)
 }
 
-function verify(version) {
-  if (version === undefined) fail('verify needs a version')
+function verify(rawVersion) {
+  const version = safeVersion(rawVersion, 'verify')
   const state = readState()
   const tree = stagedTrees(state)[version]
   if (tree === undefined) fail(`${version} is not staged`)
@@ -219,8 +229,8 @@ function verify(version) {
   process.exit(ok ? 0 : 1)
 }
 
-function activate(version) {
-  if (version === undefined) fail('activate needs a version')
+function activate(rawVersion) {
+  const version = safeVersion(rawVersion, 'activate')
   const state = readState()
   const tree = stagedTrees(state)[version]
   if (tree === undefined) fail(`${version} is not staged`)
