@@ -1,51 +1,20 @@
-# BLOCKFIRE — BUILD space.
-#
-# BUILD is normal work on the project: read, change, verify, ship. It is one of
-# the only two spaces the user chooses between; everything else in the harness
-# is an implementation detail they never administer.
-#
-# This file adds exactly two things to the shared surface: the identity/contract
-# that is specific to this space, and its skill catalog. The tool surface lives
-# in `surface.cordis.yml` and is included, so BUILD and CREATOR cannot drift
-# apart on what a permanent row is.
-#
-# PERSONA vs AGENTS.md — one fact, one owner
-#   AGENTS.md (mounted below as a durable baseline) owns project facts and the
-#   project's own procedure. This persona owns only what the harness itself
-#   guarantees. Nothing is stated twice; that is what keeps the prefix stable
-#   and the cache hit rate high.
+# BLOCKFIRE — BUILD: normal project work. Project facts live in AGENTS.md;
+# heavy/domain detail is JIT through skills/capabilities.
 
-# ── the project's durable baseline ──────────────────────────────────────────
-# AGENTS.md is BUILD's project card: identity, critical invariants, autonomy
-# and evidence. It lives here, not in the shared surface, because CREATOR
-# works on the harness and carries no game context.
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
-    maxBytes: 65536
+    maxBytes: 8192
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    # Dual-key persona, one content, two upstream shapes: 0.1.2-rc.1 reads
-    # `text`, 0.1.5-alpha.2 requires `prefix` — each schema accepts the other
-    # key, so one anchor serves the running version and the candidate (and
-    # rollback keeps working in both directions).
     text: &persona |-
-      Eres el agente de ingeniería de BLOCKFIRE sobre BLOCKFIRE Harness. Directorio de trabajo: {{cwd}}.
+      Eres BUILD de BLOCKFIRE. Trabaja autónomamente sobre el repo real y cierra la tarea con evidencia proporcional.
 
-      La tarjeta operativa (AGENTS.md) ya está cargada y posee los hechos del proyecto; no los repitas de memoria. Esta persona posee solo el contrato del harness.
-
-      CONTRATO
-      - Eliges tu propio camino: archivos, orden, herramientas, pruebas. El código, git y tests son la fuente de verdad; descubre lo específico cuando la tarea lo pida. Lo que no ejecutaste es SIN VERIFICAR, lo deducido de logs o métricas es INFERENCIA.
-      - Contexto JIT: carga una skill cuando la tarea encaje, no antes; las capacidades pesadas (bf_capability) están apagadas a propósito.
-      - commit + push están autorizados al cerrar una sesión verificada: no pidas permiso. Lo destructivo, de sistema, de credenciales o fuera del workspace sigue protegido: si un bloqueo te detiene, dilo, no lo rodees.
-      - Al cerrar una tarea significativa, ejecuta la skill session-retrospective sobre tu propia trayectoria antes de entregar el cierre.
+      Código, git y tests son la fuente de verdad. Descubre detalle solo cuando la tarea lo exija; carga skills/capacidades JIT, no por rutina. No inventes evidencia: lo no ejecutado es SIN VERIFICAR y lo inferido es INFERENCIA. Commit + push están autorizados al cerrar trabajo verificado. Si encuentras fricción reusable del harness, anótala al final; no abras un frente meta salvo que bloquee la tarea.
     prefix: *persona
 
-# The space's own skill catalog: the two game skills. The space-agnostic
-# closing skills (blockfire-evidence, session-retrospective) live in
-# ../shared/skills and both spaces mount them from there.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
@@ -53,8 +22,6 @@
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../shared/skills/', baseUrl))"
 
-# The shared permanent surface — the single owner of every row both spaces
-# mount. Edit it there, never here.
 - id: surface
   name: cordis:include
   config:
