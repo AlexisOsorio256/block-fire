@@ -93,13 +93,13 @@ static var WEAPON_CONFIG := {
 		"path": "res://assets/models/weapons/real/mpx_smg.glb",
 		"length": 0.62,
 		"pivot": Vector3(0.0, -0.095, -0.028),
-		"asset_rot": Vector3(0.0, 0.0, 0.0),
+		"asset_rot": Vector3(0.0, 180.0, 0.0),
 		"ready": Vector3(-0.10, -0.06, 0.14),
 		"aim": Vector3(-0.08, 0.05, 0.24),
 		"grip": Vector3(0.0, -0.02, 0.02),
 		"wrist_rot": Vector3(0.0, 0.0, 0.0),
 		"foregrip": Vector3(0.0, 0.06, 0.18),
-		"muzzle": Vector3(0.0, 0.0, 0.42),
+		"muzzle": Vector3(0.0, 0.0, 0.15),
 	},
 }
 
