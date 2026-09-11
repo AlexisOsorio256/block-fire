@@ -11,6 +11,7 @@ import { test } from 'node:test'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HARNESS = resolve(HERE, '..')
 const GUARD = pathToFileURL(join(HARNESS, 'host', 'guard.js')).href
+const WEB = pathToFileURL(join(HARNESS, 'web', 'lib', 'index.js')).href
 const UPDATE = join(HARNESS, 'bin', 'update.mjs')
 const PURGER = join(HARNESS, 'bin', 'purge-sessions.mjs')
 const REPORT = join(HARNESS, 'bin', 'session-report.mjs')
@@ -32,6 +33,34 @@ async function guardFor() {
   assert.equal(guards.length, 1)
   return guards[0]
 }
+
+function requestFor(body, header, url = '/') {
+  const payload = JSON.stringify(body)
+  return {
+    method: 'POST',
+    url,
+    headers: header,
+    on(event, handler) {
+      if (event === 'data') handler(Buffer.from(payload))
+      if (event === 'end') handler()
+    },
+  }
+}
+
+async function callRoute(route, request) {
+  const chunks = []
+  const response = {
+    writeHead(status) { chunks.push({ status }) },
+    end(body) { chunks.push({ body }) },
+  }
+  await route.handler(request, response)
+  return {
+    status: chunks.find((chunk) => chunk.status !== undefined)?.status,
+    body: JSON.parse(chunks.find((chunk) => typeof chunk.body === 'string')?.body ?? 'null'),
+  }
+}
+
+const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
 
 test('auxiliary harness programs exist and parse before runtime-dependent tests', () => {
   for (const file of [UPDATE, PURGER, REPORT, CONTRACT]) {
@@ -99,6 +128,126 @@ test('session purger: corrupt delete queue fails without rewriting or discarding
     assert.equal(readFileSync(queue, 'utf8'), corrupt, 'corrupt evidence stays untouched for recovery')
   } finally {
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('Web snapshot delete: durable queue is written before archive/detach, and corruption blocks mutation', async () => {
+  const previousHome = process.env.DSH_HOME
+  const home = mkdtempSync(join(tmpdir(), 'bf-web-delete-'))
+  process.env.DSH_HOME = home
+  try {
+    const sessionId = 'session-0123abcd-0000-4000-8000-000000000001'
+    const queueDir = join(home, '.blockfire-harness')
+    const queue = join(queueDir, 'pending-session-deletes.json')
+    mkdirSync(queueDir, { recursive: true })
+    const corrupt = '{broken'
+    writeFileSync(queue, corrupt)
+
+    let archived = 0
+    let detached = 0
+    const routes = []
+    const workspace = {
+      id: 'w1',
+      sessionIds: [sessionId],
+      async detachSession(id) { assert.equal(id, sessionId); detached += 1 },
+    }
+    const registry = {
+      async archiveSession(id) { assert.equal(id, sessionId); archived += 1 },
+      list() { return [workspace] },
+    }
+    const persistence = { async list() { return [{ header: { id: sessionId, cwd: '/fixture' } }] } }
+    const module = await import(WEB)
+    module.apply({
+      get(name) {
+        if (name === 'agents') return { get() { return undefined } }
+        if (name === 'workspaceRegistry') return registry
+        return undefined
+      },
+      sessionPersistence: persistence,
+      workspaceRegistry: registry,
+      webServer: { register(route) { routes.push(route) } },
+      effect(factory) { return factory() },
+    })
+    const route = routes.find((candidate) => candidate.path === '/blockfire/session/delete')
+    const blocked = await callRoute(route, requestFor(
+      { sessionId },
+      { 'x-blockfire-delete': '1', 'content-type': 'application/json' },
+      '/blockfire/session/delete',
+    ))
+    assert.equal(blocked.status, 500)
+    assert.equal(archived, 0, 'queue failure happens before archive')
+    assert.equal(detached, 0, 'queue failure happens before detach')
+    assert.equal(readFileSync(queue, 'utf8'), corrupt, 'corrupt queue is never overwritten')
+
+    rmSync(queue)
+    const accepted = await callRoute(route, requestFor(
+      { sessionId },
+      { 'x-blockfire-delete': '1', 'content-type': 'application/json' },
+      '/blockfire/session/delete',
+    ))
+    assert.equal(accepted.status, 200)
+    assert.equal(accepted.body.pendingPurge, true)
+    assert.deepEqual(JSON.parse(readFileSync(queue, 'utf8')), [sessionId])
+    assert.equal(archived, 1)
+    assert.equal(detached, 1)
+  } finally {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('Web updater: host teardown kills the current step and never advances to activate', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'bf-web-update-'))
+  const previousLog = process.env.BLOCKFIRE_FAKE_UPDATE_LOG
+  try {
+    const bin = join(root, 'harness', 'bin')
+    mkdirSync(bin, { recursive: true })
+    const log = join(root, 'steps.log')
+    process.env.BLOCKFIRE_FAKE_UPDATE_LOG = log
+    writeFileSync(join(bin, 'update.mjs'), [
+      "import { appendFileSync } from 'node:fs'",
+      "const action = process.argv[2] ?? '?'",
+      "appendFileSync(process.env.BLOCKFIRE_FAKE_UPDATE_LOG, action + '\\n')",
+      "if (action === 'verify') await new Promise((resolve) => setTimeout(resolve, 5000))",
+      "process.stdout.write(action + ' done\\n')",
+      '',
+    ].join('\n'))
+
+    const routes = []
+    const disposers = new Map()
+    const module = await import(WEB)
+    module.apply({
+      get() { return undefined },
+      webServer: { register(route) { routes.push(route) } },
+      effect(factory, label) {
+        const value = factory()
+        if (typeof value === 'function') disposers.set(label, value)
+        return value
+      },
+    }, { repoRoot: root })
+    const action = routes.find((candidate) => candidate.path === '/blockfire/update/action')
+    const started = await callRoute(action, requestFor(
+      { action: 'update', version: '9.9.9-test' },
+      { 'x-blockfire-update': '1', 'content-type': 'application/json' },
+      '/blockfire/update/action',
+    ))
+    assert.equal(started.status, 200)
+
+    const deadline = Date.now() + 3000
+    while ((!existsSync(log) || !readFileSync(log, 'utf8').includes('verify')) && Date.now() < deadline) await sleep(20)
+    assert.equal(existsSync(log), true)
+    assert.match(readFileSync(log, 'utf8'), /verify/, 'verify step started before teardown')
+    const stop = disposers.get('blockfire:update-kill')
+    assert.equal(typeof stop, 'function')
+    stop()
+    await sleep(250)
+    const steps = readFileSync(log, 'utf8').trim().split('\n')
+    assert.deepEqual(steps, ['stage', 'verify'], 'teardown must never advance to activate')
+  } finally {
+    if (previousLog === undefined) delete process.env.BLOCKFIRE_FAKE_UPDATE_LOG
+    else process.env.BLOCKFIRE_FAKE_UPDATE_LOG = previousLog
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
