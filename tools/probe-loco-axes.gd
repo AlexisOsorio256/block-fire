@@ -11,6 +11,10 @@ extends SceneTree
 ## debajo. Si el reloj está bien, la huella (desviación máxima desde el
 ## aterrizaje) y su componente sobre el rumbo son ~0; si el reloj va lento o
 ## rápido, el pie deriva de forma monótona y la huella crece con el apoyo.
+## Contrato de medición: TODO caso empieza por `_reset_case`. Sin ese reset, un
+## barrido de rumbos hereda `crouched` del bloque anterior y mide la zancada de
+## crouch creyendo que mide la de pie (pasó: cadencia 4.8 en vez de 3.26 y
+## números creíbles pero falsos). El estado heredado no avisa.
 var _speed := 4.8
 var _sprint := false
 var _weapon := "rifle"
@@ -63,12 +67,23 @@ func run() -> void:
 	quit(0)
 
 ## Un caso estacionario: estabiliza, luego mide apoyos completos y el reloj.
-func _measure(v: OperatorVisual, m: OperatorMotion, feet: Array, label: String, velocity: Vector3, axis: Vector3) -> void:
+## Estado inicial de todo caso: reset completo + las variables que este sondeo
+## controla. Sin esto, los casos se contaminan entre sí y las cifras mienten sin
+## fallar. `crouch` decide la zancada, así que se declara por caso, no se hereda.
+func _reset_case(v: OperatorVisual, m: OperatorMotion, velocity: Vector3, crouched: bool) -> void:
 	m.reset()
-	m.crouched = _crouch_case
-	m.local_velocity = velocity
+	m.crouched = crouched
+	m.aiming = false
 	m.sprint_intent = _sprint
+	m.reload_remaining = 0.0
+	m.switch_remaining = 0.0
+	v.position = Vector3.ZERO
+	m.local_velocity = velocity
 	for i in _settle: v._process(1.0 / 60.0)
+
+
+func _measure(v: OperatorVisual, m: OperatorMotion, feet: Array, label: String, velocity: Vector3, axis: Vector3) -> void:
+	_reset_case(v, m, velocity, _crouch_case)
 	var planar_axis := Vector2(axis.x, axis.z)
 	var worst_footprint := 0.0
 	var worst_along := 0.0
@@ -129,11 +144,7 @@ func _sweep_headings(v: OperatorVisual, m: OperatorMotion, feet: Array) -> void:
 
 ## Perfil de un apoyo completo: desplazamiento del pie respecto al aterrizaje.
 func _profile_stance(v: OperatorVisual, m: OperatorMotion, feet: Array, label: String, velocity: Vector3, axis: Vector3) -> void:
-	m.reset()
-	m.crouched = _crouch_case
-	m.local_velocity = velocity
-	m.sprint_intent = _sprint
-	for i in _settle: v._process(1.0 / 60.0)
+	_reset_case(v, m, velocity, _crouch_case)
 	var planar_axis := Vector2(axis.x, axis.z)
 	var anchored := false
 	var anchor := Vector3.ZERO
@@ -187,9 +198,7 @@ func _dump_stride(v: OperatorVisual, m: OperatorMotion, label: String, axis: Vec
 ## Inversión lateral: el actor pasa de strafe L a strafe R. Mide continuidad de
 ## la pose (pop por fotograma) y deriva del apoyo durante la transición.
 func _reversal(v: OperatorVisual, m: OperatorMotion, feet: Array) -> void:
-	m.reset()
-	m.local_velocity = Vector3(-_speed, 0, 0)
-	for i in _settle: v._process(1.0 / 60.0)
+	_reset_case(v, m, Vector3(-_speed, 0, 0), false)
 	var previous := v.skeleton.get_bone_global_pose(feet[0]).origin
 	var worst_pop := 0.0
 	var worst_footprint := 0.0

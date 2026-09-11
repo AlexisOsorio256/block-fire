@@ -135,7 +135,10 @@ func _build_world() -> void:
 	# al eje de lectura del lobby.
 	hero.rotation_degrees.y = 52.0
 	var settings := _settings()
-	var cosmetic_loadout := settings.cosmetic_loadout() if settings != null else CosmeticCatalog.default_loadout()
+	# `_settings()` devuelve Node (o null): un ternario con receptor de tipo base
+	# no deja inferir el tipo con `:=` en Godot 4.7.2 y el archivo entero falla
+	# al parsear (el lobby no cargaba en dispositivo). Anotar el tipo lo evita.
+	var cosmetic_loadout: Dictionary = settings.cosmetic_loadout() if settings != null else CosmeticCatalog.default_loadout()
 	hero.configure(selected_operator, "ally", Color("#f0a064"), cosmetic_loadout, true)
 	add_child(hero)
 	# El lobby presenta al personaje, no una pose de combate que le tape la cara.
@@ -411,7 +414,7 @@ func _equip_cosmetic(item_id: String) -> void:
 	if settings != null:
 		settings.set_cosmetic_slot(wardrobe_category, item_id)
 	if is_instance_valid(hero):
-		var cosmetic_loadout := settings.cosmetic_loadout() if settings != null else CosmeticCatalog.default_loadout()
+		var cosmetic_loadout: Dictionary = settings.cosmetic_loadout() if settings != null else CosmeticCatalog.default_loadout()
 		hero.configure(selected_operator, "ally", Color("#f0a064"), cosmetic_loadout, true)
 		# configure() reconstruye model_root con el yaw de gameplay. Reaplicar el
 		# modo escaparate evita que cambiar una prenda gire el personaje 180°.

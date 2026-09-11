@@ -22,6 +22,7 @@ func _run() -> void:
 	_test_control_editor_contract()
 	_test_consolidation_contracts()
 	await _test_navigation_contract()
+	_test_lobby_screen_contract()
 	if failures.is_empty():
 		print("BLOCKFIRE GODOT SMOKE: PASS (%d checks)" % checks)
 		quit(0)
@@ -433,6 +434,24 @@ func _test_navigation_contract() -> void:
 	arena.free()
 	get_root().remove_child(viewport)
 	viewport.free()
+
+## El lobby es la única pantalla sin cobertura: un error de parseo en su script
+## no rompe ninguna prueba y deja la app en negro en dispositivo. Además de
+## instanciarlo, se fija la trampa concreta que lo rompió: un ternario cuyo
+## receptor es de tipo base no deja inferir el tipo con `:=` en Godot 4.7.2.
+func _test_lobby_screen_contract() -> void:
+	_check(BlockfireLobby != null, "lobby class is registered (its script parses)")
+	var scene := load("res://game/lobby/lobby.tscn") as PackedScene
+	_check(scene != null, "lobby scene loads")
+	if scene != null:
+		var lobby := scene.instantiate()
+		_check(lobby is BlockfireLobby, "lobby scene instantiates as BlockfireLobby")
+		_check(lobby.has_signal("start_requested"), "lobby exposes the start contract app.gd consumes")
+		_check("mobile_qa" in lobby, "lobby accepts the mobile QA flag")
+		lobby.free()
+	var holder: Node = get_root().get_node_or_null("SettingsStore")
+	var typed: Dictionary = holder.cosmetic_loadout() if holder != null else CosmeticCatalog.default_loadout()
+	_check(not typed.is_empty(), "base-typed receiver needs an explicit type in a ternary (Godot 4.7.2)")
 
 func _test_settings_layout_contract() -> void:
 	var settings: Node = get_root().get_node("SettingsStore")
