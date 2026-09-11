@@ -22,8 +22,8 @@ window.__ModuleLoader__.load({
      *    same figures at `conversation.composer.dock` (below the composer);
      *    that occupant is replaced by id with a null renderer so the figures
      *    appear exactly once, next to the work instead of under the input.
-     *    The velocity entry keeps the shipped TPS icon (IconClockOutline16,
-     *    the icon upstream already uses for turn time / speed).
+     *    The velocity entry keeps the shipped TPS icon exactly
+     *    (`IconGaugeOutline16`).
      * 3. "New session" button at `sidebar.footer.action` — a small, always
      *    visible + beside Settings; upstream's per-workspace + only appears
      *    on row hover.
@@ -109,14 +109,6 @@ window.__ModuleLoader__.load({
       padding: "8px 12px",
       marginBottom: 10,
       color: "var(--dsw-alias-state-warn-primary)",
-      fontSize: 12,
-    };
-    const BANNER_FAIL = {
-      border: "1px solid var(--dsw-alias-state-error-primary)",
-      borderRadius: 8,
-      padding: "8px 12px",
-      marginBottom: 10,
-      color: "var(--dsw-alias-state-error-primary)",
       fontSize: 12,
     };
 
@@ -319,27 +311,21 @@ window.__ModuleLoader__.load({
 
     // ── 2. session stats (below the live activity, above the composer) ──────
 
-    // Same quiet style as the shipped stats line — no background, centered —
-    // with two legibility fixes over it: label-secondary text instead of
-    // tertiary, and icon+value groups without separator bars. The slot
-    // registration uses order -10 so it lands ABOVE the todo dock (order 0),
-    // which otherwise covers it: directly below the live status line.
     const STAT = {
       color: "var(--dsw-alias-label-secondary)",
       fontSize: 12,
       lineHeight: "18px",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      gap: 14,
+      flexWrap: "wrap",
+      columnGap: 14,
+      rowGap: 2,
       padding: "4px 16px 6px",
       width: "100%",
       boxSizing: "border-box",
     };
-    const STAT_GROUP = { display: "inline-flex", alignItems: "center", gap: 4 };
+    const STAT_GROUP = { display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" };
     const STAT_ICON = { display: "inline-flex", alignItems: "center", color: "var(--dsw-alias-label-secondary)" };
 
     function fmtDuration(ms) {
@@ -360,7 +346,6 @@ window.__ModuleLoader__.load({
       return `${scaled(value / 1e6)}M`;
     }
 
-    /** One icon+value group inside the dark pill. */
     function statGroup(icon, text, key) {
       return h("span", { style: STAT_GROUP, key }, [
         icon === undefined ? null : h("span", { style: STAT_ICON, key: "i" }, icon),
@@ -368,13 +353,7 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    /**
-     * Session figures directly below the model's live activity and above the
-     * composer card: turns · steps, LLM wall time, decode speed, cache hit,
-     * and input/output tokens. Data rides the `sessionStats` and `tokenUsage`
-     * projection units, so it updates while the agent works. Read-only leaf
-     * fields.
-     */
+    /** All durable session figures, live, without hiding fields on narrow views. */
     function StatsStrip({ useProjection }) {
       if (useProjection === undefined) return null;
       const stats = useProjection("sessionStats");
@@ -382,41 +361,37 @@ window.__ModuleLoader__.load({
       const groups = [];
       if (stats !== undefined && stats !== null && stats.steps > 0) {
         groups.push(statGroup(undefined, `${stats.turns} ${stats.turns === 1 ? "turn" : "turns"} · ${stats.steps} steps`, "counts"));
-        if (stats.llmMs > 0) groups.push(statGroup(h(primitives.IconClockOutline16, { key: "ti" }), fmtDuration(stats.llmMs), "llm"));
+        if (stats.llmMs > 0) groups.push(statGroup(h(primitives.IconClockOutline16, { key: "llm-i" }), `LLM ${fmtDuration(stats.llmMs)}`, "llm"));
+        if (stats.toolMs > 0) groups.push(statGroup(h(primitives.IconClockOutline16, { key: "tool-i" }), `Tools ${fmtDuration(stats.toolMs)}`, "tools"));
+        if (stats.ttftSteps > 0) groups.push(statGroup(h(primitives.IconClockOutline16, { key: "ttft-i" }), `TTFT ${fmtDuration(stats.ttftMs / stats.ttftSteps)}`, "ttft"));
         if (stats.decodeMs > 0) {
-          groups.push(statGroup(h(primitives.IconEnhanceOutline16, { key: "sp" }), `${fmtTps(stats.decodeTokens / (stats.decodeMs / 1000))} t/s`, "speed"));
+          groups.push(statGroup(h(primitives.IconGaugeOutline16, { key: "speed-i" }), `${fmtTps(stats.decodeTokens / (stats.decodeMs / 1000))} tok/s`, "speed"));
         }
       }
-      if (usage !== undefined && usage !== null && (usage.outputTokens > 0 || usage.uncachedInputTokens > 0)) {
+      if (usage !== undefined && usage !== null) {
         const billed = usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
         if (billed > 0) {
-          const hit = Math.round((usage.cacheReadTokens / billed) * 100);
-          groups.push(statGroup(h(primitives.IconDatabaseOutline16, { key: "ca" }), `Cache ${hit}%`, "cache"));
+          const hit = Math.round((usage.cacheReadTokens / billed) * 1000) / 10;
+          groups.push(statGroup(h(primitives.IconDatabaseOutline16, { key: "cache-i" }), `Cache ${hit}%`, "cache"));
         }
-        groups.push(statGroup(
-          h(primitives.IconDatabaseOutline16, { key: "io" }),
-          `In ${fmtTokens(billed)} · Out ${fmtTokens(usage.outputTokens)}`,
-          "tokens",
-        ));
+        if (billed > 0 || usage.outputTokens > 0) {
+          groups.push(statGroup(
+            h(primitives.IconDatabaseOutline16, { key: "io-i" }),
+            `In ${fmtTokens(billed)} · Out ${fmtTokens(usage.outputTokens)}`,
+            "tokens",
+          ));
+        }
       }
       if (groups.length === 0) return null;
       return h("div", { style: STAT, title: "Session stats" }, groups);
     }
 
-    /** Replaces upstream's composer.dock stats occupant by id ("stats"). */
     function NullStats() {
       return null;
     }
 
     // ── 3. new-session button (sidebar footer) ───────────────────────────────
 
-    /**
-     * Small always-visible "+ New" beside Settings. Calls the workspace UI
-     * capability upstream's own rows use (reuse the provisional blank session
-     * of the current/recent workspace, else create one). The capability is
-     * resolved at render time because this plugin loads before ui-workspace
-     * in the browser roster.
-     */
     function NewSessionButton({ pluginCtx }) {
       const [busy, setBusy] = React.useState(false);
       const uiWorkspace = pluginCtx.get("uiWorkspace");
@@ -479,21 +454,6 @@ window.__ModuleLoader__.load({
       borderColor: "var(--dsw-alias-state-error-primary)",
     });
 
-    /**
-     * Two-step permanent delete of the CURRENT session. Step 1 arms the
-     * button ("Delete forever?"); step 2 posts to the host route, which
-     * refuses running sessions, removes the log + projection cache entry,
-     * and drops the id from workspace accounting through the workspace
-     * storage domain. On success the strip waits for the sidebar feed to
-     * drop the id, then opens a session in the same workspace.
-     *
-     * The armed flag lives at module scope, not component state: the header
-     * slot can remount on workspace-feed ticks, and state held inside the
-     * component dies with it — the user presses Delete, confirms, and the
-     * remounted button asks all over again. Armed survives remounts here,
-     * and a failed attempt STAYS armed (retry = one click); only switching
-     * sessions disarms.
-     */
     let armedDeleteFor = null;
 
     function DeleteSessionButton({ sessionId, uiWorkspace, workspaces }) {
@@ -522,9 +482,7 @@ window.__ModuleLoader__.load({
           .then((payload) => {
             if (!(payload && payload.ok === true)) throw new Error((payload && payload.error) || "delete failed");
             armedDeleteFor = null;
-            disarm(); // clear the busy flag and re-render disarmed
-            // Navigate away once the workspace feed reflects the deletion, so
-            // startSession cannot reuse the just-deleted provisional blank.
+            disarm();
             const deadline = Date.now() + 3000;
             const leave = () => {
               const snapshot = workspaces !== undefined ? workspaces.list.getSnapshot() : undefined;
@@ -539,7 +497,7 @@ window.__ModuleLoader__.load({
           })
           .catch((cause) => {
             setError(String(cause && cause.message ? cause.message : cause));
-            setBusy(false); // stays armed: one click retries, no re-asking
+            setBusy(false);
           });
       };
 
@@ -598,17 +556,9 @@ window.__ModuleLoader__.load({
       );
 
       slots.inject("conversation.input.dock", () =>
-        // order -10: above the todo dock (order 0) and goal bar (order 10) —
-        // directly below the model's live status line, never covered by them.
         slots.register({ name: "conversation.input.dock", id: "blockfire-stats", order: -10, label: "Session stats" }, StatsStrip),
       );
 
-      // Same id as upstream's composer.dock stats occupant, one step LOWER
-      // priority — the slot contract is "register at a different priority to
-      // shadow it (lowest renders)" — and rendered as null. `priority` (not
-      // `order`) is the shadowing axis; a duplicate id at the same priority
-      // throws and fails the whole chat plugin. The figures live once, in the
-      // input dock above the composer card.
       slots.inject("conversation.composer.dock", () =>
         slots.register({ name: "conversation.composer.dock", id: "stats", priority: -1, order: 0, label: "Session stats" }, NullStats),
       );
@@ -617,10 +567,6 @@ window.__ModuleLoader__.load({
         slots.register(
           { name: "conversation.session.header.utilities", id: "blockfire-delete", order: 50, label: "Delete permanently" },
           (props) => {
-            // Session-scoped slots receive `sessionId` as a standard prop
-            // (the ui-session BUILTIN_SOURCE `props: ["sessionId"]`). The
-            // workspace capability resolves at render time: this plugin loads
-            // before ui-workspace in the browser roster.
             const sessionId = props !== undefined ? props.sessionId : undefined;
             const uiWorkspace = ctx.get("uiWorkspace");
             if (sessionId === undefined || uiWorkspace === undefined) return null;
