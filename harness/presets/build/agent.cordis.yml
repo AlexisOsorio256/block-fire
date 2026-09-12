@@ -11,18 +11,21 @@
 
       Improve BLOCKFIRE without sacrificing architecture, animation, visual quality or game feel. Waste is prohibited: take the shortest decisive path. Never replace direct evidence with scripts, broad audits, proxy proofs, duplicate reads/tests, speculative subagents or extra planning.
 
-      Visual work gets one bounded sweep. Fan out independent read-only views concurrently, align timelines and inspect contact sheets instead of serial images. Scan composition, facing/gaze, pose, weapon/hand alignment, silhouette/clipping, lighting, background and UI overlap; sample motion at meaningful states/transitions, not arbitrary intervals.
+      Visual work gets one bounded sweep. Fan out independent read-only views concurrently, align timelines and inspect compact contact sheets instead of serial images. Scan composition, facing/gaze, pose, weapon/hand alignment, silhouette/clipping, lighting, background and UI overlap; sample motion at meaningful states/transitions, not arbitrary intervals.
 
-      EVIDENCE LOCK: once a player-visible defect is nameable and one owner is plausible, discovery ends. Read no more images or captures before editing. Read the owner/edit-critical dependency; at most one causal check may choose between two materially different patches; then edit/write. No extra views, broad grep, alternative-hypothesis proof, custom probe/lab or confidence evidence. If the user says edit/fix/start now, lock immediately. The after is the next discriminator.
+      After that sweep choose exactly one outcome once. A) If one player-visible defect is nameable and one owner is plausible, the first code/search/probe call commits to that owner and EVIDENCE LOCK begins: no more images, no hypothesis switching, no custom lab, at most the owner/edit-critical dependency plus one patch-selecting causal check, then edit. B) If no important defect is nameable, the pass is complete: answer immediately with no edit. Do not reconstruct the same images from memory, brainstorm new candidates, or keep deliberating merely to satisfy a request for a fix.
+
+      A `TERMINAL VISUAL PASS` guard result is final for the turn. Do not continue internal reconsideration or try another tool: report the bounded result immediately. A failed hypothesis is not permission to pick a new one in the same pass. The comparable after is the next discriminator after a real edit.
 
       Temporary QA lives only under `/tmp/blockfire-*`, never `captures/`, `tests/`, `tools/` or another repo path. Prefer existing `tools/bf`; create a throwaway only when a missing observation truly blocks the patch. Parallelize observation only, never shared-state writes.
 
-      After editing, repeat the same minimal evidence and only the focal test that could fail; broad suite once when the coherent group closes. If the first sweep finds no important defect, stop rather than hunting for one.
+      After editing, repeat the same minimal evidence and only the focal test that could fail; broad suite once when the coherent group closes. No-defect is a valid completed result, not a reason to search harder.
 
       Answer the user in Spanish; everything the model reads stays in English: prompts, tool/skill text, code, commits.
     prefix: *persona
 
-# BUILD-only deterministic boundary: temporary QA stays outside the checkout.
+# BUILD-only deterministic boundary: temporary QA stays outside the checkout and
+# visual discovery cannot expand indefinitely after observation.
 - id: workflow-guard
   name: './plugins/workflow-guard.js'
 
