@@ -15,6 +15,7 @@ process.stdout.on('error', (error) => {
 
 const args = process.argv.slice(2)
 const asJson = args.includes('--json')
+const enforceDecisionGate = args.includes('--gate')
 const lastIndex = args.indexOf('--last')
 const sessionIndex = args.indexOf('--session')
 const wantLast = lastIndex >= 0 ? Number(args[lastIndex + 1] ?? 5) : 0
@@ -22,8 +23,9 @@ const wantSession = sessionIndex >= 0 ? args[sessionIndex + 1] : undefined
 
 const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const sessionsRoot = join(dshHome, 'sessions')
-// 0.1.5 writes v3; older installs/rollbacks use the legacy name.
 const SESSION_LOG_NAMES = ['session.v3.jsonl.zstd', 'session.jsonl.zstd']
+const DECISION_AVG_LIMIT = 3
+const DECISION_MAX_LIMIT = 6
 
 function fail(message) {
   process.stderr.write(`session-report: ${message}\n`)
@@ -173,6 +175,8 @@ function fold(file, events, parse) {
     visualToEditGaps: [],
     visualToEditAvg: undefined,
     visualToEditMax: undefined,
+    visualToEditOverLimit: 0,
+    decisionGate: 'NO_DATA',
     tools: {},
     capabilities: [],
     skillsLoaded: [],
@@ -338,6 +342,10 @@ function fold(file, events, parse) {
   if (report.visualToEditGaps.length > 0) {
     report.visualToEditAvg = round1(report.visualToEditGaps.reduce((sum, gap) => sum + gap, 0) / report.visualToEditGaps.length)
     report.visualToEditMax = Math.max(...report.visualToEditGaps)
+    report.visualToEditOverLimit = report.visualToEditGaps.filter((gap) => gap > DECISION_MAX_LIMIT).length
+    report.decisionGate = report.visualToEditAvg <= DECISION_AVG_LIMIT && report.visualToEditMax <= DECISION_MAX_LIMIT
+      ? 'PASS'
+      : 'CHURN'
   }
   report.wallMs = report.startedAt !== undefined && report.lastEventTime !== undefined
     ? report.lastEventTime - report.startedAt
@@ -351,10 +359,11 @@ const reports = resolveTargets().map((file) => {
   return fold(file, parsed.events, parsed)
 })
 const corrupt = reports.some((report) => !report.evidenceComplete)
+const decisionGateFailed = reports.some((report) => report.decisionGate === 'CHURN')
 
 if (asJson) {
   process.stdout.write(`${JSON.stringify(reports, null, 2)}\n`)
-  process.exit(corrupt ? 1 : 0)
+  process.exit(corrupt || (enforceDecisionGate && decisionGateFailed) ? 1 : 0)
 }
 
 for (const report of reports) {
@@ -379,6 +388,7 @@ for (const report of reports) {
   lines.push(`  efficiency     avg prompt/usage ${report.promptTokensPerUsage ?? 'n/a'} | cumulative/first ${report.cumulativePromptMultiple === undefined ? 'n/a' : `${report.cumulativePromptMultiple}x`} | tool calls ${report.toolCalls} | exact repeats ${report.exactRepeatedToolCalls} | skill reloads ${report.duplicateSkillLoads}`)
   lines.push(`  visual reads   ${report.readImageCalls} images / ${report.visualReadSteps} visual steps | avg batch ${report.imagesPerVisualStep ?? 'n/a'} | max batch ${report.maxVisualBatch}`)
   lines.push(`  visual->edit   ${report.visualToEditGaps.length} closures | avg gap ${report.visualToEditAvg ?? 'n/a'} tool calls | max gap ${report.visualToEditMax ?? 'n/a'}`)
+  lines.push(`  decision gate  ${report.decisionGate} | target avg<=${DECISION_AVG_LIMIT}, max<=${DECISION_MAX_LIMIT} | gaps>${DECISION_MAX_LIMIT}: ${report.visualToEditOverLimit}`)
   lines.push(`  output tokens  ${report.outputTokens} (reasoning ${report.reasoningTokens})`)
   if (report.systemChars !== undefined) {
     lines.push(`  first header   system ${report.systemChars} chars | ${report.toolCount} tools / ${report.toolSchemaChars} schema chars`)
@@ -395,4 +405,4 @@ for (const report of reports) {
   process.stdout.write(`${lines.join('\n')}\n\n`)
 }
 
-if (corrupt) process.exitCode = 1
+if (corrupt || (enforceDecisionGate && decisionGateFailed)) process.exitCode = 1
