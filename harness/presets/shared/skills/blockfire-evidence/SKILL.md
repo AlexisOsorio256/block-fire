@@ -25,9 +25,11 @@ distinct regression.
 
 For open-ended visual/polish work, discovery and repair are separate passes. Do
 one bounded representative sweep before touching code. Reuse existing captures or
-produce only the views that expose materially different states. Read independent
-related images concurrently in the same assistant step; when there are many
-frames, prefer one contact sheet/strip over serial reads.
+produce only the views that expose materially different states. When several
+independent captures are needed, generate them in one shell command/job instead
+of spending a model turn per capture. Then read related images concurrently in
+the same assistant step; when there are many frames, prefer one contact
+sheet/strip over serial reads.
 
 Scan the entire batch once and keep a short inventory of every clear defect with
 its view/state. Do not tunnel into the first defect before finishing that scan.
