@@ -39,7 +39,6 @@ var impact_audio: AudioStreamPlayer3D
 var shot_streams: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 var muzzle_flash_scale := 1.0
-var recoil_amount: float = 0.0
 var impact_played_this_shot: bool = false
 var combat_fx: CombatFX
 ## Calor de dispersión acumulado por disparos seguidos: el arma "abre" el
@@ -96,7 +95,6 @@ func setup(owner_actor: Node, owner_camera: Camera3D = null, controls: Node = nu
 	_emit_ammo()
 
 func _physics_process(delta: float) -> void:
-	recoil_amount = move_toward(recoil_amount, 0.0, delta * (2.2 + current_definition().recoil * 4.0))
 	spread_heat = move_toward(spread_heat, 0.0, delta * (2.4 + current_definition().recoil * 26.0))
 	_update_muzzle_anchor()
 	cooldown = maxf(0.0, cooldown - delta)
@@ -241,7 +239,6 @@ func try_fire() -> bool:
 	ammo[active_index] -= 1
 	cooldown = definition.fire_interval
 	var recoil_scale := 0.76 if aim_held else 1.0
-	recoil_amount = minf(0.26, recoil_amount + definition.recoil * 2.4 * recoil_scale)
 	spread_heat = minf(SPREAD_HEAT_MAX, spread_heat + (0.34 + definition.recoil * 5.0) * recoil_scale)
 	if actor != null and actor.has_method("break_spawn_immunity"):
 		actor.break_spawn_immunity()
@@ -270,9 +267,14 @@ func _emit_muzzle_fx(definition: WeaponDefinition) -> void:
 	# Con -Z el humo nacía detrás y derivaba hacia la cara del tirador, y el
 	# casquillo aparecía flotando 22 cm delante del cañón.
 	var forward := basis.z
+	# Mismo marco: con el cañón en +Z la derecha del tirador es -X, no el +X de
+	# la cámara de Godot. La ventana de eyección mira a esa derecha; con +X el
+	# casquillo salía hacia el lado izquierdo, cruzando cuerpo y cara en cada
+	# ráfaga (medido en `tools/probe-muzzle-frame.gd`).
+	var right := -basis.x
 	var flash_scale := clampf(muzzle_flash_scale, 0.6, 2.0)
 	combat_fx.muzzle_burst(muzzle, forward, flash_scale)
-	combat_fx.shell_eject(muzzle - forward * 0.22, basis.x, basis.y)
+	combat_fx.shell_eject(muzzle - forward * 0.22, right, basis.y)
 
 
 func _muzzle_origin() -> Vector3:
@@ -499,12 +501,12 @@ func _update_muzzle_anchor() -> void:
 		muzzle_anchor.global_position = muzzle_marker_position
 		var marker: Node3D = actor_visual.get("muzzle_marker") as Node3D
 		if marker != null and is_instance_valid(marker):
+			# Copia exacta del marco visible: el montaje ya lleva encima la
+			# patada de la ráfaga (`OperatorVisual` gira el arma con
+			# `motion.recoil`), así que el fogonazo y el humo apuntan donde el
+			# cañón se ve. Una segunda patada aquí desviaba el ancla varios
+			# grados en el eje contrario al arma (`probe-muzzle-frame`).
 			muzzle_anchor.global_transform = marker.global_transform
-			# Patada visual: la boca sube con el retroceso acumulado. Se aplica
-			# sobre la copia del marker, así el arma nunca se queda desfasada.
-			if recoil_amount > 0.0005:
-				var basis := muzzle_anchor.global_transform.basis
-				muzzle_anchor.global_basis = basis.rotated(basis.x, recoil_amount * 0.9)
 		else:
 			muzzle_anchor.global_rotation = actor.global_rotation
 	else:

@@ -455,8 +455,11 @@ func _refresh_weapon() -> void:
 	var asset_scale := _normalise_weapon(asset, float(config.get("length", 0.9)))
 	_mounted_weapon.add_child(asset)
 	# El asset se normaliza por su dimensión mayor y se gira a la convención
-	# del arma: -Z adelante, +Y arriba. Así grip/foregrip/muzzle son metros
-	# legibles iguales para las cuatro categorías.
+	# del arma: +Z adelante (boca), +Y arriba. En este marco la derecha del
+	# tirador es -X, no el +X de la cámara de Godot: el casquillo y la patada
+	# del fogonazo dependen de eso (`tools/probe-muzzle-frame.gd`). Así
+	# grip/foregrip/muzzle son metros legibles iguales para las cuatro
+	# categorías.
 	asset.scale = Vector3.ONE * asset_scale
 	var asset_rotation: Vector3 = config.get("asset_rot", Vector3(0.0, 180.0, 0.0))
 	asset.rotation_degrees = asset_rotation

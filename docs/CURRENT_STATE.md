@@ -79,6 +79,20 @@ Pasada visual de superficie (capturas propias y de partida, no medición):
   boca y derivaba hacia la cara del tirador, y el casquillo aparecía flotando
   22 cm por delante del cañón. Ahora la luz, el humo y el casquillo salen por
   delante de la boca (capturas 3x antes/después en vista de jugador).
+- El mismo marco se colaba por el otro eje: con el cañón en `+Z`, la derecha del
+  tirador es `-X`, y el `+X` del montaje es su izquierda (además, girar en
+  positivo sobre `+X` baja la boca). Dos sitios del `WeaponController` lo
+  trataban como el marco de la cámara: el casquillo salía hacia el lado
+  contrario (medido en las cuatro armas: -0,050 m y -1,9 m/s respecto a la
+  derecha real del arma) cruzando cuerpo y cara en cada ráfaga, y el ancla de FX
+  —la que orienta estrella, humo y luz— giraba contra el cañón visible hasta
+  7,73° (escopeta). Ahora sale por la derecha (+0,050 m, +1,6 m/s) y el ancla
+  copia el marco visible (0,00°). Evidencia: `tools/probe-muzzle-frame.gd`
+  antes/después (11 fallos → 0) y capturas 1:1 del mismo frame de ráfaga con
+  bots congelados: antes los casquillos cruzan a la izquierda del personaje,
+  después salen por su derecha. El segundo estado de retroceso del arma
+  (`recoil_amount`) se borró en el mismo commit: la patada visual tiene un solo
+  dueño, el montaje (`motion.recoil`).
 
 ## Pendiente técnico conocido
 

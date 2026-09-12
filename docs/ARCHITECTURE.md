@@ -25,7 +25,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | Match | `game/match/match.gd` + `*_rules.gd` | `configure()`, señales HUD/player | rondas, economía, respawn; estado en `match.gd` | `tools/test.sh` (smoke) | daño, IA, layout HUD |
 | Player | `game/player/player.gd` | InputMap, `MobileControls`, SettingsStore | salud, velocidades 4.8/7.0/2.6, cámara y FOV | `tools/test.sh`, `qa_touch`, `tools/probe-player-feel.gd` | stats de arma, clips, texto HUD |
 | Bot | `game/bots/bot.gd` + `bot_role.gd` | `match_context`, `NavigationAgent3D` | navegación y disparo; números por rol | `tools/test.sh`, `--qa-ffa` | spawns, daño, stats de arma |
-| WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh`, `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
+| WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh` (incluye `probe-muzzle-frame`), `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
 | OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | contrato público del actor, orden del frame, montaje del arma; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `qa_shot`, `probe-ik-quality` | pose del cuerpo (eso es `OperatorBody`), clips |
 | OperatorBody | `game/characters/operator_body.gd` | velocidad real del actor, intención de sprint/crouch/aim, timers del arma, puntos de agarre del montaje | intención de capa, mirada suavizada, IK de los dos brazos, pose de muerte | `tools/test.sh` (`animation_layers`), `tools/probe-refactor-oracle.gd` | montaje del arma, qué ropa se ve, gameplay |
 | OperatorMotion | `game/characters/operator_motion.gd` | velocidad local, intención de sprint, timers del arma | pose compuesta, pesos de capa, elección de clip | `tools/test.sh` (`animation_layers`), `qa_motion` | constantes de velocidad, geometría del clip |
@@ -43,7 +43,10 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 
 - **Rifle / pistola / escopeta / SMG** (stats, coste, munición, `reload_time`):
   `game/data/weapons/<id>.tres`. Presentación del arma (modelo, montaje,
-  agarre, boca, retroceso del cuerpo): `OperatorVisual.WEAPON_CONFIG`.
+  agarre, boca, retroceso del cuerpo): `OperatorVisual.WEAPON_CONFIG`. Ese
+  montaje deja el cañón en `+Z`, así que la derecha del tirador es `-X`: el
+  casquillo sale por ahí y el fogonazo no puede girarse sobre `+X`
+  (`tools/probe-muzzle-frame.gd` lo mide en las cuatro armas).
 - **Retículo**: `game/ui/crosshair.gd` dibuja el cono de
   `WeaponController.current_spread()` proyectado con el FOV real de la cámara.
   El HUD sólo lo empuja: nadie recalcula dispersión fuera del arma.
@@ -84,7 +87,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 |---|---|
 | animación / clips / IK | `tools/bf test` + `tools/bf qa motion` + `tools/probe-reload-hand.gd` |
 | controles táctiles / UI | `tools/bf qa touch` + `tools/bf test` |
-| armas | `tools/bf test` + `tools/bf qa fx` |
+| armas | `tools/bf test` (incluye `probe-muzzle-frame`) + `tools/bf qa fx` |
 | mundo / arena | `tools/bf test` + `tools/bf qa perf` |
 | HUD / lobby | `tools/bf qa hud` + `tools/bf test` |
 | antes de publicar | `tools/bf test` + `tools/bf qa touch` + `tools/bf build android` |
