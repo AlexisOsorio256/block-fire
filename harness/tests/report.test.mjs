@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import './workflow-guard.test.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPORT = resolve(HERE, '..', 'bin', 'session-report.mjs')
