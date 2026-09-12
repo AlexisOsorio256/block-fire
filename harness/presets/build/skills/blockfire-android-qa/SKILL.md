@@ -11,7 +11,8 @@ The physical phone is authoritative only for platform/device conclusions.
 
 Flow when it applies: `tools/bf build android` -> install/launch with the repo
 tools/adb -> capture or video **watched** -> filtered logcat if it fails -> close
-your own processes. `captures/` is temporary output.
+your own processes. Session screenshots/video/logs belong under `/tmp/blockfire-*`,
+never `captures/` or another checkout path.
 
 If there is no device, report the Android part as `SIN VERIFICAR`; a compiling APK
 proves no touch input, real density or performance.
