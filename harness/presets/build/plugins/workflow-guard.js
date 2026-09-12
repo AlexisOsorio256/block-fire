@@ -9,6 +9,10 @@ export const inject = ['tools']
 const DENIAL = 'BLOCKFIRE workflow blocked this call: '
 const MAX_DISCOVERY_VISUALS = 3
 const MAX_LOCK_TOOLS = 3
+// Normal BLOCKFIRE responses/tool calls are far below this. The cap exists only
+// to stop one weak-model request from turning a terminal decision into a 50k+
+// token internal monologue. Lower provider/model caps remain authoritative.
+const MAX_REQUEST_TOKENS = 16_384
 
 function clean(value) {
   return String(value ?? '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/')
@@ -45,10 +49,18 @@ function terminalMessage(reason) {
 }
 
 export function apply(ctx) {
+  // DSH's request waterfall is the only mechanical backstop for a reasoning-only
+  // loop: tool guards cannot stop a model that keeps thinking without tools.
+  ctx.on('agent/request', async (_payload, next) => {
+    const config = await next()
+    if (Number.isSafeInteger(config.maxTokens) && config.maxTokens > 0 && config.maxTokens <= MAX_REQUEST_TOKENS) return config
+    return { ...config, maxTokens: MAX_REQUEST_TOKENS }
+  })
+
   // idle -> discovery on first visual read.
   // discovery -> locked on the first non-visual investigation after observation;
   // that tool use is the model's implicit commitment to one owner/hypothesis.
-  // locked -> after on a real repo edit. If either bounded phase expires without
+  // locked -> idle on a real repo edit. If either bounded phase expires without
   // an edit, the turn becomes terminal instead of forcing a fabricated patch.
   let phase = 'idle'
   let discoveryVisuals = 0
@@ -79,8 +91,8 @@ export function apply(ctx) {
 
     if (repoEdit) {
       // An edit is allowed only while the current evidence path is still live.
-      // It starts a fresh after/verification cycle; later visual work can begin
-      // again from idle instead of inheriting stale discovery counters.
+      // It starts a fresh after/verification cycle instead of inheriting stale
+      // discovery counters.
       reset()
       return undefined
     }
