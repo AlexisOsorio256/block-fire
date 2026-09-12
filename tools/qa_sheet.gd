@@ -73,6 +73,10 @@ func _build_sheet() -> void:
 		return
 
 	print("QA_SHEET out=%s images=%d grid=%dx%d cell=%dx%d" % [_out, loaded.size(), _cols, rows, _cell_w, _cell_h])
+	var tile_map: PackedStringArray = []
+	for index: int in range(_paths.size()):
+		tile_map.append("%d=%s" % [index, _paths[index].get_file()])
+	print("QA_SHEET tiles %s" % " ".join(tile_map))
 	quit(0)
 
 
