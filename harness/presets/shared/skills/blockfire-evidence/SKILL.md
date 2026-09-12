@@ -45,16 +45,39 @@ clipping, lighting, background, and UI overlap. Record defects from all of those
 visible dimensions before prioritizing; a strong first defect must not collapse
 the rest of the scene into background noise.
 
+### Semantic temporal evidence
+
+For animation, combat, camera or gamefeel over time, **batch meaning, not just
+pixels**. Do not pick frames merely because they are evenly spaced. First identify
+the meaningful stable states and transitions for the behavior under review, then
+sample a compact chronological storyboard that preserves their context.
+
+For each important transition, prefer the smallest set that exposes continuity:
+last stable frame before it, a representative transition/peak frame, first stable
+frame after it, and recovery/settle only when recovery is visually meaningful.
+Also include representative steady-state phases needed to judge the cycle itself.
+Keep state metadata available in the capture, filename or tool output — intent,
+speed, ADS/fire/reload/crouch/air state or other facts that explain why a tile
+exists. A tile without a semantic reason is a candidate to drop.
+
+Read the resulting sheet as **one timeline**, comparing adjacent tiles instead of
+judging each as an isolated screenshot. Before touching code, inventory every
+clear continuity defect relevant to the scene: feet/contact and cadence,
+pelvis/torso continuity, facing and silhouette, weapon/hand alignment, camera
+composition, combat feedback/HUD state and transition/recovery pops. One sheet
+should support several diagnoses when the evidence shows them; do not burn a new
+model turn for each visible defect.
+
+If the source is a video or long sequence, select semantic frames from it first
+and then build the sheet. Blind every-N-frame sampling is a fallback only when no
+state/transition information exists. A video path by itself is not visual
+evidence. Open individual frames only when the overview hides detail or continuity
+itself needs a closer adjacent comparison.
+
 Rank confirmed issues by visible impact and shared owner. Fix a small coherent
 group when one owner/change closes them together; otherwise fix the highest-impact
 item and keep the other observed defects in the short inventory. Do not start a
 second discovery sweep unless a fix exposes a genuinely new state.
-
-For temporal defects, capture a short sequence/video as source evidence and sample
-representative before/during/after frames into a strip/contact sheet the model can
-actually inspect. A video file path by itself is not visual evidence. Open
-individual frames only when the sheet hides a detail or continuity itself is the
-question.
 
 For a visual question, a current capture is primary evidence. Do not build a new
 probe, geometry proof or analysis script for something the image already answers.
