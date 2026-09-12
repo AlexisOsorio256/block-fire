@@ -37,6 +37,17 @@ them. Open an individual frame only when the sheet hides the detail needed to
 judge or fix it. Use numbers to locate a cause vision cannot reveal or to protect
 the fix, never as a substitute for looking.
 
+### Converge on the owner
+
+Once that timeline shows a concrete defect and one owner/layer plausibly explains
+it, stop surveying animation. Inspect that owner and only the dependency needed
+to edit it, then make the smallest plausible change and render the same semantic
+moments again. The after sequence is the next diagnostic step: do not postpone an
+edit while collecting extra clips, angles, curves or measurements that would not
+change the candidate fix. If a transition is wrong but the steady clips are
+visually sound, do not inspect or rebuild every clip; go to the transition owner.
+If the weapon/hand relation alone is wrong, do not reopen locomotion cadence.
+
 Then identify where the defect is born:
 
 - Input, speed or intent does not arrive: `game/player/player.gd` and
