@@ -14,7 +14,7 @@ const SURFACE = join(HARNESS, 'presets', 'build', 'surface.cordis.yml')
 const PROMPT = join(HARNESS, 'presets', 'build', 'plugins', 'prompt.js')
 
 async function guardFor() {
-  const module = await import(GUARD)
+  const module = await import(`${GUARD}?t=${Date.now()}-${Math.random()}`)
   const guards = []
   const ctx = {
     tools: { guard(check) { guards.push(check); return () => {} } },
@@ -27,15 +27,17 @@ async function guardFor() {
 
 const call = (guard, name, args = {}) => guard({ name, arguments: args })
 
-test('BUILD composition keeps the hard evidence-lock contract', () => {
+test('BUILD composition keeps the terminal evidence-lock contract', () => {
   const build = readFileSync(BUILD, 'utf8')
   const surface = readFileSync(SURFACE, 'utf8')
   const prompt = readFileSync(PROMPT, 'utf8')
-  assert.match(build, /EVIDENCE LOCK: once a player-visible defect is nameable and one owner is plausible, discovery ends/)
+  assert.match(build, /After that sweep choose exactly one outcome once/)
+  assert.match(build, /A `TERMINAL VISUAL PASS` guard result is final for the turn/)
   assert.match(build, /Temporary QA lives only under `\/tmp\/blockfire-\*`/)
   assert.match(build, /id: workflow-guard[\s\S]*name: '\.\/plugins\/workflow-guard\.js'/)
   assert.doesNotMatch(surface, /id: workflow-guard/, 'CREATOR reuses the surface; the BUILD guard must not leak there')
-  assert.match(prompt, /EVIDENCE LOCK applies: read no more images until after the edit/)
+  assert.match(prompt, /If no player-visible defect is nameable, stop instead of reconstructing the images from memory/)
+  assert.match(prompt, /no more images are allowed until after a real edit/)
 })
 
 test('BUILD guard keeps temporary visual evidence outside the checkout', async () => {
@@ -63,34 +65,69 @@ test('BUILD guard keeps temporary visual evidence outside the checkout', async (
   }
 })
 
-test('BUILD guard hard-stops serial visual rereading before an edit', async () => {
+test('discovery without owner becomes terminal instead of forcing an edit', async () => {
   const guard = await guardFor()
   assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/sheet.png' }), undefined)
   assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/side.png' }), undefined)
   assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/detail.png' }), undefined)
   const fourth = call(guard, 'read_image', { file_path: '/tmp/blockfire/again.png' })
   assert.equal(typeof fourth, 'string')
-  assert.match(fourth, /visual decision budget exhausted/)
-  assert.match(fourth, /Edit the plausible owner now or stop/)
+  assert.match(fourth, /TERMINAL VISUAL PASS/)
+  assert.match(fourth, /no justified edit/)
+  assert.match(fourth, /Do not reconstruct or re-judge the same images from memory/)
 
-  assert.equal(call(guard, 'edit', { file_path: 'game/player/player.gd' }), undefined)
+  const speculativeEdit = call(guard, 'edit', { file_path: 'game/player/player.gd' })
+  assert.equal(typeof speculativeEdit, 'string', 'terminal no-defect state must not force fabricated edits')
+  assert.match(speculativeEdit, /TERMINAL VISUAL PASS/)
+})
+
+test('first post-visual investigation commits to one owner and must edit quickly', async () => {
+  const guard = await guardFor()
+  assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/sheet.png' }), undefined)
+  // First non-visual tool is the implicit owner commitment.
+  assert.equal(call(guard, 'grep', { pattern: 'carry_blend', path: 'game' }), undefined)
+  assert.equal(call(guard, 'read', { file_path: 'game/characters/operator_visual.gd' }), undefined)
+  assert.equal(call(guard, 'bash', { command: 'tools/bf qa ik --baseline' }), undefined)
+  // The real edit itself is still allowed after the three owner/check calls.
+  assert.equal(call(guard, 'edit', { file_path: 'game/characters/operator_visual.gd' }), undefined)
+  // Edit resets the visual cycle, so comparable after evidence can be read.
   assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/after.png' }), undefined)
 })
 
-test('BUILD guard caps proof-marathon tools and /tmp writes cannot reset it', async () => {
+test('locked hypothesis cannot switch into another proof marathon', async () => {
   const guard = await guardFor()
   assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/sheet.png' }), undefined)
-  for (let i = 0; i < 5; i += 1) {
-    assert.equal(call(guard, i === 2 ? 'write' : 'bash', i === 2
-      ? { file_path: '/tmp/blockfire/custom-lab.gd' }
-      : { command: `printf ${i}` }), undefined)
-  }
-  assert.equal(call(guard, 'read', { file_path: 'game/weapons/weapon_controller.gd' }), undefined)
-  const seventh = call(guard, 'bash', { command: 'grep -R muzzle game' })
-  assert.equal(typeof seventh, 'string')
-  assert.match(seventh, /decision budget exhausted/)
-  assert.match(seventh, /Edit\/write the plausible owner now or stop/)
+  assert.equal(call(guard, 'grep', { pattern: 'candidate', path: 'game' }), undefined)
+  assert.equal(call(guard, 'read', { file_path: 'game/a.gd' }), undefined)
+  assert.equal(call(guard, 'bash', { command: 'printf causal-check' }), undefined)
+  const fourth = call(guard, 'read', { file_path: 'game/b.gd' })
+  assert.equal(typeof fourth, 'string')
+  assert.match(fourth, /TERMINAL VISUAL PASS/)
+  assert.match(fourth, /used 3 owner\/check tools without producing an edit/)
+  assert.equal(typeof call(guard, 'edit', { file_path: 'game/b.gd' }), 'string',
+    'after the committed path expires, a speculative replacement edit is blocked')
+})
 
-  assert.equal(call(guard, 'edit', { file_path: 'game/weapons/weapon_controller.gd' }), undefined)
-  assert.equal(call(guard, 'bash', { command: 'printf after-edit' }), undefined)
+test('EVIDENCE LOCK forbids returning to images or creating a new temp lab', async () => {
+  const imageGuard = await guardFor()
+  assert.equal(call(imageGuard, 'read_image', { file_path: '/tmp/blockfire/sheet.png' }), undefined)
+  assert.equal(call(imageGuard, 'read', { file_path: 'game/characters/operator_visual.gd' }), undefined)
+  const image = call(imageGuard, 'read_image', { file_path: '/tmp/blockfire/one-more.png' })
+  assert.equal(typeof image, 'string')
+  assert.match(image, /TERMINAL VISUAL PASS/)
+
+  const labGuard = await guardFor()
+  assert.equal(call(labGuard, 'read_image', { file_path: '/tmp/blockfire/sheet.png' }), undefined)
+  assert.equal(call(labGuard, 'read', { file_path: 'game/characters/operator_visual.gd' }), undefined)
+  const lab = call(labGuard, 'write', { file_path: '/tmp/blockfire/new-probe.gd' })
+  assert.equal(typeof lab, 'string')
+  assert.match(lab, /new throwaway lab\/script/)
+})
+
+test('background capture bookkeeping does not accidentally commit an owner', async () => {
+  const guard = await guardFor()
+  assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/front.png' }), undefined)
+  assert.equal(call(guard, 'job_output', { job_id: 'a' }), undefined)
+  assert.equal(call(guard, 'job_list'), undefined)
+  assert.equal(call(guard, 'read_image', { file_path: '/tmp/blockfire/side.png' }), undefined)
 })
