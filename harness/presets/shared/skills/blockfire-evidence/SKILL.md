@@ -25,19 +25,24 @@ distinct regression.
 
 For open-ended visual/polish work, discovery and repair are separate passes. Do
 one bounded representative sweep before touching code. Reuse existing captures or
-produce only the views that expose materially different states. When several
-independent captures are needed, generate them in one shell command/job instead
-of spending a model turn per capture. Then read related images concurrently in
-the same assistant step; when there are many frames, prefer one contact
-sheet/strip over serial reads.
+produce only views that expose materially different states. Generate independent
+captures together in one shell command/job instead of spending a model turn per
+capture.
 
-Scan the entire batch once and keep a short inventory of every clear defect with
-its view/state. Do not tunnel into the first defect before finishing that scan.
-Then rank the confirmed issues by visible impact and shared owner: fix a small
-coherent group when one owner/change closes them together, otherwise fix the
-highest-impact item and leave the other observed defects explicitly recorded for
-the next pass. Do not continue discovery after one representative sweep unless a
-fix exposes a genuinely new state.
+For **four or more related stills**, serial `read_image` calls are the wrong
+shape. Build one overview first:
+
+`tools/bf qa sheet --out=/tmp/blockfire-visual-sheet.png --cols=4 <images...>`
+
+Inspect that sheet once and inventory every clear defect with its tile/view/state
+before focusing on any one issue. Open an individual source image only when the
+overview hides a detail needed to judge or fix it. For two or three independent
+views, issue their `read_image` calls together in the same assistant step.
+
+Rank confirmed issues by visible impact and shared owner. Fix a small coherent
+group when one owner/change closes them together; otherwise fix the highest-impact
+item and keep the other observed defects in the short inventory. Do not start a
+second discovery sweep unless a fix exposes a genuinely new state.
 
 For temporal defects, capture a short sequence/video as source evidence and sample
 representative before/during/after frames into a strip/contact sheet the model can
@@ -49,6 +54,15 @@ For a visual question, a current capture is primary evidence. Do not build a new
 probe, geometry proof or analysis script for something the image already answers.
 Use metrics only to locate a cause vision cannot reveal or to lock a regression
 after the visual fix; inspect comparable evidence again after the change.
+
+## Verification cadence
+
+A focused visual fix gets the cheapest targeted evidence that could fail because
+of it: the comparable capture plus a relevant probe/test only when that contract
+needs one. During a coherent visual pass, do **not** run `tools/bf test` after
+every micro-fix. Run the broad integration suite once after the coherent group is
+closed, or earlier only when a cross-boundary change or a failure creates a new
+reason. A commit does not by itself require another full suite.
 
 A test that cannot fail because of the change is not evidence. Neither is a
 screenshot nobody looked at. Do not rerun an already decisive check without a
