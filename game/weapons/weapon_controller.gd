@@ -254,7 +254,11 @@ func _emit_muzzle_fx(definition: WeaponDefinition) -> void:
 		return
 	var muzzle := muzzle_anchor.global_position
 	var basis := muzzle_anchor.global_transform.basis
-	var forward := -basis.z
+	# El cañón vive en el +Z del montaje: el marker de boca cuelga a +0,67 m
+	# (rifle) / +0,15 m (pistola) y el humo debe salir POR DELANTE de esa boca.
+	# Con -Z el humo nacía detrás y derivaba hacia la cara del tirador, y el
+	# casquillo aparecía flotando 22 cm delante del cañón.
+	var forward := basis.z
 	var flash_scale := clampf(muzzle_flash_scale, 0.6, 2.0)
 	combat_fx.muzzle_burst(muzzle, forward, flash_scale)
 	combat_fx.shell_eject(muzzle - forward * 0.22, basis.x, basis.y)

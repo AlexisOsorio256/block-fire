@@ -63,6 +63,12 @@ Pasada visual de superficie (capturas propias y de partida, no medición):
 - Animación: pasada temporal (recarga rifle frontal/lateral, locomoción, combate,
   aire) sin defecto nuevo visible; las limitaciones conocidas siguen siendo las
   de arriba.
+- El fogonazo salía al revés: `_emit_muzzle_fx` tomaba el `-Z` del montaje como
+  delantero, y el cañón vive en el `+Z` (el marker de boca cuelga a +0,67 m en el
+  rifle y +0,15 m en la pistola, medido en partida). El humo nacía detrás de la
+  boca y derivaba hacia la cara del tirador, y el casquillo aparecía flotando
+  22 cm por delante del cañón. Ahora la luz, el humo y el casquillo salen por
+  delante de la boca (capturas 3x antes/después en vista de jugador).
 
 ## Pendiente técnico conocido
 
