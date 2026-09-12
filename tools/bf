@@ -117,7 +117,7 @@ cmd_qa() {
 		hud)    run_game_script res://tools/qa_hud_lab.gd "$@" ;;
 		anim)   run_game_script res://tools/qa_anim_lab.gd "$@" ;;
 		shot)   run_game_script res://tools/qa_shot.gd "$@" ;;
-		sheet)  run_game_script res://tools/qa_sheet.gd "$@" ;;
+		sheet)  need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/qa_sheet.gd -- "$@" ;;
 		slide)  run_game_script res://tools/probe-slide.gd "$@" ;;
 		ik)     need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-ik-quality.gd ;;
 		reload) need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-reload-hand.gd ;;
