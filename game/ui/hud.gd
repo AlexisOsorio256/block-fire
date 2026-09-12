@@ -102,8 +102,13 @@ func _build() -> void:
 	settings.tooltip_text = "Ajustes y controles"
 	settings.anchor_left = 1.0
 	settings.anchor_right = 1.0
-	settings.offset_left = -182
-	settings.offset_right = -104
+	settings.offset_left = -206
+	settings.offset_right = -112
+	# El botón se dimensiona por su texto (11 px + relleno del tema), que mide
+	# más que la ranura: con el crecimiento por defecto hacia el final se salía
+	# de pantalla y perdía la esquina y el relleno derechos. Creciendo hacia el
+	# principio, el margen derecho queda intacto en cualquier ancho de pantalla.
+	settings.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	settings.offset_top = 14
 	settings.offset_bottom = 56
 	settings.z_index = 5
@@ -117,8 +122,9 @@ func _build() -> void:
 	arsenal.tooltip_text = "Cambiar arma"
 	arsenal.anchor_left = 1.0
 	arsenal.anchor_right = 1.0
-	arsenal.offset_left = -96
+	arsenal.offset_left = -104
 	arsenal.offset_right = -16
+	arsenal.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	arsenal.offset_top = 14
 	arsenal.offset_bottom = 56
 	arsenal.z_index = 5
