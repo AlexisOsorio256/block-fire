@@ -230,6 +230,21 @@ func _tick() -> void:
 	if _controls == null:
 		_controls = _player.get("mobile_controls")
 	if _controls == null:
+		# Escritorio: el jugador lee el InputMap (`fire`, `aim`, `reload`), así que
+		# se pulsan las acciones reales. Sin esto ADS y fuego solo existían en la
+		# ruta táctil y la vista de apuntado en escritorio no se podía capturar.
+		if _fire:
+			Input.action_press("fire")
+		if _ads and not _ads_pressed and _frames <= 100:
+			# En escritorio ADS es mantenido: basta con dejarlo pulsado.
+			_ads_pressed = true
+			Input.action_press("aim")
+		if _reload and not _reload_pressed:
+			_reload_pressed = true
+			Input.action_press("reload")
+		if _reload_at > 0 and _frames <= _reload_at and not _reload_pressed:
+			_reload_pressed = true
+			Input.action_press("reload")
 		return
 	if _fire:
 		# El jugador sobrescribe fire_held cada tick fisico con is_firing();
