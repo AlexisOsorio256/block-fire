@@ -67,6 +67,20 @@ func _build_world() -> void:
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.ambient_light_energy = 0.7
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	# Niebla por PROFUNDIDAD: el patio es una caja finita y su borde lejano se
+	# veía como un corte recto contra el cielo. Empieza a 16 m, así que el
+	# escaparate y el atrezzo cercano quedan nítidos, y a 58 m el suelo ya es
+	# del color del horizonte: el borde desaparece. El color de la bruma es el
+	# del horizonte del cielo y `fog_sky_affect = 0` no lava el degradado.
+	environment.fog_enabled = true
+	environment.fog_mode = Environment.FOG_MODE_DEPTH
+	environment.fog_light_color = Color("#8fc0e4")
+	environment.fog_light_energy = 0.85
+	environment.fog_depth_begin = 16.0
+	environment.fog_depth_end = 58.0
+	environment.fog_depth_curve = 1.0
+	environment.fog_sky_affect = 0.0
+	environment.fog_aerial_perspective = 0.0
 	environment_node.environment = environment
 	add_child(environment_node)
 
@@ -92,18 +106,21 @@ func _build_world() -> void:
 	camera.look_at(Vector3(1.65, 0.98, 0.15), Vector3.UP)
 
 	# Patio: suelo asfaltado oscuro + círculo pintado donde apoya el héroe.
+	# La placa es ancha a propósito: con 44x22 su borde lejano entraba en cuadro
+	# y el escaparate parecía una plataforma flotante. El grano a escala 24 deja
+	# el texel en ~4,5 cm, que es lo que lee como asfalto y no como manchas.
 	var ground := MeshInstance3D.new()
 	var ground_mesh := BoxMesh.new()
-	ground_mesh.size = Vector3(44, 0.2, 22)
+	ground_mesh.size = Vector3(74, 0.2, 54)
 	ground.mesh = ground_mesh
-	ground.position = Vector3(1.5, -0.1, 1.0)
-	ground.material_override = _material(Color("#2b3c55"))
+	ground.position = Vector3(3.0, -0.1, -13.0)
+	ground.material_override = _material(Color("#2b3c55"), 10.0)
 	add_child(ground)
 	var ground_body := StaticBody3D.new()
 	ground_body.position = ground.position
 	var ground_shape := CollisionShape3D.new()
 	var ground_box := BoxShape3D.new()
-	ground_box.size = Vector3(44, 0.2, 22)
+	ground_box.size = Vector3(74, 0.2, 54)
 	ground_shape.shape = ground_box
 	ground_body.add_child(ground_shape)
 	add_child(ground_body)
@@ -148,17 +165,22 @@ func _build_world() -> void:
 ## Atrezzo de fondo del lobby: cajas, barreras y un contenedor para que el
 ## escaparate no sea un vacío azul. Sin collider (el lobby no se juega).
 func _add_lobby_props() -> void:
-	var crate_material := _material(Color("#4a5b6e"))
-	var dark_crate := _material(Color("#39485a"))
-	var container_material := _material(Color("#3f5f6b"))
+	var crate_material := _material(Color("#4a5b6e"), 0.6)
+	var dark_crate := _material(Color("#39485a"), 0.6)
+	var container_material := _material(Color("#3f5f6b"), 2.0)
 	# La cámara del lobby está en (2.55, 1.52, 3.85) mirando al héroe: el atrezzo
 	# se coloca a la espalda y a los lados de esa línea, no fuera de cuadro.
+	# El panel de UI tapa la mitad izquierda, así que el peso visual va a la
+	# derecha: cajas escalonadas en el medio y contenedores al fondo, para que
+	# el fondo se lea como un patio de carga por capas y no como un muro.
 	var specs: Array = [
 		[Vector3(-3.1, 0.55, -1.8), Vector3(1.6, 1.1, 1.6), 18.0, crate_material],
 		[Vector3(-1.9, 0.45, -2.6), Vector3(1.2, 0.9, 1.2), -12.0, dark_crate],
 		[Vector3(-2.9, 1.35, -2.1), Vector3(1.1, 0.8, 1.1), 32.0, dark_crate],
-		[Vector3(4.4, 0.5, -1.6), Vector3(2.2, 1.0, 1.2), -8.0, crate_material],
-		[Vector3(-4.6, 0.6, 1.2), Vector3(1.4, 1.2, 1.4), 24.0, dark_crate],
+		[Vector3(2.7, 0.5, -4.6), Vector3(2.0, 1.0, 1.3), -6.0, crate_material],
+		[Vector3(2.4, 1.3, -4.7), Vector3(1.3, 0.6, 1.0), 14.0, dark_crate],
+		[Vector3(5.6, 0.35, -3.4), Vector3(1.2, 0.7, 1.2), -18.0, crate_material],
+		[Vector3(7.4, 0.6, -6.9), Vector3(1.5, 1.2, 1.5), 24.0, dark_crate],
 	]
 	for spec: Array in specs:
 		var box := MeshInstance3D.new()
@@ -169,14 +191,18 @@ func _add_lobby_props() -> void:
 		box.rotation_degrees.y = float(spec[2])
 		box.material_override = spec[3] as Material
 		add_child(box)
-	var container := MeshInstance3D.new()
-	var container_mesh := BoxMesh.new()
-	container_mesh.size = Vector3(6.4, 2.6, 2.6)
-	container.mesh = container_mesh
-	container.position = Vector3(3.9, 1.3, -6.2)
-	container.rotation_degrees.y = -14.0
-	container.material_override = container_material
-	add_child(container)
+	for spec: Array in [
+		[Vector3(6.4, 1.3, -9.2), -12.0],
+		[Vector3(12.6, 1.3, -12.4), 9.0],
+	]:
+		var container := MeshInstance3D.new()
+		var container_mesh := BoxMesh.new()
+		container_mesh.size = Vector3(6.4, 2.6, 2.6)
+		container.mesh = container_mesh
+		container.position = spec[0] as Vector3
+		container.rotation_degrees.y = float(spec[1])
+		container.material_override = container_material
+		add_child(container)
 
 
 func _add_lamp(position: Vector3) -> void:
@@ -542,11 +568,13 @@ func _add_setting_slider(stack: VBoxContainer, label_text: String, key: String, 
 func _settings() -> Node:
 	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 
-func _material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.85
-	return material
+func _material(color: Color, uv1_scale: float = 0.6) -> StandardMaterial3D:
+	# Mismo grano que el resto del mundo (WorldGrain): sin él las cajas del
+	# escaparate son caras planas de color y se leen como un muro sin textura.
+	# La escala se pasa por superficie: el grano mide 64 px, así que una caja de
+	# 1,5 m y un suelo de 70 m no pueden compartir el mismo `uv1_scale` sin que
+	# en uno se estire y en el otro el mipmap lo aplane.
+	return WorldGrain.material(color, uv1_scale, 0.85)
 
 func _emissive(color: Color, energy: float) -> StandardMaterial3D:
 	var material := _material(color)

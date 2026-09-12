@@ -707,22 +707,9 @@ func _mesh_node(node_name: String, mesh: Mesh, position: Vector3, material: Mate
 	return node
 
 
-var _grain_texture: Texture2D
-
-
+## Grano compartido del mundo: misma imagen cacheada que pinta el lobby.
 func _world_grain() -> Texture2D:
-	if _grain_texture != null:
-		return _grain_texture
-	var size := 64
-	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 9911
-	for y in range(size):
-		for x in range(size):
-			var value := 0.82 + rng.randf_range(-0.10, 0.14)
-			image.set_pixel(x, y, Color(value, value, value))
-	_grain_texture = ImageTexture.create_from_image(image)
-	return _grain_texture
+	return WorldGrain.texture()
 
 
 func _ground_material() -> StandardMaterial3D:
@@ -766,13 +753,7 @@ func _ground_material() -> StandardMaterial3D:
 ## Material de mundo con grano procedural: los colores planos hacían que
 ## rocas, muros y estructuras se leyeran como bloques de plástico.
 func _material(color: Color, emission: float = 0.0) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.84
-	material.detail_enabled = true
-	material.detail_albedo = _world_grain()
-	material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
-	material.uv1_scale = Vector3(3.0, 3.0, 1.0)
+	var material := WorldGrain.material(color)
 	if emission > 0.0:
 		material.emission_enabled = true
 		material.emission = color

@@ -52,6 +52,12 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
   en `tests/animation_layers.gd`.
 - **Skins de arma**: `game/data/weapon_skin.gd` (`TINTS`). El lobby deriva su
   lista con `WeaponSkin.skin_names()`; no la dupliques.
+- **Grano de las superficies del mundo** (muros, cajas, rocas, suelo y atrezzo
+  del lobby): `game/world/world_grain.gd`. Una sola imagen cacheada por proceso
+  para el mundo y el lobby (`WorldGrain.material(color, uv1_scale)`); el
+  `uv1_scale` se elige por tamaño de superficie, porque el grano mide 64 px y el
+  mismo valor estira la mancha en una caja de 6 m o la aplana por mipmap en una
+  de 1,5 m.
 - **Audio**: samples en `CombatAudio.SAMPLES` (única fuente de verdad; nadie
   escribe literales `res://assets/sfx/...`), buses en
   `game/audio/default_bus_layout.tres`, volúmenes (`master` + `sfx`, donde el
