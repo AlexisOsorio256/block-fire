@@ -10,151 +10,99 @@ whenToUse: >-
 # Proportional evidence
 
 Use the cheapest decisive evidence for the behavior that changed. Once that
-contract is proved, stop: more independent proof is waste unless it protects a
-distinct regression.
+contract is proved, stop. More proof is useful only when it protects a distinct
+regression.
 
-- Logic/rules: a targeted test, or `tools/bf test` when that suite covers the change.
+- Logic/rules: one targeted test, or `tools/bf test` when that suite owns it.
 - Scene/input/runtime: QA of the affected area.
-- Presentation/animation: inspect the current capture first; visual evidence you actually looked at, plus the relevant runtime only when needed.
-- Android/platform: a physical device when the conclusion depends on it.
-- Performance: a before/after measurement.
-- Docs: consistency with the code that owns the behavior.
-- Assets: origin and license in `CREDITS.md`.
+- Presentation/animation: watched current capture plus runtime only when it answers a different question.
+- Android/platform: physical device only when the conclusion depends on it.
+- Performance: before/after measurement.
+- Docs: consistency with the code owner.
+- Assets: origin/license in `CREDITS.md`.
 
-## Dense visual discovery
+## One discovery sweep
 
-For open-ended visual/polish work, discovery and repair are separate passes. Do
-one bounded representative sweep before touching code. Reuse existing captures or
-produce only views that expose materially different states. Generate independent
-captures together instead of spending a model turn per capture.
+Open-ended visual work gets **one** bounded representative discovery sweep before
+editing. Reuse current evidence. Generate only materially different states/views,
+launch independent read-only captures together, and keep aligned timelines in the
+same mode/weapon/duration.
 
-For **four or more related stills**, serial `read_image` calls are the wrong
-shape. Build one overview first:
+For four or more related stills, inspect one overview first:
 
 `tools/bf qa sheet --out=/tmp/blockfire-visual-sheet.png --cols=4 <images...>`
 
-Inspect that sheet once and inventory every clear defect with its tile/view/state
-before focusing on any one issue. Open an individual source image only when the
-overview hides a detail needed to judge or fix it. For two or three independent
-views, issue their `read_image` calls together in the same assistant step.
+Two or three independent views belong in the same assistant step. Prefer two
+complementary views (for example side + q34/back) over four redundant ones. Keep
+semantic state metadata and sample motion around meaningful steady states and
+transition boundaries, not arbitrary intervals. If a transition needs detail,
+densify only that boundary.
 
-### Parallel multiview evidence
+The overview is for coverage, not exhaustive proof. Scan composition, facing/gaze,
+pose, weapon/hand alignment, silhouette/clipping, lighting, background and UI
+overlap; for motion also scan feet/contact, pelvis/torso, weapon/hand continuity,
+camera and transition/recovery. Record the obvious defects, then choose the
+highest-impact coherent owner. Do not turn every possible concern into a separate
+investigation.
 
-When two camera views or fixtures are independent, read-only and expose different
-failure modes, **fan them out concurrently instead of running them serially**.
-For `tools/bf qa motion`, prefer two complementary views such as side + back/q34
-with the same mode, weapon, duration and timeline, each in its own output
-directory. Launch both processes/jobs before waiting for either. Two useful views
-normally beat four redundant ones; add a third only if one specific ambiguity
-survives.
+## EVIDENCE LOCK
 
-Keep semantic frames aligned across views: the same frame/state in one view should
-map to the same frame/state in the other. Build one sheet per view or a paired
-sheet, then inspect the aligned timelines in the same inference. This turns camera
-occlusion into information: one view can expose foot/contact and weapon pitch while
-another exposes facing, shoulder/hand relation or silhouette.
+**As soon as one player-visible defect is clear enough to name and one plausible
+owner/layer exists, discovery is finished.** This is a hard stop, not a suggestion.
+Before the first edit:
 
-Parallelize only observation that cannot mutate shared state. Never run source
-edits, imports, Blender writes, asset exports or git writes concurrently against
-the same files, and never share one capture output directory between processes.
-If launching two Godot runs would contend for a mutable import step, do the import
-once first and fan out only the read-only capture stage.
+1. Do not read another image, add another view, rebuild a sheet or rerun a capture.
+2. Read the owner and only an edit-critical dependency if needed.
+3. At most **one** causal check is allowed, and only when its result chooses between
+   two materially different patches. State those two patches before running it.
+4. Then edit. The comparable after is the next diagnostic step.
 
-A character/presentation scene is incomplete until the same pass explicitly
-checks composition, facing/gaze, pose, weapon and hand alignment, silhouette and
-clipping, lighting, background, and UI overlap. Record defects from all of those
-visible dimensions before prioritizing; a strong first defect must not collapse
-the rest of the scene into background noise.
+Do not spend pre-edit turns disproving alternative hypotheses, increasing
+confidence, checking a candidate that would not change the patch, or proving that
+unrelated systems are fine. A plausible minimal fix is allowed to be falsified by
+the after; that is cheaper than a proof marathon.
 
-### Semantic temporal evidence
+If the user says to edit/fix/start now, EVIDENCE LOCK is immediate. Do not take
+"one last look" first.
 
-For animation, combat, camera or gamefeel over time, **batch meaning, not just
-pixels**. Do not pick frames merely because they are evenly spaced. First identify
-the meaningful stable states and transitions for the behavior under review, then
-sample a compact chronological storyboard that preserves their context.
+If the first sweep reveals no important defect, stop and report that result. Do
+not keep hunting until some change can be justified.
 
-For each important transition, prefer the smallest set that exposes continuity:
-last stable frame before it, a representative transition/peak frame, first stable
-frame after it, and recovery/settle only when recovery is visually meaningful.
-Also include representative steady-state phases needed to judge the cycle itself.
-Keep state metadata available in the capture, filename or tool output — intent,
-speed, ADS/fire/reload/crouch/air state or other facts that explain why a tile
-exists. A tile without a semantic reason is a candidate to drop.
+## No throwaway tooling in the repo
 
-Use **adaptive temporal density**. Keep the overall sweep sparse, then sample more
-densely only around the suspicious boundary (for example N-1, N, N+1, N+3, N+6,
-or several frames spanning the blend weight). Do not raise the frame density of
-the whole sequence just because one transition needs close inspection. If real-time
-play hides the boundary, deterministic frame stepping or a slowed capture is fine;
-the purpose is to expose the transition, not to create more frames to inspect.
+A visible defect is never a reason to create a new lab/probe/capture script. Use
+existing `tools/bf` and tracked probes first. If a genuinely missing observation
+**blocks** the choice of patch and no existing tool can expose it, the smallest
+throwaway script/output may be created only under `/tmp/blockfire-*`; never put
+session QA under `captures/`, `tests/`, `tools/` or another checkout path. Remove
+the temporary artifact when done.
 
-Read the resulting sheet as **one timeline**, comparing adjacent tiles and aligned
-views instead of judging screenshots independently. Before touching code,
-inventory every clear continuity defect relevant to the scene: feet/contact and
-cadence, pelvis/torso continuity, facing and silhouette, weapon/hand alignment,
-camera composition, combat feedback/HUD state and transition/recovery pops. One
-sheet should support several diagnoses when the evidence shows them; do not burn a
-new model turn for each visible defect.
+The repo keeps permanent product/tooling, not one-session evidence. Generated PNGs,
+contact sheets, logs and diagnostic scripts stay outside the checkout.
 
-If the source is a video or long sequence, select semantic frames from it first
-and then build the sheet. Blind every-N-frame sampling is a fallback only when no
-state/transition information exists. A video path by itself is not visual
-evidence. Open individual frames only when the overview hides detail or continuity
-itself needs a closer adjacent comparison.
+## Choose the owner from the image
 
-## Fast closure after the sweep
+Use multiview evidence to avoid broad code archaeology. If feet/pelvis/torso are
+coherent but only weapon, hands, camera-relative presentation or an additive pose
+is wrong, inspect mount/IK/runtime layer before clips. If the whole body path or
+isolated clip is wrong, motion/clip ownership is plausible. If only a transition
+is wrong while steady clips are sound, inspect transition blending rather than all
+clips.
 
-The representative sheet is the discovery pass, not permission to start another
-audit. Once a visible defect is confirmed and its likely owner is known, stop
-general exploration. Read the owner and only the dependency required to make the
-edit, apply the smallest plausible fix, and generate comparable after evidence.
-If the image already establishes the defect, do not add measurements or another
-angle unless a specific unanswered question could change the fix.
-
-Use the observed scope to choose the owner before escalating. If body/locomotion
-continuity is coherent across views but only a weapon, hand, camera or overlay
-remains rigid/misaligned, inspect that runtime layer first rather than reopening
-clips or movement timing. If the whole body path or isolated clip is wrong, then
-the motion/clip owner is plausible. Multiview evidence is especially useful for
-making this distinction without a broad code audit.
-
-Batch independent captures, targeted checks and other cheap shell work. Do not
-spend a separate model turn on each command when their results can be judged
-together. A successful edit plus decisive after evidence does not need a reread of
-unrelated code. If one targeted causal check still leaves the owner genuinely
-ambiguous, record the issue as unresolved rather than expanding into a broad
-subsystem audit.
-
-Rank confirmed issues by visible impact and shared owner. Fix a small coherent
-group when one owner/change closes them together; otherwise fix the highest-impact
-item and keep the other observed defects in the short inventory. Do not start a
-second discovery sweep unless a fix exposes a genuinely new state.
-
-For a visual question, a current capture is primary evidence. Do not build a new
-probe, geometry proof or analysis script for something the image already answers.
-Use metrics only to locate a cause vision cannot reveal or to lock a regression
-after the visual fix; inspect comparable evidence again after the change.
+Once the owner is plausible, broad grep/subsystem exploration is churn. If one
+allowed causal check still leaves ownership genuinely ambiguous, leave the issue
+unresolved rather than expanding into an audit.
 
 ## Verification cadence
 
-A focused visual fix gets the cheapest targeted evidence that could fail because
-of it: repeat the same semantic frames/views after the edit, plus a relevant
-probe/test only when that contract needs one. If the defect affects what the
-player actually sees — camera, weapon presentation, ADS/combat composition or
-input-driven transitions — add **one** representative player-camera/runtime
-capture when the isolated lab cannot prove that perspective. Lab + runtime are
-not two ritual proofs; use both only when they answer different questions.
+After the edit, repeat the **same minimal semantic frames/views**. Add one
+player-camera/runtime capture only when the isolated lab cannot prove what the
+player sees. Lab + runtime are not ritual duplicates.
 
-During a coherent visual pass, do **not** run `tools/bf test` after every micro-fix.
-Run the broad integration suite once after the coherent group is closed, or earlier
-only when a cross-boundary change or a failure creates a new reason. A commit does
-not by itself require another full suite.
+Run the cheapest focal test that can fail because of the change. During a coherent
+visual group do not run the full suite after each micro-fix; run it once when the
+group closes, or earlier only for a real cross-boundary risk/failure. Do not rerun
+a decisive check without a state change that could alter it.
 
-A test that cannot fail because of the change is not evidence. Neither is a
-screenshot nobody looked at. Do not rerun an already decisive check without a
-state change that could alter its result. Full suite, `qa touch` and Android build
-are release/cross-boundary gates, not ritual closing steps.
-
-Report what ran and what it proved; what did not run is `SIN VERIFICAR`; what was
-deduced from logs or metrics is `INFERENCIA`. Commit and push once the required
-evidence exists.
+Report what ran and what it proved. What did not run is `SIN VERIFICAR`; deductions
+from logs/metrics are `INFERENCIA`. Commit and push once required evidence exists.
