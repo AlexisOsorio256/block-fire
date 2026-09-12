@@ -716,16 +716,39 @@ func _mesh_node(node_name: String, mesh: Mesh, position: Vector3, material: Mate
 ## mipmap lo promedia a color plano y la roca o la caja se leen como plástico,
 ## que es justo lo que el grano venía a evitar. Con el lado mayor dividido por
 ## `GRAIN_SPAN`, la mancha mide ~6 cm en cualquier superficie del mapa.
-## Las mallas redondas (cilindro, esfera) despliegan su UV alrededor, así que su
-## mancha horizontal queda algo más gruesa que la vertical; a esta escala no se
-## distingue y evita una segunda regla por tipo de malla.
+##
+## Las mallas redondas despliegan su UV alrededor del eje, así que sus dos ejes
+## no miden los mismos metros: el alero de la estación (r 3,35 m) repetía el
+## grano 1,74 veces sobre 21 m de circunferencia y sobre 3,35 m de radio, y las
+## manchas de 19 x 3 cm se leían como radios de madera; el dintel de la puerta
+## (15,2 m de largo) salía rayado a lo largo y las rocas, emborronadas. Cada eje
+## se escala por los metros que de verdad recorre su UV.
 func _fit_grain(material: Material, mesh: Mesh, node_scale: Vector3 = Vector3.ONE) -> void:
 	var grain := material as StandardMaterial3D
 	if grain == null or not grain.detail_enabled:
 		return
 	var extent := mesh.get_aabb().size * node_scale
+	if mesh is CylinderMesh:
+		# U recorre la circunferencia; V, la altura en el lateral y el radio en
+		# las tapas. Se ajusta el mayor de esos dos: el que más se ve queda a
+		# ~6 cm y el otro por debajo, donde el mipmap lo aplana sin estirarlo.
+		var radius: float = maxf(extent.x, extent.z) * 0.5
+		_fit_grain_axes(grain, TAU * radius, maxf(radius, extent.y))
+		return
+	if mesh is SphereMesh:
+		# U recorre el ecuador; V, media circunferencia de polo a polo.
+		_fit_grain_axes(grain, PI * extent.x, PI * extent.y * 0.5)
+		return
 	var span: float = maxf(extent.x, maxf(extent.y, extent.z))
 	grain.uv1_scale = Vector3.ONE * clampf(span / GRAIN_SPAN, 0.2, 14.0)
+
+
+## Fija el grano por ejes a partir de los metros que recorre cada uno de ellos.
+func _fit_grain_axes(grain: StandardMaterial3D, u_meters: float, v_meters: float) -> void:
+	grain.uv1_scale = Vector3(
+		clampf(u_meters / GRAIN_SPAN, 0.2, 14.0),
+		clampf(v_meters / GRAIN_SPAN, 0.2, 14.0),
+		1.0)
 
 
 ## Grano compartido del mundo: misma imagen cacheada que pinta el lobby.

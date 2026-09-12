@@ -41,6 +41,12 @@ Pasada visual de superficie (capturas propias y de partida, no medición):
   lobby) y se escala por superficie (`arena.gd::_fit_grain`). Con `uv1_scale`
   fijo de 3 el texel caía a 8 mm y el mipmap lo promediaba: el grano existía y no
   llegaba a pantalla.
+- Ese ajuste era el de las cajas (un lado mayor para los dos ejes). En las mallas
+  redondas la UV recorre metros distintos en cada eje: el alero de la estación
+  (r 3,35 m) salía con radios de 19 x 3 cm y el dintel de la puerta rayado a lo
+  largo. Ahora el cilindro ajusta U por su circunferencia y V por el mayor de
+  radio/altura, y la esfera por ecuador y media circunferencia: la roca cercana
+  pasa de mancha lisa a piedra a 6 cm (capturas 1:1 antes/después).
 - El lobby tenía el mismo material plano y su patio (44x22) cortaba el horizonte
   a cuchillo; ahora lleva el grano compartido, niebla por profundidad (16→58 m) y
   el atrezzo a la derecha del panel, que es translúcido (alfa 0x9c): lo que
