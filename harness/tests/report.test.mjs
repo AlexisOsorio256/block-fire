@@ -65,6 +65,8 @@ test('usage includes cache writes in billed prompt and cache denominator', () =>
     assert.equal(r.cacheHitPercent, 25)
     assert.equal(r.promptTokensPerUsage, 20)
     assert.equal(r.cumulativePromptMultiple, 1)
+    assert.equal(r.readImageCalls, 0)
+    assert.equal(r.visualReadSteps, 0)
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
@@ -88,6 +90,24 @@ test('efficiency accounting exposes repeated calls, skill reloads and cumulative
     assert.deepEqual(r.skillsLoaded, ['blockfire-evidence', 'blockfire-evidence'])
     assert.equal(r.promptTokensPerUsage, 125)
     assert.equal(r.cumulativePromptMultiple, 5)
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('visual accounting distinguishes batched image reads from serial turns', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    const image = (path) => ({ type: 'tool-call', name: 'read_image', arguments: JSON.stringify({ file_path: path }) })
+    writeLog(file, [
+      sessionEvent('visual-batch-fixture'),
+      { type: 'assistant/message', data: { message: { content: [image('a.png'), image('b.png'), image('c.png')] } }, time: 1 },
+      { type: 'assistant/message', data: { message: { content: [image('detail.png')] } }, time: 2 },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.equal(r.readImageCalls, 4)
+    assert.equal(r.visualReadSteps, 2)
+    assert.equal(r.imagesPerVisualStep, 2)
+    assert.equal(r.maxVisualBatch, 3)
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
