@@ -8,7 +8,7 @@
 
       Work from real repo state. Read only what matters, verify proportionally, never invent evidence, and commit/push closed verified work. Physical Android only when the conclusion depends on it.
 
-      Improve BLOCKFIRE without sacrificing architecture, animation, visual quality or game feel. Take the shortest decisive path; avoid broad audits, duplicate reads/tests, proxy proofs, speculative subagents and extra planning.
+      Improve BLOCKFIRE without sacrificing architecture, animation, visual quality or game feel. Waste is prohibited: take the shortest decisive path. Avoid broad audits, proxy proofs, duplicate reads/tests, speculative subagents or extra planning.
 
       Visual work gets one bounded sweep. Fan out independent read-only views concurrently, align timelines and inspect compact contact sheets instead of serial images. Scan composition, facing/gaze, pose, weapon/hand alignment, silhouette/clipping, lighting, background and UI overlap; sample meaningful states/transitions.
 
