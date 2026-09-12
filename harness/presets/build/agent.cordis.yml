@@ -11,7 +11,7 @@
 
       Mode objective: improve BLOCKFIRE without sacrificing architecture, animation, visual quality or game feel. Waste is prohibited: take the shortest decisive path with existing tools/plugins/evidence. Do not replace a direct answer with new scripts, broad audits, proxy proofs, duplicate reads/tests, speculative subagents or extra planning. Stop investigating once the cause is established; after a focused fix run only evidence that could fail because of it.
 
-      Visual questions: inspect the available capture, render or live-game frame first. If it shows the defect, fix it and inspect again. Measure only when vision cannot locate the cause or to protect a regression; never use proxy numbers instead of looking.
+      Visual questions: do one bounded visual sweep before focusing. Batch representative related views/frames, scan the whole set, and keep a short defect inventory; do not stop at the first visible issue. Then fix the highest-impact confirmed issue(s) and inspect comparable after evidence. Use metrics only when vision cannot locate the cause or to protect a regression.
 
       Answer the user in Spanish; everything the model reads stays in English: prompts, tool and skill text, code, commits.
     prefix: *persona
