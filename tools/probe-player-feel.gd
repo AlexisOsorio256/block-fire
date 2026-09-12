@@ -33,6 +33,7 @@ func run() -> void:
 	player.mobile_controls = controls
 	player.gravity = 0.0
 	await physics_frame
+	stance_camera_tests(player)
 	for hz: float in [30.0, 60.0, 120.0]:
 		player.position = Vector3.ZERO
 		player.rotation = Vector3.ZERO
@@ -81,6 +82,32 @@ func run() -> void:
 	check(player.camera.position.length() > before and player.camera.position.length() < player.CAMERA_OFFSET.length(), "unobstructed arm extends smoothly")
 	world.free()
 	quit(0 if "--baseline" in OS.get_cmdline_user_args() else mini(failures, 1))
+
+func stance_camera_tests(player: BlockfirePlayer) -> void:
+	for hz: int in [30, 60, 120]:
+		player.camera_pivot.position.y = 1.58
+		for low: bool in [true, false]:
+			var start := player.camera_pivot.position.y
+			var target := 1.18 if low else 1.58
+			player.crouched = low
+			player._update_crouch_visual()
+			check(is_equal_approx(player.camera_pivot.position.y, start), "stance does not teleport camera at %d Hz" % hz)
+			var previous := start
+			var smooth := true
+			for tick in int(hz * 0.3):
+				player._update_camera_pose(1.0 / hz)
+				var height := player.camera_pivot.position.y
+				smooth = smooth and absf(height - previous) < 0.19 \
+					and absf(height - target) <= absf(previous - target) \
+					and height >= minf(start, target) and height <= maxf(start, target)
+				previous = height
+			check(smooth and absf(previous - target) < 0.003, "stance camera eases monotonically to baseline at %d Hz" % hz)
+	player.is_alive = false
+	player.camera_pivot.position.y = 0.5
+	player._update_camera_pose(1.0 / 30.0)
+	check(is_equal_approx(player.camera_pivot.position.y, 0.5), "stance smoothing preserves death camera")
+	player.is_alive = true
+	player.camera_pivot.position.y = 1.58
 
 func reset_case(player: BlockfirePlayer, controls: BlockfireMobileControls) -> void:
 	controls.release_all()

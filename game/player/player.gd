@@ -254,6 +254,8 @@ func reset_at(spawn: Vector3, immunity: float = 2.0) -> void:
 	camera_recoil = 0.0
 	last_damage_headshot = false
 	_update_crouch_visual()
+	if camera_pivot != null:
+		camera_pivot.position.y = 1.58
 	_play_feedback("respawn")
 
 func break_spawn_immunity() -> void:
@@ -389,6 +391,11 @@ func _update_look() -> void:
 	_sync_camera_orbit()
 
 func _update_camera_pose(delta: float) -> void:
+	# Follow the stance transition instead of teleporting the eye by 40 cm.
+	# Death owns its lowered pivot; collision is still resolved after this move.
+	if is_alive and camera_pivot != null:
+		var height := 1.18 if crouched else 1.58
+		camera_pivot.position.y = lerpf(camera_pivot.position.y, height, 1.0 - exp(-18.0 * delta))
 	# Body rotation changes the parent basis after look input. Restore the
 	# absolute orbit before testing collision at the actor's NEW position.
 	_sync_camera_orbit()
@@ -649,13 +656,10 @@ func _camera_clear_offset(offset: Vector3) -> Vector3:
 
 
 func _update_crouch_visual() -> void:
-	# Pose, cámara y colisión cambian juntas. Sin esto el jugador podía verse
-	# agachado pero conservar cabeza/cápsula de pie y recibir headshots en aire.
+	# Hitboxes change immediately; pose and camera ease into the new stance.
 	_apply_collision_profile()
 	if visual != null:
 		visual.set_crouch_state(crouched)
-	if camera_pivot != null:
-		camera_pivot.position.y = 1.18 if crouched else 1.58
 
 func _team_color() -> Color:
 	return Color("#4fd6e9") if team == "ally" else Color("#da4f68")

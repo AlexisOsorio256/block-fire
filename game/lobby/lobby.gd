@@ -147,10 +147,9 @@ func _build_world() -> void:
 
 	hero = OperatorVisual.new()
 	hero.position = Vector3(1.55, 0.0, 0)
-	# Yaw hacia la cámara (la cámara está en +X/+Z del héroe): con -28 el rifle
-	# del showcase quedaba detrás del panel de UI y el personaje daba la espalda
-	# al eje de lectura del lobby.
-	hero.rotation_degrees.y = 52.0
+	# El actor mira por -Z (el modelo ya lleva su corrección de 180°).
+	# Tres cuartos hacia la cámara en +X/+Z: rostro y arma quedan visibles.
+	hero.rotation_degrees.y = -125.0
 	var settings := _settings()
 	# `_settings()` devuelve Node (o null): un ternario con receptor de tipo base
 	# no deja inferir el tipo con `:=` en Godot 4.7.2 y el archivo entero falla
