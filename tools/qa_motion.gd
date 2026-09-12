@@ -1,7 +1,13 @@
 extends SceneTree
 ## Integrated motion exam. Fixed 30 Hz, actual OperatorVisual + weapon + IK.
 ## --mode=sequence|locomotion|reload|air|combat --view=front|q34|side|back
-## --out=captures/post-astra/final --weapon=rifle --duration=24
+## --out=/tmp/bf-motion --weapon=rifle --duration=24
+## --frames=59,60,61,90  # explicit sparse capture set
+## --all-frames           # opt in only when every rendered frame is genuinely needed
+##
+## By default the lab SIMULATES the full timeline but saves only a compact semantic
+## sample under /tmp. This prevents visual QA from flooding the checkout or inviting
+## serial inspection of hundreds of nearly redundant PNGs.
 ##
 ## Speeds are GAMEPLAY speeds (player.gd: walk 4.8, sprint 7.0, crouch 2.6) and
 ## every label means the gameplay action, never the clip's own implied speed.
@@ -14,7 +20,7 @@ var visual: OperatorVisual
 var camera: Camera3D
 var label: Label
 var frame := 0
-var out := "captures/post-astra/final"
+var out := ""
 var mode := "sequence"
 var view := "q34"
 var weapon := "rifle"
@@ -23,6 +29,9 @@ var _ready_lab := false
 var _death_sent := false
 var _shot_frame := -100
 var _capture := true
+var _capture_all := false
+var _capture_frames: Dictionary = {}
+var _explicit_frames := false
 
 func _init() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -31,10 +40,49 @@ func _init() -> void:
 		if arg.begins_with("--view="): view = arg.get_slice("=", 1)
 		if arg.begins_with("--weapon="): weapon = arg.get_slice("=", 1)
 		if arg.begins_with("--duration="): duration = float(arg.get_slice("=", 1))
+		if arg.begins_with("--frames="):
+			_explicit_frames = true
+			for token: String in arg.get_slice("=", 1).split(","):
+				var value := token.strip_edges()
+				if value.is_valid_int(): _capture_frames[int(value)] = true
+		if arg == "--all-frames": _capture_all = true
 		if arg == "--no-capture": _capture = false
+	if out.is_empty(): out = "/tmp/blockfire-qa-motion-%d" % OS.get_process_id()
+	if _capture and not _capture_all and not _explicit_frames:
+		_default_capture_frames()
 	DirAccess.make_dir_recursive_absolute(out)
+	print("QA_MOTION out=%s mode=%s view=%s capture=%s frames=%s" % [
+		out, mode, view,
+		"all" if _capture_all else ("none" if not _capture else str(_capture_frames.size())),
+		"explicit" if _explicit_frames else "semantic-default",
+	])
 	root.size = Vector2i(960, 540)
 	_build.call_deferred()
+
+func _add_capture_frames(values: Array[int]) -> void:
+	var total := int(duration * 30.0)
+	for value: int in values:
+		if value >= 0 and value < total: _capture_frames[value] = true
+
+func _default_capture_frames() -> void:
+	var total := int(duration * 30.0)
+	if mode == "sequence":
+		# State centers plus tight boundaries, including jump/land and switch.
+		_add_capture_frames([0, 30, 59, 61, 90, 119, 121, 150, 179, 181, 210,
+			239, 242, 270, 299, 303, 330, 359, 363, 390, 419, 422, 440,
+			450, 456, 465, 474, 480, 490, 510, 539, 542, 560, 599, 601, 630])
+	elif mode == "combat":
+		for boundary: int in range(0, total + 1, 30):
+			_add_capture_frames([boundary + 15, boundary + 29, boundary + 31])
+	elif mode == "air":
+		for boundary: int in range(0, total + 1, 60):
+			_add_capture_frames([boundary, boundary + 12, boundary + 23, boundary + 25, boundary + 45])
+	elif mode == "reload":
+		for boundary: int in range(0, total + 1, 90):
+			_add_capture_frames([boundary + 15, boundary + 59, boundary + 61, boundary + 89])
+	else: # locomotion and unknown modes with 2 s state segments
+		for boundary: int in range(0, total + 1, 60):
+			_add_capture_frames([boundary + 30, boundary + 59, boundary + 61])
 
 func _build() -> void:
 	var world := Node3D.new()
@@ -160,7 +208,7 @@ func _process(_delta: float) -> bool:
 	camera.position = focus + Vector3(sin(deg_to_rad(yaw))*4.1,.45,cos(deg_to_rad(yaw))*4.1)
 	camera.look_at(focus)
 	label.text = "%s  ·  %s  ·  %s\n%.2fs  |  %.1f m/s  |  sprint %.2f  |  reload %.2f" % [stage,weapon,view,t,Vector2(m.local_velocity.x,m.local_velocity.z).length(),m._sprint_weight,m.reload_phase]
-	if _capture:
+	if _capture and (_capture_all or _capture_frames.has(frame)):
 		_capture_frame.call_deferred(frame)
 	frame += 1
 	return false
