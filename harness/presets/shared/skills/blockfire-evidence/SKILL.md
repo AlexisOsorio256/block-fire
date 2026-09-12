@@ -74,6 +74,22 @@ state/transition information exists. A video path by itself is not visual
 evidence. Open individual frames only when the overview hides detail or continuity
 itself needs a closer adjacent comparison.
 
+## Fast closure after the sweep
+
+The representative sheet is the discovery pass, not permission to start another
+audit. Once a visible defect is confirmed and its likely owner is known, stop
+general exploration. Read the owner and only the dependency required to make the
+edit, apply the smallest plausible fix, and generate comparable after evidence.
+If the image already establishes the defect, do not add measurements or another
+angle unless a specific unanswered question could change the fix.
+
+Batch independent captures, targeted checks and other cheap shell work into one
+command/job. Do not spend a separate model turn on each command when their results
+can be judged together. A successful edit plus decisive after evidence does not
+need a reread of unrelated code. If one targeted causal check still leaves the
+owner genuinely ambiguous, record the issue as unresolved rather than expanding
+into a broad subsystem audit.
+
 Rank confirmed issues by visible impact and shared owner. Fix a small coherent
 group when one owner/change closes them together; otherwise fix the highest-impact
 item and keep the other observed defects in the short inventory. Do not start a
