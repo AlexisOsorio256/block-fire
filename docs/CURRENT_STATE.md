@@ -35,6 +35,25 @@ pies, tiempos y velocidades permanecieron bajo contrato. La mano de apoyo sigue
 siendo estilizada y el puño derecho heredado todavía es tosco; no confundir ese
 acabado con una regresión de locomoción.
 
+Pasada visual de superficie (capturas propias y de partida, no medición):
+
+- El grano del mundo es UN dueño (`game/world/world_grain.gd`, compartido con el
+  lobby) y se escala por superficie (`arena.gd::_fit_grain`). Con `uv1_scale`
+  fijo de 3 el texel caía a 8 mm y el mipmap lo promediaba: el grano existía y no
+  llegaba a pantalla.
+- El lobby tenía el mismo material plano y su patio (44x22) cortaba el horizonte
+  a cuchillo; ahora lleva el grano compartido, niebla por profundidad (16→58 m) y
+  el atrezzo a la derecha del panel, que es translúcido (alfa 0x9c): lo que
+  quedaba detrás se leía como rectángulos oscuros dentro del panel.
+- Trazadora: la caja de 16 mm es ancho de mundo; a un metro del ojo son ~15 px
+  aditivos sobre la mira. El ancho se limita en radianes vistos desde la cámara
+  (`CombatFX.TRACER_EYE_WIDTH`), así que sigue siendo una línea de ~4 px.
+- Los botones AJUSTES/CAMBIAR del HUD crecían hacia el final y se salían del
+  borde derecho en 1280x720; ahora crecen hacia el principio.
+- Animación: pasada temporal (recarga rifle frontal/lateral, locomoción, combate,
+  aire) sin defecto nuevo visible; las limitaciones conocidas siguen siendo las
+  de arriba.
+
 ## Pendiente técnico conocido
 
 `game/characters/operator_visual.gd` ya no mezcla cadencias: 547 líneas
@@ -76,6 +95,12 @@ equivalente en dispositivo está `SIN VERIFICAR`: el cambio reduce operaciones
 cronometrado.
 
 ## Herramientas
+
+`tools/qa_shot.gd` captura ADS y fuego también en escritorio: `--ads`, `--fire` y
+la recarga se enrutaban solo por `MobileControls`, así que sin la ruta táctil no
+pulsaban nada y la vista de apuntado no se podía capturar. Sin móvil ahora pulsa
+las acciones reales del InputMap (`fire`, `aim`, `reload`), que es lo que el
+jugador lee.
 
 `tools/probe_teardown.gd` (compartido): pausa el árbol, para todo
 `AudioStreamPlayer(3D)` y deja drenar al servidor de audio antes de `quit()`.
