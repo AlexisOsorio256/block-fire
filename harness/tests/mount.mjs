@@ -149,6 +149,12 @@ export function apply(ctx) {
         `${space}: the old load-everything skill rule must not return`)
       assert.match(descriptionOf('read_image'), /before inferring from code, geometry or proxy metrics/,
         `${space}: visual questions must use direct observation first`)
+      if (space === 'build') {
+        assert.match(system, /Fan out independent read-only views concurrently/,
+          'build: independent visual views must fan out instead of serial capture')
+        assert.match(system, /composition, facing\/gaze, pose, weapon\/hand alignment, silhouette\/clipping, lighting, background and UI overlap/,
+          'build: scene-level character review dimensions must reach the model')
+      }
       for (const name of DROPPED_SECTIONS) {
         assert(!assembly.sections.some(section => section.name === name),
           `${space}: section ${name} only restates a description and must be gone from the assembled prompt`)
