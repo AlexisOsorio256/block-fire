@@ -10,10 +10,13 @@ Source of truth: `assets/animation_sources/<Clip>.blend`; the GLB is an export. 
 not edit `.glb`/`.import` by hand. `ReloadRifle` and `ReloadPistol` are
 `CRAFT_LOCKED`: no `--rebuild`.
 
-If a current capture/render already shows the defect, inspect it before tracing
-code, transforms or measurements. State what is visibly wrong first; use numbers
-to locate a cause the image cannot reveal or to protect the fix, never as a
-substitute for looking.
+If current captures/renders already show the sequence, inspect related angles and
+before/during/after frames together in a small batch or contact sheet before
+tracing code, transforms or measurements. Scan the whole set, not only the first
+bad pose, and name every clear visual defect that changes the diagnosis. Open an
+individual frame only when the batch hides the needed detail. Use numbers to
+locate a cause vision cannot reveal or to protect the fix, never as a substitute
+for looking.
 
 Then identify where the defect is born:
 
@@ -60,5 +63,7 @@ craft with mass generation.
 
 The image must reach the model: use `read_image` for Godot PNGs and
 `blender_screenshot` for the viewport. A path, a generated MP4 or an
-image-not-available message does not allow judging quality. If the visual route
-fails, continue the useful numeric tests and leave the visual judgment unverified.
+image-not-available message does not allow judging quality; sample a video into
+representative frames/contact sheet unless the active client can actually present
+its frames to the model. If the visual route fails, continue useful numeric tests
+and leave the visual judgment unverified.
