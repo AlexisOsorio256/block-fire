@@ -126,6 +126,31 @@ test('visual-to-edit gap exposes decision churn after observation', () => {
     assert.deepEqual(r.visualToEditGaps, [2, 1])
     assert.equal(r.visualToEditAvg, 1.5)
     assert.equal(r.visualToEditMax, 2)
+    assert.equal(r.visualToEditOverLimit, 0)
+    assert.equal(r.decisionGate, 'PASS')
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('decision gate can fail loud on a DeepSeek-style proof marathon', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    const tool = (name, args = {}) => ({ type: 'tool-call', name, arguments: JSON.stringify(args) })
+    const churn = [tool('read_image', { file_path: 'sheet.png' })]
+    for (let i = 0; i < 14; i += 1) churn.push(tool(i % 2 === 0 ? 'bash' : 'read', { i }))
+    churn.push(tool('edit'))
+    writeLog(file, [sessionEvent('decision-churn-fixture'), { type: 'assistant/message', data: { message: { content: churn } }, time: 1 }])
+
+    const normal = spawnSync(process.execPath, [REPORT, '--session', file, '--json'], { encoding: 'utf8' })
+    assert.equal(normal.status, 0, 'reporting churn is diagnostic by default')
+    const [r] = JSON.parse(normal.stdout)
+    assert.equal(r.visualToEditAvg, 14)
+    assert.equal(r.visualToEditMax, 14)
+    assert.equal(r.visualToEditOverLimit, 1)
+    assert.equal(r.decisionGate, 'CHURN')
+
+    const gated = spawnSync(process.execPath, [REPORT, '--session', file, '--json', '--gate'], { encoding: 'utf8' })
+    assert.equal(gated.status, 1, '--gate must make decision churn actionable')
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
