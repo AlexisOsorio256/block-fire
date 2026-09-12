@@ -365,6 +365,24 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 		return
 	if actor.has_method("get_team") and target.get_team() == actor.get_team():
 		return
+	# La esfera de cabeza está DENTRO de la cápsula del cuerpo: el rayo siempre
+	# toca primero el cuerpo, así que apuntar a la cabeza visible no contaba.
+	# Cuando el cuerpo gana el trazo, se pregunta explícitamente por la capa de
+	# cabeza (4) y, si es del mismo actor, ese es el punto de impacto real.
+	if not is_headshot_collider(collider) and actor != null and actor.is_inside_tree():
+		# El segmento del cuerpo termina en su superficie: la esfera de cabeza
+		# queda por dentro, así que la consulta de cabeza recorre la línea del
+		# disparo un metro más allá del primer impacto (sobra para atravesar el
+		# actor). Sólo cuenta si la cabeza es del MISMO actor.
+		var head_distance := minf(definition.range, origin.distance_to(hit.position) + 1.0)
+		var head_query := PhysicsRayQueryParameters3D.create(origin, origin + shot_direction * head_distance)
+		head_query.collision_mask = 4
+		head_query.collide_with_areas = true
+		head_query.exclude = _shot_excludes()
+		var head_hit: Dictionary = actor.get_world_3d().direct_space_state.intersect_ray(head_query)
+		if not head_hit.is_empty() and _find_actor(head_hit.get("collider")) == target:
+			hit = head_hit
+			collider = head_hit.get("collider")
 	var distance: float = origin.distance_to(hit.position)
 	var multiplier: float = 1.0
 	var headshot := false

@@ -377,7 +377,12 @@ func _test_consolidation_contracts() -> void:
 	var body_shape := player.get_child(0) as CollisionShape3D
 	var body := body_shape.shape as CapsuleShape3D
 	var head_sphere := head_shape.shape as SphereShape3D
-	_check(head_shape.position.y - head_sphere.radius >= body_shape.position.y + body.height * 0.5, "head hitbox is not swallowed by body collider")
+	# La esfera de cabeza vive DENTRO de la cápsula a propósito; el rayo la
+	# resuelve con una consulta explícita a la capa 4. Este contrato protege la
+	# calibración: sobre el rig no debe flotar por encima del torso como el
+	# valor heredado 2.16.
+	_check(head_shape.position.y > body_shape.position.y + 0.5, "head hitbox sits on the visible head, not the capsule center")
+	_check(head_shape.position.y + head_sphere.radius <= body_shape.position.y + body.height * 0.5 + 0.1, "head hitbox stays on the rig instead of floating above it")
 	var weapon := WeaponController.new()
 	_check(weapon.is_headshot_collider(head), "head hitbox resolves as headshot")
 	weapon.free()

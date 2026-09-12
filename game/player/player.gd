@@ -45,8 +45,14 @@ const BODY_HEIGHT_STAND := 1.80
 const BODY_HEIGHT_CROUCH := 1.35
 const BODY_CENTER_STAND := 1.00
 const BODY_CENTER_CROUCH := 0.775
-const HEAD_Y_STAND := 2.16
-const HEAD_Y_CROUCH := 1.55
+## Centro del volumen de cabeza medido en el rig visible (operator_adult_lod):
+## hueso Head a 1,55 m en idle y corona ~1,92 m (1,27/1,63 agachado); radio
+## 0,20. La esfera vive DENTRO de la cápsula del cuerpo, así que
+## `WeaponController` consulta la capa de cabeza explícitamente cuando el
+## cuerpo gana el rayo. Sin esa consulta el headshot solo existía en el aire
+## sobre la cabeza (el valor heredado 2,16 flotaba sobre la malla).
+const HEAD_Y_STAND := 1.74
+const HEAD_Y_CROUCH := 1.45
 var gravity: float = 22.0
 ## Velocidades calibradas con la zancada real del rig (Walk = 1,32 m/s,
 ## Run_Gun = 2,48 m/s): por encima de 7,1 m/s el clip no da más de sí y los
@@ -294,8 +300,12 @@ func _update_footsteps(delta: float) -> void:
 func get_team() -> String:
 	return team
 
+## Centro de masa para la puntería de los bots: queda por debajo del volumen
+## de cabeza (de pie 1,54-1,94; agachado 1,25-1,65), así que apuntar al torso
+## no regala headshots. El multiplicador sigue viniendo de la dispersión alta
+## o de la puntería deliberada del jugador.
 func get_target_point() -> Vector3:
-	return global_position + Vector3.UP * (1.35 if crouched else 1.7)
+	return global_position + Vector3.UP * (1.05 if crouched else 1.35)
 
 ## Punto de asistencia independiente del hitbox de cabeza: la ayuda móvil
 ## acompaña el torso visible, conserva línea de visión y nunca decide disparar.

@@ -328,8 +328,11 @@ func _play_feedback(sound_key: String) -> void:
 func get_team() -> String:
 	return team
 
+## Centro de masa: por debajo del volumen de cabeza (1,54-1,94 en el rig),
+## para que la puntería de los bots al torso no se convierta en headshot al
+## arreglar la esfera (ver `BlockfirePlayer.HEAD_Y_STAND`).
 func get_target_point() -> Vector3:
-	return global_position + Vector3.UP * 1.62
+	return global_position + Vector3.UP * 1.30
 
 func get_assist_point() -> Vector3:
 	return global_position + Vector3.UP * 1.18
@@ -401,7 +404,9 @@ func _create_collision() -> void:
 	var sphere := SphereShape3D.new()
 	sphere.radius = 0.2
 	head_shape.shape = sphere
-	head_shape.position.y = 2.16
+	# Mismo centro visible que el jugador; la esfera queda dentro de la cápsula
+	# y el rayo la consulta en la capa 4 (Hitboxes).
+	head_shape.position.y = 1.74
 	head.add_child(head_shape)
 	add_child(head)
 

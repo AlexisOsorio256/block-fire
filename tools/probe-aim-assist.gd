@@ -95,7 +95,15 @@ func drag_until(point: Vector3, max_pixels: float, tolerance: float, max_ticks: 
 	return used
 
 func aim_head() -> Vector3:
-	return bot.global_position + Vector3.UP * 2.16
+	# La esfera de cabeza es la autoridad (su centro se calibra al rig visible en
+	# player.gd/bot.gd); el fixture la lee del target en vez de copiar una altura
+	# que ya se desincronizó una vez (el 2.16 heredado flotaba sobre la malla).
+	var head := bot.get_node_or_null("HeadHitbox") as Area3D
+	if head != null and head.get_child_count() > 0:
+		var shape := head.get_child(0) as CollisionShape3D
+		if shape != null:
+			return bot.global_position + Vector3.UP * shape.position.y
+	return bot.global_position + Vector3.UP * 1.74
 
 ## Bots die from accumulated damage and the assist skips dead candidates, so each
 ## scenario must start from a live target or it silently measures nothing.

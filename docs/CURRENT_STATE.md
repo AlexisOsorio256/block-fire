@@ -175,6 +175,20 @@ defecto nueva: `tools/probe-aim-assist.gd` (18 fallos antes, 0 después; 8/8
 headshots y 8/8 impactos al pecho a 3.5/10/25 m). Velocidades, slide, huella y
 FOV sin cambios.
 
+Volumen de cabeza corregido: el hitbox heredado (2.16 m en pie/1.55 agachado)
+flotaba sobre la malla (medido: hueso Head a 1.55 m, corona ~1.92; agachado
+1.27/1.63), así que apuntar a la cabeza visible registraba pecho y el headshot
+sólo existía en el aire sobre la cabeza. Ahora el centro es 1.74/1.45, la
+esfera vive DENTRO de la cápsula y `WeaponController` consulta la capa de
+cabeza (4) cuando el cuerpo gana el trazo, con el punto de impacto real en la
+esfera. Los bots apuntan al centro de masa (1.35/1.05) para no regalar el
+multiplicador. Mismo fixture que antes (`aim_head` lee el hitbox en vez de
+copiar 2.16): apuntando a la cabeza visible pasó de 0/8 headshots (3 fallos) a
+8/8 a 3.5/10/25 m; captura 1:1 antes/después del mismo disparo muestra 18
+blanco→23 amarillo. Suite smoke 311, regresiones 29, animation_layers, player
+feel, brake, aim coordination y aim assist PASS; baselines de pies/FOV/oráculo
+sin tocar.
+
 Montaje de armas corregido: la pistola se sujetaba a 8.2 cm de la mano y la SMG
 a 4.9 cm (ahora 0.010/0.017 m, como rifle 0.016 y escopeta 0.015), los cuatro
 marcadores de boca estaban 0.10-0.23 m dentro del cañón (ahora 0.022-0.027 m

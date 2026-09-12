@@ -518,6 +518,36 @@ simultaneous move/look/fire/ADS, sustained frame pacing, and how the new drag
 grip and head reachability feel to a real thumb. Scripted taps and swipes
 cannot establish any of that.
 
+## Head volume corrected (visible head was not the hitbox)
+
+The legacy head sphere was centered at 2.16 m standing / 1.55 crouching. The
+active rig (`operator_adult_lod`) measures Head bone 1.55 m with crown ~1.92
+(crouch 1.27/1.63), so the sphere floated above the mesh: the body capsule won
+every ray and aiming at the visible head dealt body damage, while headshots
+only existed in the empty air above the head. The old fixture hid it by
+hardcoding the same 2.16 in `aim_head()`.
+
+Fixed in `game/player/player.gd`, `game/bots/bot.gd` and
+`game/weapons/weapon_controller.gd` only, with no pose, clip, speed or foot
+change: head center is 1.74 standing / 1.45 crouching, the sphere lives inside
+the body capsule, and the weapon asks the head layer explicitly when the body
+wins the trace, using the sphere surface as the real impact point. Bot aim
+points moved to center mass (1.35 standing / 1.05 crouching; bots 1.30) so the
+new head priority does not inflate bot damage. `tools/probe-aim-assist.gd`'s
+`aim_head()` now reads the target's actual hitbox instead of a copied height.
+
+Before/after with the same probe aimed at the **visible head** (y=1.70):
+0/8 headshots and 3 failures before; 8/8 at 3.5/10/25 m and 0 failures after.
+Real probe (reads hitbox 1.74): 8/8 headshots, 0 failures. Same in-game shot,
+same crosshair on the visible head: cream `18` body popup before, yellow `23`
+headshot popup after. Smoke now 311 checks (head-band contract replaced the
+old “not swallowed” assertion, which encoded the floater); regressions 29,
+animation_layers, player-feel, brake, aim-coordination and aim-assist PASS.
+
+Bot lethality impact is **INFERENCE**: bots center on the torso band below the
+head sphere, so aimed body damage stays 18/13 as before; only upward spread can
+reach the head band. Not measured against live bot DPS.
+
 ## Still open
 
 1. **ADS sight presentation.** The camera sits 0.78 m from the weapon axis by
