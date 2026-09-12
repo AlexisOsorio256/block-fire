@@ -1,6 +1,7 @@
 extends SceneTree
 ## Public visual/weapon state; measure intended camera heading vs barrel +Z.
-## Default gate covers aim/grips/transitions and FOV. --capture saves pose views.
+## Default gate covers aim/grips/transitions and FOV. --capture saves pose views
+## under /tmp, never inside the checkout.
 const ProbeTeardown := preload("res://tools/probe_teardown.gd")
 class ProbePlayer extends BlockfirePlayer:
 	signal tick_done
@@ -180,8 +181,9 @@ func capture_pose(player: BlockfirePlayer, id: String, pitch: float) -> void:
 	root.add_child(environment)
 	await process_frame
 	await RenderingServer.frame_post_draw
-	DirAccess.make_dir_recursive_absolute("res://captures/aim-coordination")
-	root.get_texture().get_image().save_png("res://captures/aim-coordination/%s_%d.png" % [id, int(pitch)])
+	var capture_dir := "/tmp/blockfire-aim-coordination-%d" % OS.get_process_id()
+	DirAccess.make_dir_recursive_absolute(capture_dir)
+	root.get_texture().get_image().save_png("%s/%s_%d.png" % [capture_dir, id, int(pitch)])
 	observer.free()
 	light.free()
 	environment.free()
