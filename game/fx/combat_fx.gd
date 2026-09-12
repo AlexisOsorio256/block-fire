@@ -22,6 +22,10 @@ const SPARK_TTL_MIN := 0.18
 const SPARK_TTL_MAX := 0.34
 const SHELL_TTL := 0.95
 const TRACER_TTL := 0.10
+## Ancho máximo de la trazadora en radianes vistos desde la cámara (~4 px en un
+## render de 1280 px con 70° de FOV). Evita que una trazadora que pasa cerca del
+## ojo se convierta en una banda ancha.
+const TRACER_EYE_WIDTH := 0.0045
 const DECAL_TTL := 7.0
 const DECAL_SIZE := 0.085
 const GRAVITY := 9.2
@@ -97,6 +101,12 @@ func muzzle_burst(origin: Vector3, forward: Vector3, scale: float) -> void:
 
 
 ## Trazadora: caja fina estirada del cañón al punto de impacto.
+##
+## La caja mide 16 mm, pero eso es un ancho de mundo: a un metro del ojo son
+## ~15 px de pantalla y, al ser aditiva y sin sombra, tapaba la mira con una
+## banda crema quemada (vista en capturas propias y de bots que cruzan cerca).
+## El ancho se limita a `TRACER_EYE_WIDTH` radianes medidos desde la cámara, de
+## modo que la trazadora sigue siendo una línea de ~4 px a cualquier distancia.
 func tracer(from: Vector3, to: Vector3, width: float = 0.016) -> void:
 	if not _ready_pools:
 		_build_pools()
@@ -104,6 +114,7 @@ func tracer(from: Vector3, to: Vector3, width: float = 0.016) -> void:
 	var length := delta.length()
 	if length < 0.05:
 		return
+	width = minf(width, TRACER_EYE_WIDTH * _eye_distance_to_segment(from, delta, length))
 	var entry: Dictionary = _tracers[_tracer_cursor % _tracers.size()]
 	_tracer_cursor += 1
 	var node: MeshInstance3D = entry["node"]
@@ -112,6 +123,20 @@ func tracer(from: Vector3, to: Vector3, width: float = 0.016) -> void:
 	node.transparency = 0.0
 	node.visible = true
 	entry["life"] = TRACER_TTL
+
+
+## Distancia de la cámara activa al punto más cercano del tramo. Sin cámara (o
+## fuera del árbol) devuelve infinito: el límite de ancho no aplica.
+func _eye_distance_to_segment(from: Vector3, delta: Vector3, length: float) -> float:
+	if not is_inside_tree():
+		return INF
+	var viewport := get_viewport()
+	var camera := viewport.get_camera_3d() if viewport != null else null
+	if camera == null:
+		return INF
+	var eye := camera.global_position
+	var t := clampf((eye - from).dot(delta) / (length * length), 0.0, 1.0)
+	return eye.distance_to(from + delta * t)
 
 
 ## Impacto en geometría: chispas + decal. `flesh` cambia a puff sin decal.
