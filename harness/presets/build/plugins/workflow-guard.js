@@ -1,13 +1,14 @@
 /** BUILD-only deterministic workflow boundaries.
- * Semantic stop/decision rules live in the persona/skills; this guard enforces
- * the parts that are mechanically knowable without guessing model intent.
+ * Semantic judgment stays with the model; this guard only enforces cheap phase
+ * transitions that can be inferred from tool use without pretending to see the
+ * defect itself.
  */
 export const name = 'blockfire-workflow-guard'
 export const inject = ['tools']
 
 const DENIAL = 'BLOCKFIRE workflow blocked this call: '
-const MAX_VISUAL_READS_BEFORE_EDIT = 3
-const MAX_TOOLS_AFTER_FIRST_VISUAL = 6
+const MAX_DISCOVERY_VISUALS = 3
+const MAX_LOCK_TOOLS = 3
 
 function clean(value) {
   return String(value ?? '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/')
@@ -39,22 +40,31 @@ function bashWritesCaptures(command) {
   return false
 }
 
-export function apply(ctx) {
-  // This plugin is mounted inside one BUILD session, so the counters below are
-  // session-local. They deliberately cap indecision, not total task complexity:
-  // every real repo edit starts a fresh observation/verification cycle.
-  let visualReads = 0
-  let toolsAfterFirstVisual = 0
+function terminalMessage(reason) {
+  return DENIAL + `TERMINAL VISUAL PASS: ${reason} Do not reconstruct or re-judge the same images from memory, choose a new hypothesis, create a probe, or edit speculatively. End this turn now and report that this sweep produced no justified edit.`
+}
 
-  const resetDecisionCycle = () => {
-    visualReads = 0
-    toolsAfterFirstVisual = 0
+export function apply(ctx) {
+  // idle -> discovery on first visual read.
+  // discovery -> locked on the first non-visual investigation after observation;
+  // that tool use is the model's implicit commitment to one owner/hypothesis.
+  // locked -> after on a real repo edit. If either bounded phase expires without
+  // an edit, the turn becomes terminal instead of forcing a fabricated patch.
+  let phase = 'idle'
+  let discoveryVisuals = 0
+  let lockTools = 0
+
+  const reset = () => {
+    phase = 'idle'
+    discoveryVisuals = 0
+    lockTools = 0
   }
 
   ctx.effect(() => ctx.tools.guard((execution) => {
     const name = execution.name
     const args = execution.arguments
     const target = fileTarget(args)
+    const repoEdit = (name === 'write' || name === 'edit') && !tempPath(target) && !capturePath(target)
 
     if ((name === 'write' || name === 'edit') && capturePath(target)) {
       return DENIAL + 'session QA/evidence must not be written under captures/. Use /tmp/blockfire-* and discard it after the task.'
@@ -63,36 +73,64 @@ export function apply(ctx) {
       return DENIAL + 'generated QA output belongs under /tmp/blockfire-*, not captures/ in the checkout.'
     }
 
-    // A real repo edit is always allowed and closes the current evidence cycle.
-    // A throwaway /tmp write does not reset the budget, so creating a custom lab
-    // cannot be used to buy another round of discovery.
-    if ((name === 'write' || name === 'edit') && !tempPath(target)) {
-      resetDecisionCycle()
+    if (phase === 'terminal') {
+      return terminalMessage('the bounded pass already ended without a justified edit.')
+    }
+
+    if (repoEdit) {
+      // An edit is allowed only while the current evidence path is still live.
+      // It starts a fresh after/verification cycle; later visual work can begin
+      // again from idle instead of inheriting stale discovery counters.
+      reset()
       return undefined
     }
 
-    if (name === 'read_image') {
-      if (visualReads === 0) {
-        visualReads = 1
+    if (phase === 'idle') {
+      if (name === 'read_image') {
+        phase = 'discovery'
+        discoveryVisuals = 1
+      }
+      return undefined
+    }
+
+    if (phase === 'discovery') {
+      if (name === 'read_image') {
+        if (discoveryVisuals >= MAX_DISCOVERY_VISUALS) {
+          phase = 'terminal'
+          return terminalMessage(`discovery used ${MAX_DISCOVERY_VISUALS} visual reads without committing to an owner.`)
+        }
+        discoveryVisuals += 1
         return undefined
       }
-      if (visualReads >= MAX_VISUAL_READS_BEFORE_EDIT) {
-        return DENIAL + `visual decision budget exhausted (${MAX_VISUAL_READS_BEFORE_EDIT} reads). Edit the plausible owner now or stop; the next image belongs after the edit.`
-      }
-      if (toolsAfterFirstVisual >= MAX_TOOLS_AFTER_FIRST_VISUAL) {
-        return DENIAL + `decision budget exhausted (${MAX_TOOLS_AFTER_FIRST_VISUAL} tools after first visual). The next repo-changing action must be edit/write or the task must stop.`
-      }
-      visualReads += 1
-      toolsAfterFirstVisual += 1
+
+      // Background-job bookkeeping does not express a new hypothesis.
+      if (name === 'job_output' || name === 'job_list' || name === 'job_kill') return undefined
+
+      // Any code/probe/search/capability work after looking at the visuals is an
+      // implicit commitment to the visible defect/owner already chosen. From
+      // here hypothesis switching and more imagery are forbidden until an edit.
+      phase = 'locked'
+      lockTools = 1
       return undefined
     }
 
-    if (visualReads > 0) {
-      if (toolsAfterFirstVisual >= MAX_TOOLS_AFTER_FIRST_VISUAL) {
-        return DENIAL + `decision budget exhausted (${MAX_TOOLS_AFTER_FIRST_VISUAL} tools after first visual). Edit/write the plausible owner now or stop; do not gather more confidence evidence.`
+    if (phase === 'locked') {
+      if (name === 'read_image') {
+        phase = 'terminal'
+        return terminalMessage('EVIDENCE LOCK was already active and another image was requested before editing.')
       }
-      toolsAfterFirstVisual += 1
+      if ((name === 'write' || name === 'edit') && tempPath(target)) {
+        phase = 'terminal'
+        return terminalMessage('EVIDENCE LOCK was already active and a new throwaway lab/script was requested instead of editing the owner.')
+      }
+      if (lockTools >= MAX_LOCK_TOOLS) {
+        phase = 'terminal'
+        return terminalMessage(`EVIDENCE LOCK used ${MAX_LOCK_TOOLS} owner/check tools without producing an edit.`)
+      }
+      lockTools += 1
+      return undefined
     }
+
     return undefined
   }), 'blockfire-workflow-guard')
 }
