@@ -10,7 +10,7 @@ Source of truth: `assets/animation_sources/<Clip>.blend`; the GLB is an export. 
 not edit `.glb`/`.import` by hand. `ReloadRifle` and `ReloadPistol` are
 `CRAFT_LOCKED`: no `--rebuild`.
 
-## One timeline, then commit to an owner
+## One timeline, then one decision
 
 Use semantic temporal evidence before code archaeology. Prefer one compact aligned
 storyboard over serial frames: stable state, transition boundary/peak, first stable
@@ -18,24 +18,32 @@ after, recovery only when it changes the result. When angle matters, run the sam
 timeline from two complementary views concurrently (`side` + `q34/back` is usually
 enough). Keep mode, weapon, duration and frame indices identical.
 
-The first aligned overview must answer the visible question, not every possible
-animation question. Scan feet/contact, pelvis/torso, facing/silhouette,
-weapon/support hand, aim/recoil/reload, camera and transition pops. Locally densify
-a suspicious boundary only while no concrete defect/owner can yet be named.
+The overview must stay readable: usually 8-12 semantic tiles per sheet, not dozens
+of tiny poses. Scan feet/contact, pelvis/torso, facing/silhouette, weapon/support
+hand, aim/recoil/reload, camera and transition pops. A suspicious tile may earn one
+focused detail before commitment; global densification is not allowed.
+
+After the overview choose once:
+
+- **Concrete defect + plausible layer:** the next code/search/probe call commits to
+  that layer and Animation EVIDENCE LOCK starts.
+- **No concrete defect:** stop the turn with no product edit. Do not replay the
+  timeline from memory, brainstorm another candidate or mine probe numbers until
+  something looks suspicious.
+
+A `TERMINAL VISUAL PASS` result ends animation discovery immediately. Do not keep
+reasoning after it; report the bounded result.
 
 ### Animation EVIDENCE LOCK
 
-The instant a concrete defect and plausible layer exist, **stop looking**. No more
-pre-edit screenshots, views, sheets, clips or "one last comparison". Read the
-owner and an edit-critical dependency if needed. One extra causal check is allowed
-only when you can state two materially different candidate patches and the check
-selects between them. Then edit and let the after sequence falsify or confirm the
-choice.
+Once committed, no more pre-edit screenshots, views, sheets, clips or custom labs.
+Read the owner and an edit-critical dependency if needed. One causal check is
+allowed only when its result chooses between two materially different patches.
+Then edit and let the after sequence falsify or confirm the choice.
 
-Do not use long reasoning to talk yourself out of an obvious player-visible defect.
-A minimal plausible patch plus watched after is cheaper and more informative than
-proving every alternative wrong first. If the user says to edit now, skip any
-remaining discovery immediately.
+If that committed hypothesis is disproved, stop the turn rather than switching to
+a second hypothesis. A failed candidate is a completed result, not a reason for a
+new sweep.
 
 Use multiview evidence to separate **clip/body** from **runtime-layer** defects:
 
@@ -49,21 +57,20 @@ Use multiview evidence to separate **clip/body** from **runtime-layer** defects:
 - Defect exists in isolated clip: edit the `.blend` source.
 
 If steady clips are sound but a transition is wrong, do not inspect every clip.
-If only the weapon/hand relation is wrong, do not reopen locomotion cadence. This
-is exactly the point of the aligned views.
+If only the weapon/hand relation is wrong, do not reopen locomotion cadence.
 
 ## No session labs in the checkout
 
-Do not create custom animation/pitch/combat labs just to increase confidence.
 Existing `tools/bf qa motion`, tracked probes and comparable runtime capture come
-first. If a missing state truly blocks the patch and existing tooling cannot expose
-it, write the smallest throwaway script/output under `/tmp/blockfire-*`, never
+first. If a missing state truly blocks the initial patch choice and existing tools
+cannot expose it, write the smallest throwaway under `/tmp/blockfire-*`, never
 under `captures/`, `tests/`, `tools/` or any repo path, and remove it afterwards.
+Once EVIDENCE LOCK starts, new diagnostic scripts are forbidden.
 
 For locomotion consult [the runtime recipe](references/locomotion.md). Preserve
 speeds and foot-lock unless gameplay change was requested. Two failed edits with
-no new evidence mean revise the hypothesis or leave it unresolved, not more blind
-tuning.
+no new evidence mean revise the hypothesis in a future pass or leave it unresolved,
+not more blind tuning now.
 
 After a player-facing fix, repeat the same minimal aligned frames. Add one
 player-camera/runtime capture only when the lab cannot prove what the player sees.
