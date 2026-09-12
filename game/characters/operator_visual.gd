@@ -398,9 +398,15 @@ func _update_weapon_mount(delta: float) -> void:
 	var aim_blend := motion.aim_weight if motion != null else 0.0
 	var reload_blend := motion.reload_weight if motion != null else 0.0
 	var switch_blend := motion.switch_weight if motion != null else 0.0
+	# Let the running silhouette carry the weapon below the firing line.
+	# Reuse the gait blend so starting/stopping and returning to combat are
+	# continuous; reload/switch keep their own authored mount and hand path.
+	var carry_blend := motion._sprint_weight * motion._move_weight if motion != null else 0.0
+	carry_blend *= (1.0 - aim_blend) * (1.0 - reload_blend) * (1.0 - switch_blend)
 	var ready_offset: Vector3 = config.get("ready", Vector3.ZERO)
 	var aim_offset: Vector3 = config.get("aim", ready_offset)
 	var offset := ready_offset.lerp(aim_offset, aim_blend)
+	offset += Vector3(0.0, -0.09, -0.025) * carry_blend
 	if reload_blend > 0.001:
 		# Lower by 8 cm: 13 cm made the authored reload target unreachable.
 		offset += Vector3(0.03, -0.08, -0.05) * reload_blend
@@ -417,6 +423,7 @@ func _update_weapon_mount(delta: float) -> void:
 	# the animated chest basis: its roll would rotate the barrel away from aim.
 	# Position follows the chest; the shared turn preserves shoulder/grip reach.
 	var basis := model_root.global_transform.basis.orthonormalized() * _body.aim_basis
+	basis *= Basis(Vector3.RIGHT, deg_to_rad(22.0 * carry_blend))
 	if reload_blend > 0.001:
 		basis = basis * Basis(Vector3.RIGHT, deg_to_rad(-16.0 * reload_blend))
 	if switch_blend > 0.001:

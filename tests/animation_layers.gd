@@ -227,12 +227,21 @@ func run() -> void:
 	check(absf(m.phase - fposmod(2.0 * 4.8 / (4.8 * v.animation_player.get_animation("ual/WalkFwd").length), 1.0)) < 0.05, "Walk plays at rate 1.0 (no frantic scaling)")
 	m.sprint_intent = true
 	m.local_velocity = Vector3(0,0,-7.0)
-	for i in 120: v._process(1.0/60.0)
+	var last_barrel := v.weapon_mount.global_basis.z.normalized()
+	var carry_step := 0.0
+	for i in 120:
+		v._process(1.0/60.0)
+		var barrel := v.weapon_mount.global_basis.z.normalized()
+		carry_step = maxf(carry_step, rad_to_deg(acos(clampf(last_barrel.dot(barrel), -1.0, 1.0))))
+		last_barrel = barrel
 	check(m._sprint_weight > 0.95, "Sprint intent at 7.0 selects the sprint clip")
+	check(last_barrel.dot(v.model_root.global_basis.y.normalized()) < -0.25, "Sprint carries the muzzle below the firing line")
+	check(carry_step < 8.0, "Sprint carry enters without a barrel snap")
 	m.sprint_intent = false
 	m.local_velocity = Vector3(0,0,-4.8)
 	for i in 120: v._process(1.0/60.0)
 	check(m._sprint_weight < 0.05, "Releasing sprint returns to the walk clip")
+	check(v.weapon_mount.global_basis.z.normalized().dot(v.model_root.global_basis.z.normalized()) > 0.9999, "Walking restores the baseline weapon mount")
 	# --- Continuidad de fase al cruzar el eje lateral (bug de crossfade) ----
 	var worst := 0.0
 	var previous := v.skeleton.get_bone_global_pose(foot).origin
@@ -304,6 +313,17 @@ func run() -> void:
 	print("STRAFE_GRIP socket_mm=%.3f barrel_alignment=%.6f right_slide=%.3f m/s" % [socket_error * 1000.0, barrel_alignment, slide_right.worst])
 	check(socket_error < 0.020, "Support wrist stays attached through left/right strafe and ADS")
 	check(barrel_alignment > 0.9999, "Lateral body lean preserves barrel orientation")
+	# Separate from the existing gait timeline: extra ticks must not change
+	# the foot-contact phases sampled by the baseline measurements above.
+	m.reset()
+	m.sprint_intent = true
+	m.local_velocity = Vector3(0, 0, -7.0)
+	for i in 30: v._process(1.0 / 60.0)
+	# Combat must override carry even while the gait is still blending out.
+	m.aiming = true
+	for i in 9: v._process(1.0 / 60.0)
+	check(v.weapon_mount.global_basis.z.normalized().dot(v.model_root.global_basis.z.normalized()) > 0.9999, "ADS restores firing direction during sprint blend")
+	m.reset()
 	# Numerical reach and singularity guard across all real weapon configurations.
 	for weapon in OperatorVisual.WEAPON_IDS:
 		v.set_equipped_weapon(weapon)
