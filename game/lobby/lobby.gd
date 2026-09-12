@@ -142,7 +142,7 @@ func _build_world() -> void:
 		add_child(dash)
 
 	_add_lamp(Vector3(-3.2, 0.0, 2.2))
-	_add_lamp(Vector3(5.8, 0.0, 2.4))
+	_add_lamp(Vector3(4.9, 0.0, -6.2))
 	_add_lobby_props()
 
 	hero = OperatorVisual.new()
@@ -170,17 +170,18 @@ func _add_lobby_props() -> void:
 	var container_material := _material(Color("#3f5f6b"), 2.0)
 	# La cámara del lobby está en (2.55, 1.52, 3.85) mirando al héroe: el atrezzo
 	# se coloca a la espalda y a los lados de esa línea, no fuera de cuadro.
-	# El panel de UI tapa la mitad izquierda, así que el peso visual va a la
-	# derecha: cajas escalonadas en el medio y contenedores al fondo, para que
-	# el fondo se lea como un patio de carga por capas y no como un muro.
+	# El panel de UI tapa el tercio izquierdo y es translúcido (alfa 0x9c), así
+	# que lo que quede detrás se lee DENTRO del panel como rectángulos oscuros:
+	# por eso todo el atrezzo vive a la derecha del borde del panel (x ≥ ~2 a
+	# estas profundidades) y lo que hay tras el cristal es sólo cielo y suelo.
 	var specs: Array = [
-		[Vector3(-3.1, 0.55, -1.8), Vector3(1.6, 1.1, 1.6), 18.0, crate_material],
-		[Vector3(-1.9, 0.45, -2.6), Vector3(1.2, 0.9, 1.2), -12.0, dark_crate],
-		[Vector3(-2.9, 1.35, -2.1), Vector3(1.1, 0.8, 1.1), 32.0, dark_crate],
 		[Vector3(2.7, 0.5, -4.6), Vector3(2.0, 1.0, 1.3), -6.0, crate_material],
 		[Vector3(2.4, 1.3, -4.7), Vector3(1.3, 0.6, 1.0), 14.0, dark_crate],
 		[Vector3(5.6, 0.35, -3.4), Vector3(1.2, 0.7, 1.2), -18.0, crate_material],
 		[Vector3(7.4, 0.6, -6.9), Vector3(1.5, 1.2, 1.5), 24.0, dark_crate],
+		[Vector3(4.6, 0.5, -8.2), Vector3(1.3, 1.0, 1.3), 8.0, dark_crate],
+		[Vector3(9.6, 0.55, -10.6), Vector3(1.6, 1.1, 1.6), 18.0, crate_material],
+		[Vector3(10.9, 0.45, -10.1), Vector3(1.2, 0.9, 1.2), -12.0, dark_crate],
 	]
 	for spec: Array in specs:
 		var box := MeshInstance3D.new()
