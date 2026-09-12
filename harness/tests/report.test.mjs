@@ -111,6 +111,24 @@ test('visual accounting distinguishes batched image reads from serial turns', ()
   } finally { rmSync(tmp, { recursive: true, force: true }) }
 })
 
+test('visual-to-edit gap exposes decision churn after observation', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
+  try {
+    const file = join(tmp, 'fixture.jsonl')
+    const tool = (name, args = {}) => ({ type: 'tool-call', name, arguments: JSON.stringify(args) })
+    writeLog(file, [
+      sessionEvent('visual-edit-gap-fixture'),
+      { type: 'assistant/message', data: { message: { content: [tool('read_image', { file_path: 'sheet.png' })] } }, time: 1 },
+      { type: 'assistant/message', data: { message: { content: [tool('bash'), tool('read'), tool('edit')] } }, time: 2 },
+      { type: 'assistant/message', data: { message: { content: [tool('read_image', { file_path: 'after.png' }), tool('read_image', { file_path: 'detail.png' }), tool('write')] } }, time: 3 },
+    ])
+    const [r] = runJson(['--session', file, '--json'])
+    assert.deepEqual(r.visualToEditGaps, [2, 1])
+    assert.equal(r.visualToEditAvg, 1.5)
+    assert.equal(r.visualToEditMax, 2)
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+})
+
 test('current runtime shapes: system/message sizes the prompt, systemless headers still yield tool cost', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'blockfire-report-'))
   try {
