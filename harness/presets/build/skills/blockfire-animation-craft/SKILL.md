@@ -21,21 +21,29 @@ changes the visual result. Include representative steady phases needed to judge 
 cycle. For long sequences or video, sample those semantic moments into one
 `tools/bf qa sheet` rather than opening the source frame by frame.
 
+When angle matters, run the same timeline from **two complementary views in
+parallel** rather than serially. `qa motion` already supports
+`--view=front|q34|side|back`; side + back/q34 is usually enough. Use identical
+mode, weapon, duration and semantic frame indices in separate output directories,
+then compare aligned tiles in one inference. Do not fan out writes/imports/assets,
+and do not add views that answer no new occlusion or silhouette question.
+
 Keep enough state context to explain every tile — for example movement intent,
 speed, sprint, ADS, fire, reload, crouch, airborne/land or weapon switch. The
 existing QA overlay, semantic filenames and `qa sheet` tile mapping are preferred
 over inventing a new probe. A frame with no reason to exist in the storyboard is
-noise.
+noise. Around a suspicious blend, increase density **locally** (before/on/after and
+several intermediate weights) instead of increasing sampling across the whole run.
 
-Inspect the **whole timeline in one inference** and compare adjacent tiles. Before
-focusing on the first bad pose, inventory all clear continuity defects relevant to
-the motion: foot contact/slide and cadence, pelvis height/rotation, torso and
-shoulder continuity, facing/silhouette, dominant/support hand and weapon alignment,
-aim/recoil/reload continuity, camera composition and transition/recovery pops.
-One temporal sheet should support several diagnoses when the evidence contains
-them. Open an individual frame only when the sheet hides the detail needed to
-judge or fix it. Use numbers to locate a cause vision cannot reveal or to protect
-the fix, never as a substitute for looking.
+Inspect the **whole aligned timeline in one inference** and compare adjacent tiles
+and views. Before focusing on the first bad pose, inventory all clear continuity
+defects relevant to the motion: foot contact/slide and cadence, pelvis
+height/rotation, torso and shoulder continuity, facing/silhouette,
+dominant/support hand and weapon alignment, aim/recoil/reload continuity, camera
+composition and transition/recovery pops. One temporal sheet should support several
+diagnoses when the evidence contains them. Open an individual frame only when the
+sheet hides the detail needed to judge or fix it. Use numbers to locate a cause
+vision cannot reveal or to protect the fix, never as a substitute for looking.
 
 ### Converge on the owner
 
@@ -44,9 +52,16 @@ it, stop surveying animation. Inspect that owner and only the dependency needed
 to edit it, then make the smallest plausible change and render the same semantic
 moments again. The after sequence is the next diagnostic step: do not postpone an
 edit while collecting extra clips, angles, curves or measurements that would not
-change the candidate fix. If a transition is wrong but the steady clips are
-visually sound, do not inspect or rebuild every clip; go to the transition owner.
-If the weapon/hand relation alone is wrong, do not reopen locomotion cadence.
+change the candidate fix.
+
+Use multiview evidence to separate **clip/body defects from runtime-layer defects**.
+If feet, pelvis and torso remain coherent in both views while only the weapon,
+hands, camera-relative presentation or an additive pose stays rigid/misaligned,
+suspect mount/IK/layer blending before the source clip. If the whole body path or
+isolated pose is wrong, the motion/clip owner is plausible. If a transition is
+wrong but the steady clips are visually sound, do not inspect or rebuild every
+clip; go to the transition owner. If the weapon/hand relation alone is wrong, do
+not reopen locomotion cadence.
 
 Then identify where the defect is born:
 
@@ -56,7 +71,8 @@ Then identify where the defect is born:
 - Pose correct but cadence or sliding: the phase clock in `operator_motion.gd`
   (advances `speed / stride`), not the clip. Measure it before touching formulas
   with `tools/probe-loco-axes.gd`, as the recipe says.
-- Final pose, weapon mount or grip: layer/IK order in `operator_visual.gd`.
+- Final pose, weapon mount, grip or runtime carry/readiness layer:
+  `operator_visual.gd` / layer-IK order before Blender.
 - Defect exists in the isolated clip: edit its `.blend` in Blender.
 
 For locomotion consult [the runtime recipe](references/locomotion.md): it includes
@@ -65,6 +81,12 @@ testable cause and make one focal change; look at the same semantic sequence
 again. Preserve speeds and foot-lock unless a gameplay change was requested. Two
 attempts with no new evidence are a signal to revise the hypothesis or hand the
 case to review, not to keep tuning numbers blindly.
+
+After a player-facing animation fix, repeat the same aligned lab views and add one
+representative player-camera/runtime capture only when the lab cannot prove what
+the player sees (weapon silhouette, ADS/combat framing, camera response or
+input-driven transition). Do not duplicate both routes when they answer the same
+question.
 
 To edit the clip, enable `bf_capability` with
 `{"action":"on","capability":"blender"}`: `blender_exec` +
