@@ -165,7 +165,7 @@ func register_damage(victim: Node, amount: float, headshot: bool, source: Node) 
 	if state != "COMBAT":
 		return
 	if victim == player:
-		hud.show_damage("-%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot)
+		hud.show_damage("-%d%s" % [roundi(amount), "  HEADSHOT" if headshot else ""], headshot, source)
 
 func _create_player(spawn: Vector3, team_id: String) -> void:
 	player = Player.new()

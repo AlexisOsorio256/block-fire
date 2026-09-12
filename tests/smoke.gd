@@ -26,6 +26,8 @@ func _run() -> void:
 	_test_audio_contract()
 	_test_control_editor_contract()
 	_test_weapon_models_load()
+	_test_character_material_contract()
+	_test_damage_direction_contract()
 	_test_consolidation_contracts()
 	await _test_navigation_contract()
 	_test_lobby_screen_contract()
@@ -612,6 +614,53 @@ func _test_spectator_contract() -> void:
 	_check(first == "COMPAÑERO 1", "spectator uses player-facing names")
 	_check(not first.contains("Bot_"), "spectator hides internal bot names")
 	game_match.free()
+
+
+func _test_character_material_contract() -> void:
+	## El detalle del personaje se MULTIPLICA sobre el albedo del pack, así que
+	## el valor medio del mapa ES el factor de brillo de la prenda. Una imagen
+	## centrada en 0,5 (el "gris medio" que parece natural) dejaba ropa y piel
+	## a la mitad de su color autoral: el operador se leía como una silueta
+	## negra en partida. El contrato es que el detalle no oscurezca.
+	for spec: Array in [[0.10, false], [0.22, true]]:
+		var texture := CharacterAsset._detail_texture(spec[0], spec[1])
+		_check(texture != null, "character detail texture exists")
+		if texture == null:
+			continue
+		var image := texture.get_image()
+		var total := 0.0
+		for y: int in range(image.get_height()):
+			for x: int in range(image.get_width()):
+				total += image.get_pixel(x, y).r
+		var mean := total / float(image.get_width() * image.get_height())
+		_check(mean > 0.85, "character detail map keeps albedo (mean %.3f > 0.85)" % mean)
+		_check(mean < 1.0, "character detail map still adds texture (mean %.3f < 1)" % mean)
+
+
+func _test_damage_direction_contract() -> void:
+	## El aviso direccional de daño recibido depende de este ángulo: 0° al frente
+	## del jugador y positivo hacia su derecha. Un signo invertido manda al
+	## jugador a girar al lado contrario.
+	var camera := Camera3D.new()
+	# Fuera del árbol `global_transform` devuelve la identidad y ensucia la
+	# consola con un error del motor: el fixture entra al árbol.
+	get_root().add_child(camera)
+	camera.global_transform = Transform3D.IDENTITY
+	var origin := Vector3.ZERO
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, Vector3(0, 1.6, -8))) < 0.01,
+		"damage from the front reads 0 degrees")
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, Vector3(8, 1.6, 0)) - 90.0) < 0.01,
+		"damage from the right reads +90 degrees")
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, Vector3(-8, 1.6, 0)) + 90.0) < 0.01,
+		"damage from the left reads -90 degrees")
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, Vector3(0, 1.6, 8))) > 179.0,
+		"damage from behind reads 180 degrees")
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, Vector3(5, 0.4, -5)) - 45.0) < 0.01,
+		"diagonal damage keeps its bearing")
+	_check(absf(BlockfireHud.damage_bearing(camera, origin, origin)) < 0.01,
+		"damage at the same position does not spin the indicator")
+	camera.free()
+
 
 func _test_editor_pause_contract() -> void:
 	## La pausa del editor congela física de combatientes sin managers.

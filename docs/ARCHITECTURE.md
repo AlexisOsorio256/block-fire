@@ -27,11 +27,11 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | Bot | `game/bots/bot.gd` + `bot_role.gd` | `match_context`, `NavigationAgent3D` | navegación y disparo; números por rol | `tools/test.sh`, `--qa-ffa` | spawns, daño, stats de arma |
 | WeaponController | `game/weapons/weapon_controller.gd` + `game/data/weapons/*.tres` | `set_fire_held/aim_held/request_reload/switch_to` | munición, `reload_timer`, hitscan; definiciones en los `.tres` | `tools/test.sh` (incluye `probe-muzzle-frame`), `qa_fx_lab`, `qa_shot` | malla/pose del arma (eso es `WEAPON_CONFIG`) |
 | OperatorVisual | `game/characters/operator_visual.gd` | estado de gameplay + `WeaponController` | contrato público del actor, orden del frame, montaje del arma; perfil visual en `WEAPON_CONFIG` | `tools/test.sh` (`animation_layers`), `qa_anim_lab`, `qa_shot`, `probe-ik-quality` | pose del cuerpo (eso es `OperatorBody`), clips |
-| OperatorBody | `game/characters/operator_body.gd` | velocidad real del actor, intención de sprint/crouch/aim, timers del arma, puntos de agarre del montaje | intención de capa, mirada suavizada, IK de los dos brazos, pose de muerte | `tools/test.sh` (`animation_layers`), `tools/probe-refactor-oracle.gd` | montaje del arma, qué ropa se ve, gameplay |
+| OperatorBody | `game/characters/operator_body.gd` | velocidad real del actor, intención de sprint/crouch/aim, timers del arma, puntos de agarre del montaje | intención de capa, giro de porte del torso, mirada suavizada, IK de los dos brazos, pose de muerte | `tools/test.sh` (`animation_layers`), `tools/probe-refactor-oracle.gd`, `tools/probe-weapon-framing.gd` | montaje del arma, qué ropa se ve, gameplay |
 | OperatorMotion | `game/characters/operator_motion.gd` | velocidad local, intención de sprint, timers del arma | pose compuesta, pesos de capa, elección de clip | `tools/test.sh` (`animation_layers`), `qa_motion` | constantes de velocidad, geometría del clip |
-| CharacterAsset | `game/characters/character_asset.gd` | el GLB del personaje (`operator_adult_lod.glb`) | esqueleto listo, malla reparada, clips instalados, puños de agarre; cachés por asset | `tools/test.sh` (`_test_weapon_models_load`), `animation_layers` (`_test_repaired_mesh_replay`), `probe-build-cost`, `probe-weapon-load` | pose por fotograma, gameplay, cosméticos |
+| CharacterAsset | `game/characters/character_asset.gd` | el GLB del personaje (`operator_adult_lod.glb`) | esqueleto listo, malla reparada, clips instalados, puños de agarre, detalle de material (multiplica albedo: su media es el brillo de la prenda); cachés por asset | `tools/test.sh` (`_test_weapon_models_load`, `_test_character_material_contract`), `animation_layers` (`_test_repaired_mesh_replay`), `probe-build-cost`, `probe-weapon-load` | pose por fotograma, gameplay, cosméticos |
 | Cosmetics | `game/characters/operator_wardrobe.gd` + `game/data/cosmetic_catalog.gd` + `settings_store.gd` | selección del lobby | módulos visibles, tono de piel, accesorios; datos en el catálogo | `tools/test.sh`, `qa_shot --wardrobe` | armas, pose |
-| HUD | `game/ui/hud.gd` | señales de match/player/weapon | paneles, editor de controles | `qa_hud_lab`, `qa_shot`, `tools/test.sh` | persistencia, reglas de match |
+| HUD | `game/ui/hud.gd` | señales de match/player/weapon | paneles, feedback de combate (hit marker, popups, aviso direccional de daño recibido), editor de controles | `qa_hud_lab`, `qa_shot`, `tools/test.sh` (`_test_damage_direction_contract`) | persistencia, reglas de match |
 | MobileControls | `game/ui/mobile_controls.gd` + `control_editor.gd` | `InputEventScreenTouch/Drag` | vector de movimiento, look, FUEGO/ADS; layout en SettingsStore | `qa_touch`, `tools/test.sh` | matemática de cámara del player |
 | Settings | `game/settings_store.gd` (único autoload) | dos UIs escriben | `values`, layout, loadout | `tools/test.sh` | layout de HUD/lobby |
 | Arena | `game/world/arena.gd` | `build()` del match | geometría, spawns, navegación | `tools/test.sh`, `qa_perf`, `--qa-ffa` | selección de spawn, pathing de bots |
@@ -88,6 +88,7 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 | animación / clips / IK | `tools/bf test` + `tools/bf qa motion` + `tools/probe-reload-hand.gd` |
 | controles táctiles / UI | `tools/bf qa touch` + `tools/bf test` |
 | armas | `tools/bf test` (incluye `probe-muzzle-frame`) + `tools/bf qa fx` |
+| presentación del arma / encuadre | `tools/probe-weapon-framing.gd` (necesita ventana: renderiza la vista real) + `tools/bf test` |
 | mundo / arena | `tools/bf test` + `tools/bf qa perf` |
 | HUD / lobby | `tools/bf qa hud` + `tools/bf test` |
 | antes de publicar | `tools/bf test` + `tools/bf qa touch` + `tools/bf build android` |
@@ -168,3 +169,12 @@ antes del IK. La cabeza usa sólo la mirada residual. `OperatorMotion.aim_weight
 sigue siendo el único blend de entrada/salida; ningún ancestro de pies recibe
 el giro. Los offsets de `WEAPON_CONFIG` se verifican contra alcance real de
 muñecas, no sólo contra los puños dibujados en el arma.
+
+Ese mismo giro incluye el **giro de porte** (`CARRY_STANCE_DEG`, `-18°`) que
+`OperatorBody` añade al pecho mientras el actor no apunta ni dispara: con el
+cañón paralelo al eje de cámara el arma quedaba tapada por el propio cuerpo en
+la vista del jugador (`tools/probe-weapon-framing.gd`). Girar el torso —no el
+montaje— mantiene hombros, codos y agarres en la misma relación, así que el IK
+de apoyo sigue llegando; girar sólo el montaje despegaba la mano izquierda
+(medido 14-51 mm). El peso de `aim` lo lleva a 0° en ADS y al disparar, y el
+escaparate del lobby queda fuera. Los pies siguen sin recibir nada de esto.

@@ -3,6 +3,12 @@ extends CanvasLayer
 
 const CrosshairScript := preload("res://game/ui/crosshair.gd")
 
+## Aviso de daño recibido: hasta 3 direcciones vivas, 1,1 s de vida y radio del
+## anillo alrededor de la mira (en píxeles de un render 720p).
+const MAX_DAMAGE_ARROWS := 3
+const DAMAGE_ARROW_TTL := 1.1
+const DAMAGE_RING_RADIUS := 128.0
+
 signal buy_requested(index: int)
 signal arsenal_requested
 signal settings_requested
@@ -53,6 +59,11 @@ var _reload_label: Label
 var _reload_bar: ProgressBar
 var _damage_vignette: ColorRect
 var _vignette_alpha := 0.0
+var _damage_direction: Control
+## Avisos de daño recibido vivos: `{angle, life}`. El ángulo es 0° al frente y
+## crece hacia la derecha del jugador (donde está la fuente), en grados.
+var _damage_arrows: Array[Dictionary] = []
+var _damage_arrow_cursor := 0
 var _low_ammo := false
 var _hitstop_until_ms := 0
 ## Contador de FPS para medición en dispositivo. Nunca aparece por defecto: se
@@ -365,6 +376,16 @@ func _build_combat_feedback() -> void:
 	_hit_marker.draw.connect(_draw_hit_marker)
 	root.add_child(_hit_marker)
 
+	# Indicador de dirección del daño recibido: sin él sólo hay viñeta roja y el
+	# jugador no sabe hacia dónde girar cuando le disparan por la espalda.
+	_damage_direction = Control.new()
+	_damage_direction.name = "DamageDirection"
+	_damage_direction.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_damage_direction.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_direction.z_index = 1
+	_damage_direction.draw.connect(_draw_damage_direction)
+	root.add_child(_damage_direction)
+
 	set_process(true)
 
 
@@ -373,6 +394,15 @@ func _process(delta: float) -> void:
 		_hit_marker_timer = maxf(0.0, _hit_marker_timer - delta)
 		if _hit_marker != null:
 			_hit_marker.queue_redraw()
+	if not _damage_arrows.is_empty():
+		var alive: Array[Dictionary] = []
+		for arrow: Dictionary in _damage_arrows:
+			arrow["life"] = float(arrow["life"]) - delta
+			if float(arrow["life"]) > 0.0:
+				alive.append(arrow)
+		_damage_arrows = alive
+		if _damage_direction != null:
+			_damage_direction.queue_redraw()
 	if _vignette_alpha > 0.0 and _damage_vignette != null:
 		_vignette_alpha = maxf(0.0, _vignette_alpha - delta * 1.9)
 		_damage_vignette.color = Color(0.75, 0.05, 0.06, _vignette_alpha)
@@ -467,6 +497,35 @@ func _draw_hit_marker() -> void:
 	for direction: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 		var diagonal := direction.normalized()
 		_hit_marker.draw_line(center + diagonal * gap, center + diagonal * (gap + arm), color, width, true)
+
+
+## Sectores alrededor de la mira: cada uno apunta hacia quien disparó. El
+## sector es un arco corto + una punta que marca la salida, no una flecha
+## grande sobre el enemigo: el centro queda libre para el combate.
+func _draw_damage_direction() -> void:
+	if _damage_direction == null or _damage_arrows.is_empty():
+		return
+	var center := _damage_direction.size * 0.5
+	for arrow: Dictionary in _damage_arrows:
+		var strength := clampf(float(arrow["life"]) / DAMAGE_ARROW_TTL, 0.0, 1.0)
+		var angle := deg_to_rad(float(arrow["angle"]))
+		# 0° se dibuja arriba (frente) y crece hacia la derecha del jugador.
+		var direction := Vector2(sin(angle), -cos(angle))
+		var color := Color("#ff6b57")
+		color.a = clampf(strength * 1.35, 0.0, 0.9)
+		var radius := DAMAGE_RING_RADIUS + (1.0 - strength) * 10.0
+		var half := deg_to_rad(13.0)
+		var steps := 8
+		var points := PackedVector2Array()
+		for step: int in range(steps + 1):
+			var offset := lerpf(-half, half, float(step) / float(steps))
+			points.append(center + Vector2(sin(angle + offset), -cos(angle + offset)) * radius)
+		_damage_direction.draw_polyline(points, color, 4.0, true)
+		var tip := center + direction * (radius + 15.0)
+		var base := center + direction * (radius + 2.0)
+		var side := Vector2(-direction.y, direction.x) * 9.0
+		_damage_direction.draw_colored_polygon(
+			PackedVector2Array([tip, base + side, base - side]), color)
 
 
 func _spawn_damage_popup(amount: float, headshot: bool) -> void:
@@ -578,7 +637,10 @@ func show_banner(text: String, duration: float = 1.6) -> void:
 	tween.tween_interval(duration)
 	tween.tween_property(banner_label, "modulate", Color(1, 1, 1, 0), 0.35)
 
-func show_damage(text: String, headshot: bool = false) -> void:
+## `source` es el atacante cuando se conoce (bots y jugador lo pasan desde
+## `match.register_damage`): con él se dibuja el aviso direccional. Sin fuente
+## el texto y la viñeta siguen funcionando igual.
+func show_damage(text: String, headshot: bool = false, source: Node = null) -> void:
 	if damage_label == null:
 		return
 	damage_label.text = text
@@ -588,6 +650,47 @@ func show_damage(text: String, headshot: bool = false) -> void:
 	tween.tween_interval(0.55)
 	tween.tween_property(damage_label, "modulate", Color(1, 1, 1, 0), 0.28)
 	_flash_damage_vignette(0.16 if headshot else 0.11)
+	_show_damage_direction(source)
+
+
+## Ángulo en pantalla de la fuente de daño: 0° al frente del jugador, positivo
+## hacia su derecha. Se mide sobre el plano del suelo desde la cámara local, así
+## que sirve igual con la cámara girada o el actor de espaldas.
+static func damage_bearing(camera: Camera3D, origin: Vector3, source_position: Vector3) -> float:
+	if camera == null:
+		return 0.0
+	var to_source := source_position - origin
+	to_source.y = 0.0
+	if to_source.length_squared() < 0.0001:
+		return 0.0
+	var forward := -camera.global_transform.basis.z
+	forward.y = 0.0
+	var right := camera.global_transform.basis.x
+	right.y = 0.0
+	if forward.length_squared() < 0.0001 or right.length_squared() < 0.0001:
+		return 0.0
+	return rad_to_deg(atan2(right.normalized().dot(to_source.normalized()),
+		forward.normalized().dot(to_source.normalized())))
+
+
+func _show_damage_direction(source: Node) -> void:
+	var local_player := _local_player()
+	if source == null or not is_instance_valid(source) or not (source is Node3D):
+		return
+	if not (local_player is Node3D):
+		return
+	var camera := local_player.get("camera") as Camera3D
+	if camera == null:
+		return
+	var angle := damage_bearing(camera, local_player.global_position, (source as Node3D).global_position)
+	if _damage_arrows.size() < MAX_DAMAGE_ARROWS:
+		_damage_arrows.append({"angle": angle, "life": DAMAGE_ARROW_TTL})
+	else:
+		_damage_arrows[_damage_arrow_cursor % _damage_arrows.size()] = {"angle": angle, "life": DAMAGE_ARROW_TTL}
+		_damage_arrow_cursor += 1
+	if _damage_direction != null:
+		_damage_direction.queue_redraw()
+
 
 func show_hit_feedback(amount: float, headshot: bool) -> void:
 	# El label central queda para daño RECIBIDO (match.gd llama show_damage con

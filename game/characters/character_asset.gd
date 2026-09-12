@@ -314,7 +314,7 @@ static func apply_material_detail(mesh_instance: MeshInstance3D) -> void:
 		var material := source.duplicate() as StandardMaterial3D
 		if name.begins_with("skin"):
 			material.detail_enabled = true
-			material.detail_albedo = _detail_texture(0.55, 0.06, false)
+			material.detail_albedo = _detail_texture(0.10, false)
 			material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 			material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_1
 			material.uv1_scale = Vector3(14.0, 14.0, 1.0)
@@ -323,7 +323,7 @@ static func apply_material_detail(mesh_instance: MeshInstance3D) -> void:
 			continue
 		else:
 			material.detail_enabled = true
-			material.detail_albedo = _detail_texture(0.5, 0.18, true)
+			material.detail_albedo = _detail_texture(0.22, true)
 			material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 			material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_1
 			material.uv1_scale = Vector3(9.0, 9.0, 1.0)
@@ -335,26 +335,33 @@ static func apply_material_detail(mesh_instance: MeshInstance3D) -> void:
 ## tiene 124 superficies pero sólo dos variantes (piel y tejido). Sin la caché
 ## el mismo mapa se regeneraba 124 veces por actor (píxel a píxel en GDScript):
 ## medido 1082 ms por actor y 124 texturas en memoria para dos mapas distintos.
+##
+## El detalle se MULTIPLICA sobre el albedo, así que su valor medido es el
+## factor de brillo: una imagen centrada en 0,5 (lo natural para un "gris
+## medio") dejaba la ropa y la piel del pack a la MITAD de su color autoral y
+## el operador se leía como una silueta negra en partida (medido: prenda a
+## mediana 36/255 con 46 % de píxeles aplastados bajo 35, a plena luz). Los
+## mapas viven en [1 - amplitud, 1] para que aporten tejido/poro sin oscurecer.
 static var _DETAIL_TEXTURES: Dictionary = {}
 
 
-static func _detail_texture(base: float, amplitude: float, woven: bool) -> Texture2D:
-	var cache_key := "%s_%s_%s" % [base, amplitude, woven]
+static func _detail_texture(amplitude: float, woven: bool) -> Texture2D:
+	var cache_key := "%s_%s" % [amplitude, woven]
 	if _DETAIL_TEXTURES.has(cache_key):
 		return _DETAIL_TEXTURES[cache_key]
 	var size := 128
 	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
 	for y in range(size):
 		for x in range(size):
-			var value := base
+			var pattern := 0.5
 			if woven:
 				var stripe := 1.0 if (x / 3) % 2 == 0 else 0.0
 				var weft := 1.0 if (y / 3) % 2 == 0 else 0.0
-				value += (stripe * 0.55 + weft * 0.45 - 0.5) * amplitude
+				pattern = clampf(stripe * 0.55 + weft * 0.45, 0.0, 1.0)
 			else:
 				var n := sin(float(x) * 0.9) * cos(float(y) * 0.7) * 0.5 + sin(float(x + y) * 0.23) * 0.5
-				value += n * amplitude
-			value = clampf(value, 0.0, 1.0)
+				pattern = clampf(0.5 + n * 0.5, 0.0, 1.0)
+			var value := clampf(1.0 - amplitude * pattern, 0.0, 1.0)
 			image.set_pixel(x, y, Color(value, value, value))
 	var texture := ImageTexture.create_from_image(image)
 	_DETAIL_TEXTURES[cache_key] = texture

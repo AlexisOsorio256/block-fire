@@ -12,8 +12,9 @@ extends SceneTree
 
 
 class FakePlayer:
-	extends Node
+	extends Node3D
 	var weapon: Node
+	var camera: Camera3D
 
 
 class FakeContext:
@@ -67,6 +68,15 @@ func _build() -> void:
 	fake_player.name = "FakePlayer"
 	fake_player.weapon = weapon
 	root.add_child(fake_player)
+	var fake_camera := Camera3D.new()
+	fake_camera.name = "FakeCamera"
+	fake_player.add_child(fake_camera)
+	fake_camera.global_transform = Transform3D.IDENTITY
+	fake_player.camera = fake_camera
+	var attacker := Node3D.new()
+	attacker.name = "FakeAttacker"
+	root.add_child(attacker)
+	attacker.global_position = Vector3(-7.0, 0.0, -1.5)
 	var context := FakeContext.new()
 	context.name = "FakeContext"
 	context.player = fake_player
@@ -84,3 +94,5 @@ func _build() -> void:
 	hud.show_hit_feedback(23.0, false)
 	hud.show_hit_feedback(61.0, true)
 	hud.show_kill(true)
+	# Daño recibido desde la izquierda: viñeta + aviso direccional.
+	hud.show_damage("-18", false, attacker)

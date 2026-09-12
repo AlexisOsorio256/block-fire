@@ -22,6 +22,14 @@ extends RefCounted
 const DEATH_DROP := -0.05
 ## Distancia del hueso de muñeca al centro de la palma en este rig.
 const PALM_OFFSET := 0.075
+## Giro de porte del torso (grados, hacia el hombro del arma) mientras el actor
+## no apunta ni dispara. Con el cañón paralelo al eje de cámara el propio
+## cuerpo tapaba el arma en la vista del jugador (medido con
+## `tools/probe-weapon-framing.gd`: 186 px visibles de rifle y 1 px de pistola
+## de 921 600). Girar el torso —no el montaje— mantiene hombros, brazos y arma
+## en la misma relación, así que el IK de apoyo sigue llegando al guardamanos.
+## El peso de aim lo devuelve a 0 en ADS y al disparar (contrato de cañón).
+const CARRY_STANCE_DEG := -18.0
 
 ## El cuerpo se hunde al morir; el montaje lee este desplazamiento para
 ## acompañarlo (el arma no puede quedarse flotando sobre el cadáver).
@@ -40,6 +48,8 @@ var _lateral_acceleration := 0.0
 var _turn_lean := 0.0
 var _head_look_yaw := 0.0
 var _head_look_pitch := 0.0
+## Giro de porte suavizado: es pose, no estado de gameplay.
+var _carry_stance := 0.0
 var _debug_reload_time := 0.0
 var _death_weapon_local := Transform3D.IDENTITY
 var _death_hand_local := Transform3D.IDENTITY
@@ -110,6 +120,7 @@ func reset_motion_history() -> void:
 	_previous_world_velocity = Vector3.ZERO
 	_lateral_acceleration = 0.0
 	_turn_lean = 0.0
+	_carry_stance = 0.0
 	aim_basis = Basis.IDENTITY
 
 
@@ -136,6 +147,11 @@ func update_head_look(actor: OperatorVisual, delta: float) -> void:
 	var weight := actor.motion.aim_weight if actor.motion != null else 0.0
 	var yaw := deg_to_rad(clampf(aim_yaw, -70.0, 70.0)) * weight
 	var pitch := deg_to_rad(clampf(aim_pitch, -78.0, 78.0)) * weight
+	# Porte: el torso acompaña al arma para que su silueta se lea desde la
+	# cámara. Muere con el peso de aim, así que ADS y disparo quedan alineados.
+	var stance_target := 0.0 if (actor.aiming or actor.firing or actor.showcase_mode) else deg_to_rad(CARRY_STANCE_DEG)
+	_carry_stance = lerpf(_carry_stance, stance_target, clampf(delta * 6.0, 0.0, 1.0))
+	yaw += _carry_stance
 	aim_basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch)
 	var chest := skeleton.find_bone(CharacterAsset.CHEST_BONE)
 	# Brief directional weight for strafing/cutting. Model +Z forward and
@@ -147,7 +163,7 @@ func update_head_look(actor: OperatorVisual, delta: float) -> void:
 		var parent_basis := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
 		var local_turn := parent_basis.inverse() * Basis(Vector3.BACK, _turn_lean) * parent_basis
 		skeleton.set_bone_pose_rotation(chest, (local_turn * skeleton.get_bone_pose(chest).basis).get_rotation_quaternion())
-	if chest >= 0 and weight > 0.0 and (yaw != 0.0 or pitch != 0.0):
+	if chest >= 0 and (weight > 0.0 or absf(_carry_stance) > 0.0001) and (yaw != 0.0 or pitch != 0.0):
 		# Rotate the chest in WORLD axes, then convert back to its parent bone.
 		# Applying model axes directly to the chest's local pose changes reach
 		# because its animated parent is tilted. The weapon uses this same turn.

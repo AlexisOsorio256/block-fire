@@ -29,6 +29,46 @@ vigente y desinforma.
 
 ## Visual actual
 
+Pasada de legibilidad del operador y del arma propia (medición directa, no
+impresión):
+
+- **Material del personaje**: el detalle procedural se MULTIPLICA sobre el
+  albedo y su mapa estaba centrado en 0,5, así que ropa y piel del pack se
+  dibujaban a la mitad de su color autoral. En partida el operador se leía como
+  silueta negra (prenda a mediana 36/255 con 46 % de píxeles por debajo de 35).
+  Los mapas viven ahora en [1−amplitud, 1] (piel 0,10 · tejido 0,22) y la
+  prenda sube a mediana 46/255 con ~21 % de píxeles aplastados: el mismo
+  archivo aporta tejido/poro sin oscurecer. Contrato nuevo en `smoke`
+  (`_test_character_material_contract`: media > 0,85 y < 1).
+- **Arma propia en el encuadre**: con el cañón paralelo al eje de cámara el
+  propio cuerpo tapaba el arma. Medido con `tools/probe-weapon-framing.gd`
+  (renderiza la vista real con el arma en magenta y cuenta píxeles): rifle
+  186 px de 921 600 y **pistola 1 px** en hip, con 61 % de la huella del arma
+  detrás del operador. La causa no era el montaje sino el torso: girar el
+  montaje movía el guardamanos fuera del alcance del brazo de apoyo (medido
+  14-51 mm de muñeca despegada). `OperatorBody` aplica ahora un **giro de porte
+  de 18°** al pecho mientras el actor no apunta ni dispara; hombros, brazos y
+  arma giran juntos, así que el IK sigue llegando (0,00 mm en las cuatro armas)
+  y el peso de aim lo devuelve a 0° en ADS/disparo (contrato de cañón intacto).
+  Resultado: rifle 186→619 px, pistola 1→86, SMG 72→233, escopeta 105→262;
+  oclusión 61 %→37 % y la boca pasa de 89 a 72 px de la mira. El escaparate del
+  lobby queda fuera del giro (pose de presentación alineada).
+- **Pendiente medido, no corregido**: en ADS el arma sigue a ~180 px de la mira
+  y el 52 % de su huella detrás del operador (la pose de apuntado no puede
+  girar: el cañón debe seguir el eje de cámara). Es el frente "presentación de
+  mira/óptica ADS" que ya estaba abierto; el probe deja el número para
+  compararlo cuando se aborde.
+- **Daño recibido direccional**: hasta ahora el golpe se comunicaba con viñeta
+  roja y un `-N` central; con FFA de 8 no había forma de saber hacia dónde
+  girar. El HUD dibuja un sector alrededor de la mira (arco + punta, 1,1 s,
+  hasta 3 fuentes) con el ángulo real del atacante respecto a la cámara
+  (`BlockfireHud.damage_bearing`, 0° al frente y positivo a la derecha).
+  `match.register_damage` ya tenía la fuente y ahora la pasa. Contrato en
+  `smoke` (`_test_damage_direction_contract`: frente/derecha/izquierda/atrás y
+  45°) y `qa_hud_lab` lo captura; en partida se ve con bots disparando
+  (`captures/audit/dmgb_306.png`: dos avisos, izquierda y derecha, con la barra
+  en rojo a 38 HP).
+
 Sprint y strafes fueron pulidos en Blender: inclinación/contrapeso lateral,
 agarre de apoyo del rifle y transición de inversión izquierda↔derecha. Piernas,
 pies, tiempos y velocidades permanecieron bajo contrato. La mano de apoyo sigue
@@ -202,9 +242,10 @@ cabeza residual y offsets dentro del alcance del rig. Prueba por defecto:
 crouch/recarga/disparo. Error angular máximo 0.000000°, error de muñeca máximo
 0.009204 mm; pies sin desplazamiento añadido. Capturas desktop inspeccionadas.
 
-Oráculo válido actual: `1135775949` (antes `3900121176`); el fixture ahora
-construye nodos después de entrar al árbol. Firmas históricas de `_init` no son
-comparación fiable. Los montajes y la pose sí cambiaron intencionalmente.
+Oráculo válido actual: `2108952927` (antes `1135775949`); el cambio es el giro
+de porte del torso documentado arriba, que mueve el montaje y la silueta a
+propósito. El fixture construye nodos después de entrar al árbol: firmas
+históricas de `_init` no son comparación fiable.
 
 Disparo y asistencia (implementado y verificado): la boca converge al primer
 obstáculo que cubre la mira y sigue trazando todo el segmento desde el cañón
