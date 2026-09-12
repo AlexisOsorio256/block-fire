@@ -6,6 +6,8 @@ extends Node3D
 ## carga props Toon ni representa las coberturas como una arena de cajas.
 const NAVIGATION_SOURCE_GROUP: StringName = &"blockfire_navigation_floor"
 const NAVIGATION_AGENT_RADIUS := 0.5
+## Lado de superficie en el que el grano del mundo (64 px) mide ~6 cm.
+const GRAIN_SPAN := 3.84
 
 var navigation_region: NavigationRegion3D
 var gameplay_obstacles: Array[Dictionary] = []
@@ -287,7 +289,7 @@ func _build_tree_multimesh() -> void:
 	material.detail_enabled = true
 	material.detail_albedo = _world_grain()
 	material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
-	material.uv1_scale = Vector3(2.0, 2.0, 1.0)
+	_fit_grain(material, tree_mesh)
 	tree_mesh.surface_set_material(0, material)
 	var multimesh := MultiMesh.new()
 	multimesh.mesh = tree_mesh
@@ -580,6 +582,7 @@ func _add_station(root: Node3D, color: Color) -> void:
 	door_mesh.size = Vector3(1.35, 2.05, 0.22)
 	door.mesh = door_mesh
 	door.material_override = _material(Color("#2a3439"))
+	_fit_grain(door.material_override, door_mesh)
 	door.position = Vector3(0.0, 1.02, 2.48)
 	root.add_child(door)
 	for offset: Vector3 in [Vector3(-3.4, 0.9, -2.5), Vector3(3.4, 0.9, -2.5), Vector3(-3.4, 0.9, 2.5), Vector3(3.4, 0.9, 2.5)]:
@@ -692,19 +695,37 @@ func _add_sphere(root: Node3D, node_name: String, position: Vector3, dimensions:
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.5
 	mesh.height = 1.0
-	var node := _mesh_node(node_name, mesh, position, _material(color, emission))
-	node.scale = dimensions
+	var node := _mesh_node(node_name, mesh, position, _material(color, emission), dimensions)
 	root.add_child(node)
 
 
-func _mesh_node(node_name: String, mesh: Mesh, position: Vector3, material: Material) -> MeshInstance3D:
+func _mesh_node(node_name: String, mesh: Mesh, position: Vector3, material: Material, node_scale: Vector3 = Vector3.ONE) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.name = node_name
 	node.mesh = mesh
 	node.position = position
 	node.material_override = material
+	node.scale = node_scale
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_fit_grain(material, mesh, node_scale)
 	return node
+
+
+## Escala el grano al tamaño real de la superficie. El grano mide 64 px, así que
+## con un `uv1_scale` fijo de 3 el texel cae a 8 mm en una caja de 1,6 m: el
+## mipmap lo promedia a color plano y la roca o la caja se leen como plástico,
+## que es justo lo que el grano venía a evitar. Con el lado mayor dividido por
+## `GRAIN_SPAN`, la mancha mide ~6 cm en cualquier superficie del mapa.
+## Las mallas redondas (cilindro, esfera) despliegan su UV alrededor, así que su
+## mancha horizontal queda algo más gruesa que la vertical; a esta escala no se
+## distingue y evita una segunda regla por tipo de malla.
+func _fit_grain(material: Material, mesh: Mesh, node_scale: Vector3 = Vector3.ONE) -> void:
+	var grain := material as StandardMaterial3D
+	if grain == null or not grain.detail_enabled:
+		return
+	var extent := mesh.get_aabb().size * node_scale
+	var span: float = maxf(extent.x, maxf(extent.y, extent.z))
+	grain.uv1_scale = Vector3.ONE * clampf(span / GRAIN_SPAN, 0.2, 14.0)
 
 
 ## Grano compartido del mundo: misma imagen cacheada que pinta el lobby.
