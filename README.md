@@ -37,7 +37,6 @@ fuente de edición y el runtime de Godot es la evidencia final.
 - `docs/CURRENT_STATE.md`: hechos operativos volátiles.
 - `docs/reference/`: referencias visuales, no assets de runtime.
 - `CREDITS.md`: licencias y atribuciones.
-- `harness/README.md`: capa BUILD/CREATOR sobre DeepSeek Harness.
 
 No hay Unity, PWA, WebView/Capacitor ni backend de juego. Android físico es la
 autoridad cuando una conclusión depende del dispositivo; un build APK por sí
