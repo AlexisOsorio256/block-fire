@@ -166,6 +166,10 @@ function fold(file, events, parse) {
     toolSchemaTop: [],
     toolCalls: 0,
     exactRepeatedToolCalls: 0,
+    readImageCalls: 0,
+    visualReadSteps: 0,
+    maxVisualBatch: 0,
+    imagesPerVisualStep: undefined,
     tools: {},
     capabilities: [],
     skillsLoaded: [],
@@ -223,14 +227,10 @@ function fold(file, events, parse) {
         const header = event.data?.header ?? {}
         report.model = header.config?.model ?? report.model
         report.provider = header.config?.provider ?? report.provider
-        // Current runtimes send the system prompt as system/message events
-        // (dynamic, KV-cache friendly), so header.system is usually absent.
-        // Older snapshots may store either a string or text blocks here.
         if (report.systemChars === undefined) {
           const text = messageText(header.system)
           if (text !== '') report.systemChars = text.length
         }
-        // Tool schemas still ride the header: capture them independently.
         if (report.toolCount === undefined && Array.isArray(header.tools)) {
           report.toolCount = header.tools.length
           report.toolSchemaChars = JSON.stringify(header.tools).length
@@ -240,8 +240,6 @@ function fold(file, events, parse) {
         break
       }
       case 'system/message': {
-        // First system/message sizes the permanent prompt on runtimes that
-        // manage it dynamically instead of embedding it in every header.
         if (report.systemChars === undefined) {
           const text = messageText(event.data?.message?.content)
           if (text !== '') report.systemChars = text.length
@@ -265,10 +263,15 @@ function fold(file, events, parse) {
             report.firstRequestCacheWrite = usage.cacheWriteTokens ?? 0
           }
         }
+        let visualCallsThisStep = 0
         for (const block of event.data?.message?.content ?? []) {
           if (block.type !== 'tool-call') continue
           report.toolCalls += 1
           report.tools[block.name] = (report.tools[block.name] ?? 0) + 1
+          if (block.name === 'read_image') {
+            report.readImageCalls += 1
+            visualCallsThisStep += 1
+          }
           const rawArguments = typeof block.arguments === 'string'
             ? block.arguments
             : JSON.stringify(block.arguments ?? null)
@@ -298,6 +301,10 @@ function fold(file, events, parse) {
             } catch { report.subagents.push(block.name) }
           }
         }
+        if (visualCallsThisStep > 0) {
+          report.visualReadSteps += 1
+          report.maxVisualBatch = Math.max(report.maxVisualBatch, visualCallsThisStep)
+        }
         break
       }
       default: break
@@ -315,6 +322,9 @@ function fold(file, events, parse) {
     : undefined
   report.cumulativePromptMultiple = firstPrompt > 0
     ? round1(billedPrompt / firstPrompt)
+    : undefined
+  report.imagesPerVisualStep = report.visualReadSteps > 0
+    ? round1(report.readImageCalls / report.visualReadSteps)
     : undefined
   report.wallMs = report.startedAt !== undefined && report.lastEventTime !== undefined
     ? report.lastEventTime - report.startedAt
@@ -354,6 +364,7 @@ for (const report of reports) {
   if (report.wallMs !== undefined) lines.push(`  wall time      ${(report.wallMs / 1000).toFixed(1)}s`)
   lines.push(`  prompt tokens  ${billedPrompt} billed | uncached ${report.inputTokens} | cache read ${report.cacheReadTokens} | cache write ${report.cacheWriteTokens} | hit ${pct(report.cacheHitPercent)}`)
   lines.push(`  efficiency     avg prompt/usage ${report.promptTokensPerUsage ?? 'n/a'} | cumulative/first ${report.cumulativePromptMultiple === undefined ? 'n/a' : `${report.cumulativePromptMultiple}x`} | tool calls ${report.toolCalls} | exact repeats ${report.exactRepeatedToolCalls} | skill reloads ${report.duplicateSkillLoads}`)
+  lines.push(`  visual reads   ${report.readImageCalls} images / ${report.visualReadSteps} visual steps | avg batch ${report.imagesPerVisualStep ?? 'n/a'} | max batch ${report.maxVisualBatch}`)
   lines.push(`  output tokens  ${report.outputTokens} (reasoning ${report.reasoningTokens})`)
   if (report.systemChars !== undefined) {
     lines.push(`  first header   system ${report.systemChars} chars | ${report.toolCount} tools / ${report.toolSchemaChars} schema chars`)
