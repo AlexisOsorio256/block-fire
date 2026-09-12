@@ -107,6 +107,13 @@ func _create_horizon_forest() -> void:
 ## Caminos de tierra: cintas de anchura fija pegadas al terreno. Solo visual
 ## (sin collider, no entran en la malla de navegación) y sin tocar lanes ni
 ## spawns; hacen que el mapa se lea diseñado en vez de campo abierto.
+##
+## La cinta lleva borde fundido (alfa por vértice) y grano de tierra tileado.
+## Sin ellos era un polígono marrón plano con corte a cuchillo: en el suelo
+## cercano se leía como una textura que no cargó, no como tierra pisada.
+## Las caras miran hacia arriba con CULL_BACK; antes el winding estaba
+## invertido y solo se veían gracias a CULL_DISABLED, que además pagaba el
+## doble de relleno y arruinaba el fundido al mezclar las dos caras.
 func _create_paths() -> void:
 	# Rutas que bordean la estación en vez de atravesarla (radio del edificio
 	# ~3,4 m): dos diagonales hacia los flancos y dos accesos laterales.
@@ -118,26 +125,50 @@ func _create_paths() -> void:
 	]
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Corte transversal: núcleo sólido de 2,3 m y 0,55 m de fundido por lado,
+	# con un carril intermedio en cada borde para que el fundido pueda variar.
 	var half_width := 1.15
+	var fade := 0.55
+	var lanes: Array[float] = [
+		-half_width - fade, -half_width - fade * 0.5, -half_width,
+		half_width, half_width + fade * 0.5, half_width + fade
+	]
+	var lane_alpha: Array[float] = [0.0, 0.5, 1.0, 1.0, 0.5, 0.0]
+	var steps := 12
 	for route: Array in routes:
+		var total := 0.0
+		for index in range(route.size() - 1):
+			total += (route[index + 1] as Vector3).distance_to(route[index] as Vector3)
+		# El extremo lejano del camino se apaga en la hierba; el cercano a la
+		# estación se queda sólido para que la ruta siga "llevando" a algo. Una
+		# cinta de tierra cortada a cuchillo en medio del prado se lee como
+		# geometría sin terminar.
+		var frayed_end := (route[route.size() - 1] as Vector3).length() > (route[0] as Vector3).length()
+		var travelled := 0.0
 		for segment in range(route.size() - 1):
 			var from: Vector3 = route[segment]
 			var to: Vector3 = route[segment + 1]
+			var segment_length := from.distance_to(to)
 			var direction := (to - from).normalized()
-			var side := Vector3(-direction.z, 0.0, direction.x) * half_width
-			var steps := 12
+			var side := Vector3(-direction.z, 0.0, direction.x)
 			for step in range(steps):
 				var t0 := float(step) / float(steps)
 				var t1 := float(step + 1) / float(steps)
 				var a := from.lerp(to, t0)
 				var b := from.lerp(to, t1)
-				for pair: Array in [[a - side, a + side, b - side], [b - side, a + side, b + side]]:
-					for point: Vector3 in pair:
-						surface.set_uv(Vector2(point.x * 0.05, point.z * 0.05))
-						# +0,07: el terreno es una malla lineal cada 3,1 m y la
-						# función de altura es curva, así que con menos margen la
-						# cinta se hundía entre vértices y no se veía.
-						surface.add_vertex(Vector3(point.x, _terrain_height(point.x, point.z) + 0.07, point.z))
+				var fade_a := _path_end_fade(travelled + segment_length * t0, total, frayed_end)
+				var fade_b := _path_end_fade(travelled + segment_length * t1, total, frayed_end)
+				for lane in range(lanes.size() - 1):
+					var p0: Vector3 = a + side * lanes[lane]
+					var p1: Vector3 = a + side * lanes[lane + 1]
+					var q0: Vector3 = b + side * lanes[lane]
+					var q1: Vector3 = b + side * lanes[lane + 1]
+					_path_quad(surface, p0, p1, q0, q1,
+						_path_fade_alpha(lane_alpha[lane], p0) * fade_a,
+						_path_fade_alpha(lane_alpha[lane + 1], p1) * fade_a,
+						_path_fade_alpha(lane_alpha[lane], q0) * fade_b,
+						_path_fade_alpha(lane_alpha[lane + 1], q1) * fade_b)
+			travelled += segment_length
 	surface.generate_normals()
 	var mesh := surface.commit()
 	if mesh == null:
@@ -145,14 +176,84 @@ func _create_paths() -> void:
 	var path := MeshInstance3D.new()
 	path.name = "DirtPaths"
 	path.mesh = mesh
+	# Cinta de una sola cara pegada al suelo: no proyecta sombra ni la recibe
+	# como un muro, y sin cast_shadow el fundido del borde no ensucia el mapa
+	# de sombras con la silueta del quad.
+	path.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	var material := _material(Color("#6a5539"))
+	var material := _material(Color.WHITE)
+	material.albedo_texture = _dirt_texture()
 	material.detail_enabled = false
-	material.uv1_scale = Vector3(2.0, 2.0, 1.0)
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# UV de la cinta = 0,05/m; con escala 8 el grano de tierra repite cada 2,5 m
+	# (manchas de ~0,4 m), del mismo orden que el césped del terreno.
+	material.uv1_scale = Vector3(8.0, 8.0, 1.0)
+	material.vertex_color_use_as_albedo = true
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.cull_mode = BaseMaterial3D.CULL_BACK
 	material.roughness = 0.98
 	path.material_override = material
 	add_child(path)
+
+
+## Quad de camino con la cara hacia arriba. Los cuatro alfas son los de sus
+## cuatro esquinas (carriles `p0`/`p1` en los extremos `a` y `b`).
+func _path_quad(surface: SurfaceTool, p0: Vector3, p1: Vector3, q0: Vector3, q1: Vector3, alpha_p0: float, alpha_p1: float, alpha_q0: float, alpha_q1: float) -> void:
+	_path_vertex(surface, p0, alpha_p0)
+	_path_vertex(surface, q0, alpha_q0)
+	_path_vertex(surface, p1, alpha_p1)
+	_path_vertex(surface, q0, alpha_q0)
+	_path_vertex(surface, q1, alpha_q1)
+	_path_vertex(surface, p1, alpha_p1)
+
+
+## Fundido del extremo lejano: el camino se desvanece en los últimos 2,5 m en
+## vez de terminar en un corte recto sobre el prado.
+func _path_end_fade(distance_along: float, total: float, frayed_end: bool) -> float:
+	var fade := 2.5
+	if frayed_end:
+		return clampf((total - distance_along) / fade, 0.0, 1.0)
+	return clampf(distance_along / fade, 0.0, 1.0)
+
+
+## Alfa de un carril: el borde exterior respira con una onda continua en el
+## espacio. Nada de ruido por tramo, que marcaba escalones cada 0,85 m; el
+## núcleo (alfa 1) no se toca, así que el camino no se agujerea.
+func _path_fade_alpha(base_alpha: float, point: Vector3) -> float:
+	if base_alpha <= 0.0 or base_alpha >= 1.0:
+		return base_alpha
+	return base_alpha * (0.72 + 0.28 * sin(point.x * 0.9 + point.z * 1.3))
+
+
+func _path_vertex(surface: SurfaceTool, point: Vector3, alpha: float) -> void:
+	surface.set_uv(Vector2(point.x * 0.05, point.z * 0.05))
+	surface.set_color(Color(1.0, 1.0, 1.0, clampf(alpha, 0.0, 1.0)))
+	# +0,07: el terreno es una malla lineal cada 3,1 m y la función de altura es
+	# curva, así que con menos margen la cinta se hundía entre vértices y no se
+	# veía.
+	surface.add_vertex(Vector3(point.x, _terrain_height(point.x, point.z) + 0.07, point.z))
+
+
+## Grano de tierra de los caminos. Mismo recurso que el césped (ruido fractal
+## + rampa) para que camino y terreno compartan lenguaje visual; el color
+## plano anterior se leía como textura ausente.
+func _dirt_texture() -> NoiseTexture2D:
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.05
+	noise.fractal_octaves = 3
+	noise.fractal_gain = 0.55
+	var texture := NoiseTexture2D.new()
+	texture.noise = noise
+	texture.width = 128
+	texture.height = 128
+	texture.seamless = true
+	texture.in_3d_space = false
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color("#4a3a26"))
+	ramp.set_color(1, Color("#8b7350"))
+	ramp.add_point(0.5, Color("#6a5539"))
+	texture.color_ramp = ramp
+	return texture
 
 
 ## Construye el bosque completo con un solo MultiMesh de malla fusionada
