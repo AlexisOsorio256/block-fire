@@ -13,18 +13,22 @@ const BUILD = join(HARNESS, 'presets', 'build', 'agent.cordis.yml')
 const SURFACE = join(HARNESS, 'presets', 'build', 'surface.cordis.yml')
 const PROMPT = join(HARNESS, 'presets', 'build', 'plugins', 'prompt.js')
 
-async function guardFor() {
+async function harnessFor() {
   const module = await import(`${GUARD}?t=${Date.now()}-${Math.random()}`)
   const guards = []
+  const listeners = new Map()
   const ctx = {
     tools: { guard(check) { guards.push(check); return () => {} } },
     effect(factory) { return factory() },
+    on(name, listener) { listeners.set(name, listener); return () => listeners.delete(name) },
   }
   module.apply(ctx)
   assert.equal(guards.length, 1)
-  return guards[0]
+  assert.equal(typeof listeners.get('agent/request'), 'function')
+  return { guard: guards[0], request: listeners.get('agent/request') }
 }
 
+async function guardFor() { return (await harnessFor()).guard }
 const call = (guard, name, args = {}) => guard({ name, arguments: args })
 
 test('BUILD composition keeps the terminal evidence-lock contract', () => {
@@ -38,6 +42,23 @@ test('BUILD composition keeps the terminal evidence-lock contract', () => {
   assert.doesNotMatch(surface, /id: workflow-guard/, 'CREATOR reuses the surface; the BUILD guard must not leak there')
   assert.match(prompt, /If no player-visible defect is nameable, stop instead of reconstructing the images from memory/)
   assert.match(prompt, /no more images are allowed until after a real edit/)
+})
+
+test('BUILD request cap prevents a reasoning-only runaway without lowering smaller provider caps', async () => {
+  const { request } = await harnessFor()
+  assert.deepEqual(
+    await request({}, async () => ({ provider: 'p', model: 'm', maxTokens: 256000 })),
+    { provider: 'p', model: 'm', maxTokens: 16384 },
+  )
+  assert.deepEqual(
+    await request({}, async () => ({ provider: 'p', model: 'm', maxTokens: 8192 })),
+    { provider: 'p', model: 'm', maxTokens: 8192 },
+    'a stricter route/model cap stays authoritative',
+  )
+  assert.deepEqual(
+    await request({}, async () => ({ provider: 'p', model: 'm' })),
+    { provider: 'p', model: 'm', maxTokens: 16384 },
+  )
 })
 
 test('BUILD guard keeps temporary visual evidence outside the checkout', async () => {
