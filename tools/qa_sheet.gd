@@ -1,16 +1,18 @@
 extends SceneTree
-## Contact sheet for visual QA. Packs many already-rendered frames into one PNG
-## so the model can scan a representative set in one visual read.
+## Contact sheet for visual QA. Packs already-rendered semantic frames into one
+## PNG so the model can scan a compact representative set in one visual read.
 ##
 ## Usage:
-##   tools/bf qa sheet --out=/tmp/sheet.png --cols=4 --cell=320x180 /tmp/a.png /tmp/b.png ...
+##   tools/bf qa sheet --out=/tmp/sheet.png --cols=4 --cell=480x270 /tmp/a.png /tmp/b.png ...
 ##
+## Keep the input set compact (normally 8-12 tiles). More tiny tiles reduce
+## perceptual information even if they technically fit in one image.
 ## This is presentation tooling only; it never runs game logic or mutates source assets.
 
 var _out := "/tmp/blockfire-sheet.png"
 var _cols := 4
-var _cell_w := 320
-var _cell_h := 180
+var _cell_w := 480
+var _cell_h := 270
 var _paths: Array[String] = []
 
 
@@ -81,5 +83,5 @@ func _build_sheet() -> void:
 
 
 func _fail(message: String) -> void:
-	push_error("QA_SHEET %s" % message)
+	push_error("QA_SHEET: %s" % message)
 	quit(2)
