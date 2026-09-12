@@ -170,6 +170,9 @@ function fold(file, events, parse) {
     visualReadSteps: 0,
     maxVisualBatch: 0,
     imagesPerVisualStep: undefined,
+    visualToEditGaps: [],
+    visualToEditAvg: undefined,
+    visualToEditMax: undefined,
     tools: {},
     capabilities: [],
     skillsLoaded: [],
@@ -185,6 +188,7 @@ function fold(file, events, parse) {
   const openCompactions = new Set()
   const toolCallSignatures = new Set()
   const loadedSkills = new Set()
+  let pendingVisualToolCall
 
   for (const event of events) {
     const eventTime = timeMs(event.time)
@@ -271,6 +275,11 @@ function fold(file, events, parse) {
           if (block.name === 'read_image') {
             report.readImageCalls += 1
             visualCallsThisStep += 1
+            if (pendingVisualToolCall === undefined) pendingVisualToolCall = report.toolCalls
+          }
+          if ((block.name === 'edit' || block.name === 'write') && pendingVisualToolCall !== undefined) {
+            report.visualToEditGaps.push(report.toolCalls - pendingVisualToolCall - 1)
+            pendingVisualToolCall = undefined
           }
           const rawArguments = typeof block.arguments === 'string'
             ? block.arguments
@@ -326,6 +335,10 @@ function fold(file, events, parse) {
   report.imagesPerVisualStep = report.visualReadSteps > 0
     ? round1(report.readImageCalls / report.visualReadSteps)
     : undefined
+  if (report.visualToEditGaps.length > 0) {
+    report.visualToEditAvg = round1(report.visualToEditGaps.reduce((sum, gap) => sum + gap, 0) / report.visualToEditGaps.length)
+    report.visualToEditMax = Math.max(...report.visualToEditGaps)
+  }
   report.wallMs = report.startedAt !== undefined && report.lastEventTime !== undefined
     ? report.lastEventTime - report.startedAt
     : undefined
@@ -365,6 +378,7 @@ for (const report of reports) {
   lines.push(`  prompt tokens  ${billedPrompt} billed | uncached ${report.inputTokens} | cache read ${report.cacheReadTokens} | cache write ${report.cacheWriteTokens} | hit ${pct(report.cacheHitPercent)}`)
   lines.push(`  efficiency     avg prompt/usage ${report.promptTokensPerUsage ?? 'n/a'} | cumulative/first ${report.cumulativePromptMultiple === undefined ? 'n/a' : `${report.cumulativePromptMultiple}x`} | tool calls ${report.toolCalls} | exact repeats ${report.exactRepeatedToolCalls} | skill reloads ${report.duplicateSkillLoads}`)
   lines.push(`  visual reads   ${report.readImageCalls} images / ${report.visualReadSteps} visual steps | avg batch ${report.imagesPerVisualStep ?? 'n/a'} | max batch ${report.maxVisualBatch}`)
+  lines.push(`  visual->edit   ${report.visualToEditGaps.length} closures | avg gap ${report.visualToEditAvg ?? 'n/a'} tool calls | max gap ${report.visualToEditMax ?? 'n/a'}`)
   lines.push(`  output tokens  ${report.outputTokens} (reasoning ${report.reasoningTokens})`)
   if (report.systemChars !== undefined) {
     lines.push(`  first header   system ${report.systemChars} chars | ${report.toolCount} tools / ${report.toolSchemaChars} schema chars`)
