@@ -19,4 +19,4 @@ func _draw() -> void:
 	var width := 2.0
 	for direction: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 		draw_line(center + direction * gap, center + direction * (gap + arm), base_color, width, true)
-	draw_circle(center, 1.5, base_color)
+	draw_circle(center, 1.5, base_color, true, -1.0, true)

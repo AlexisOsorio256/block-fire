@@ -56,6 +56,10 @@ Pasada visual de superficie (capturas propias y de partida, no medición):
   (`CombatFX.TRACER_EYE_WIDTH`), así que sigue siendo una línea de ~4 px.
 - Los botones AJUSTES/CAMBIAR del HUD crecían hacia el final y se salían del
   borde derecho en 1280x720; ahora crecen hacia el principio.
+- Los controles táctiles dibujaban sus círculos y anillos sin antialias mientras
+  los iconos ya lo llevaban: sobre el cielo el borde del joystick salía punteado
+  y el aro de cada botón, escalonado. Los `draw_circle`/`draw_arc` de
+  `mobile_controls.gd` y el punto de `crosshair.gd` pasan `antialiased`.
 - Animación: pasada temporal (recarga rifle frontal/lateral, locomoción, combate,
   aire) sin defecto nuevo visible; las limitaciones conocidas siguen siendo las
   de arriba.

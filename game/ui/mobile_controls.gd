@@ -399,11 +399,11 @@ func _draw() -> void:
 	var joystick_scale := _control_scale("joystick")
 	var joystick_center := _move_center()
 	var joystick_radius := 66.0 * joystick_scale
-	draw_circle(joystick_center + Vector2(0.0, 4.0), joystick_radius, Color(0.0, 0.02, 0.06, alpha * 0.24))
-	draw_circle(joystick_center, joystick_radius, soft)
-	draw_arc(joystick_center, joystick_radius, 0, TAU, 36, bright, 2.0)
-	draw_circle(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, Color(0.34, 0.66, 0.92, alpha * 0.88 * _control_opacity("joystick")))
-	draw_arc(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, 0, TAU, 24, Color(0.75, 0.91, 1.0, alpha * 0.75), 1.5)
+	draw_circle(joystick_center + Vector2(0.0, 4.0), joystick_radius, Color(0.0, 0.02, 0.06, alpha * 0.24), true, -1.0, true)
+	draw_circle(joystick_center, joystick_radius, soft, true, -1.0, true)
+	draw_arc(joystick_center, joystick_radius, 0, TAU, 36, bright, 2.0, true)
+	draw_circle(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, Color(0.34, 0.66, 0.92, alpha * 0.88 * _control_opacity("joystick")), true, -1.0, true)
+	draw_arc(joystick_center + move_vector * 36.0 * joystick_scale, 25.0 * joystick_scale, 0, TAU, 24, Color(0.75, 0.91, 1.0, alpha * 0.75), 1.5, true)
 	for id: String in ["fire", "aim", "jump", "reload", "switch", "crouch", "sprint"]:
 		var center := _button_center(id)
 		var radius: float = (51.0 if id == "fire" else 37.0) * _control_scale(id)
@@ -414,11 +414,11 @@ func _draw() -> void:
 			color = Color(0.12, 0.62, 0.84, control_alpha)
 		if pressed:
 			color = color.lightened(0.28)
-		draw_circle(center + Vector2(0.0, 3.0), radius, Color(0.0, 0.02, 0.06, control_alpha * 0.24))
-		draw_circle(center, radius, color)
-		draw_arc(center, radius, 0, TAU, 24, Color(bright.r, bright.g, bright.b, control_alpha), 2.0)
+		draw_circle(center + Vector2(0.0, 3.0), radius, Color(0.0, 0.02, 0.06, control_alpha * 0.24), true, -1.0, true)
+		draw_circle(center, radius, color, true, -1.0, true)
+		draw_arc(center, radius, 0, TAU, 24, Color(bright.r, bright.g, bright.b, control_alpha), 2.0, true)
 		if pressed:
-			draw_arc(center, radius - 5.0, 0, TAU, 24, Color(1.0, 1.0, 1.0, control_alpha * 0.62), 2.0)
+			draw_arc(center, radius - 5.0, 0, TAU, 24, Color(1.0, 1.0, 1.0, control_alpha * 0.62), 2.0, true)
 		_draw_icon(id, center, radius, Color(1, 1, 1, minf(1.0, control_alpha + 0.12)))
 		# CORRER lleva rótulo permanente fuera del editor (dentro ya muestra el
 		# suyo y se duplicaría).
@@ -428,18 +428,18 @@ func _draw() -> void:
 			var context_name: String = str({"fire": "FUEGO", "aim": "MIRA", "jump": "SALTO", "reload": "RECARGAR", "switch": "CAMBIAR ARMA", "crouch": "AGACHARSE", "sprint": "CORRER"}.get(id, id.to_upper()))
 			draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius + 18), context_name, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 11, Color.WHITE)
 	if edit_mode:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.4, 0.7, 1.0, 0.08), false, 2.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.4, 0.7, 1.0, 0.08), false, 2.0, true)
 
 func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> void:
 	var r := radius * 0.42
 	match id:
 		"fire":
-			draw_circle(center, r * 0.28, color, false, ICON_STROKE)
+			draw_circle(center, r * 0.28, color, false, ICON_STROKE, true)
 			for direction: Vector2 in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT]:
 				draw_line(center + direction * r * 0.45, center + direction * r, color, ICON_STROKE, true)
 		"aim":
-			draw_circle(center, r * 0.58, color, false, ICON_STROKE)
-			draw_circle(center, r * 0.12, color)
+			draw_circle(center, r * 0.58, color, false, ICON_STROKE, true)
+			draw_circle(center, r * 0.12, color, true, -1.0, true)
 			draw_line(center + Vector2(-r, 0), center + Vector2(-r * 0.64, 0), color, ICON_STROKE, true)
 			draw_line(center + Vector2(r * 0.64, 0), center + Vector2(r, 0), color, ICON_STROKE, true)
 			draw_line(center + Vector2(0, -r), center + Vector2(0, -r * 0.64), color, ICON_STROKE, true)
@@ -458,7 +458,7 @@ func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> voi
 			draw_line(center + Vector2(r * 0.78, r * 0.3), center + Vector2(-r * 0.65, r * 0.3), color, ICON_STROKE, true)
 			draw_line(center + Vector2(-r * 0.65, r * 0.3), center + Vector2(-r * 0.28, -0.02 * r), color, ICON_STROKE, true)
 		"crouch":
-			draw_circle(center + Vector2(0, -r * 0.55), r * 0.22, color)
+			draw_circle(center + Vector2(0, -r * 0.55), r * 0.22, color, true, -1.0, true)
 			draw_line(center + Vector2(0, -r * 0.28), center + Vector2(0, r * 0.45), color, ICON_STROKE, true)
 			draw_line(center + Vector2(0, r * 0.05), center + Vector2(r * 0.66, r * 0.38), color, ICON_STROKE, true)
 			draw_line(center + Vector2(0, r * 0.45), center + Vector2(r * 0.72, r * 0.72), color, ICON_STROKE, true)
@@ -466,7 +466,7 @@ func _draw_icon(id: String, center: Vector2, radius: float, color: Color) -> voi
 		"sprint":
 			# Corredor inequívoco: cabeza + tronco + brazos/piernas en zancada
 			# + líneas de velocidad. Nada de flechas abstractas.
-			draw_circle(center + Vector2(r * 0.28, -r * 0.58), r * 0.17, color)
+			draw_circle(center + Vector2(r * 0.28, -r * 0.58), r * 0.17, color, true, -1.0, true)
 			var hip := center + Vector2(-r * 0.05, r * 0.15)
 			var shoulder := center + Vector2(r * 0.12, -r * 0.30)
 			draw_line(shoulder, hip, color, ICON_STROKE, true)
