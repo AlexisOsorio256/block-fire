@@ -21,10 +21,32 @@ distinct regression.
 - Docs: consistency with the code that owns the behavior.
 - Assets: origin and license in `CREDITS.md`.
 
+## Dense visual discovery
+
+For open-ended visual/polish work, discovery and repair are separate passes. Do
+one bounded representative sweep before touching code. Reuse existing captures or
+produce only the views that expose materially different states. Read independent
+related images concurrently in the same assistant step; when there are many
+frames, prefer one contact sheet/strip over serial reads.
+
+Scan the entire batch once and keep a short inventory of every clear defect with
+its view/state. Do not tunnel into the first defect before finishing that scan.
+Then rank the confirmed issues by visible impact and shared owner: fix a small
+coherent group when one owner/change closes them together, otherwise fix the
+highest-impact item and leave the other observed defects explicitly recorded for
+the next pass. Do not continue discovery after one representative sweep unless a
+fix exposes a genuinely new state.
+
+For temporal defects, capture a short sequence/video as source evidence and sample
+representative before/during/after frames into a strip/contact sheet the model can
+actually inspect. A video file path by itself is not visual evidence. Open
+individual frames only when the sheet hides a detail or continuity itself is the
+question.
+
 For a visual question, a current capture is primary evidence. Do not build a new
 probe, geometry proof or analysis script for something the image already answers.
 Use metrics only to locate a cause vision cannot reveal or to lock a regression
-after the visual fix; inspect again after the change.
+after the visual fix; inspect comparable evidence again after the change.
 
 A test that cannot fail because of the change is not evidence. Neither is a
 screenshot nobody looked at. Do not rerun an already decisive check without a
