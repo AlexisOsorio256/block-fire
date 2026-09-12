@@ -22,6 +22,10 @@
       Answer the user in Spanish; everything the model reads stays in English: prompts, tool/skill text, code, commits.
     prefix: *persona
 
+# BUILD-only deterministic boundary: temporary QA stays outside the checkout.
+- id: workflow-guard
+  name: './plugins/workflow-guard.js'
+
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
