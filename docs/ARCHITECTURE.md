@@ -63,10 +63,6 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
   `game/audio/default_bus_layout.tres`, volúmenes (`master` + `sfx`, donde el
   bus `UI` de feedback sigue a `sfx`) en `SettingsStore._apply_audio()`.
   `ui.ogg` y `sfx_kill_banner.ogg` están reservados sin emisor.
-- **Harness BLOCKFIRE** (espacios BUILD/CREATOR, tools, skills, capacidades JIT,
-  política de permisos, Update Center): `harness/`. Dueño de la frontera con
-  DeepSeek Harness: `harness/ARCHITECTURE.md`; uso: `harness/README.md`. Arranque
-  del producto: `harness/bin/blockfire`; verificación: `harness/test.sh`.
 
 ## Fuentes vs generado
 
