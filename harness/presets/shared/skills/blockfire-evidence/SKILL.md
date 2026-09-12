@@ -39,6 +39,12 @@ before focusing on any one issue. Open an individual source image only when the
 overview hides a detail needed to judge or fix it. For two or three independent
 views, issue their `read_image` calls together in the same assistant step.
 
+A character/presentation scene is incomplete until the same pass explicitly
+checks composition, facing/gaze, pose, weapon and hand alignment, silhouette and
+clipping, lighting, background, and UI overlap. Record defects from all of those
+visible dimensions before prioritizing; a strong first defect must not collapse
+the rest of the scene into background noise.
+
 Rank confirmed issues by visible impact and shared owner. Fix a small coherent
 group when one owner/change closes them together; otherwise fix the highest-impact
 item and keep the other observed defects in the short inventory. Do not start a
