@@ -7,13 +7,27 @@ comparison.
 
 ## Capture and look
 
+`qa motion` already owns the useful temporal lab: fixed 30 Hz, real
+`OperatorVisual` + weapon + IK, semantic overlay, and
+`--view=front|q34|side|back`. When two views expose different information, launch
+them **concurrently** with the same mode/weapon/duration and separate output dirs:
+
 ```bash
-tools/bf qa motion --mode=locomotion --view=q34 --duration=16 --out=/tmp/bf-before
+tools/bf qa motion --mode=locomotion --view=side --duration=16 --out=/tmp/bf-before-side & p1=$!
+tools/bf qa motion --mode=locomotion --view=back --duration=16 --out=/tmp/bf-before-back & p2=$!
+wait "$p1" "$p2"
 ```
 
-Produces 480 PNG at fixed simulated 30 Hz time; the run can take longer than 16
-seconds. If bash hands back a job, keep reading the code owner and check
-`job_output` when you need the result. Do not relaunch the QA because it is slow.
+Side is strong for foot contact, weapon pitch and body lean; back/q34 exposes
+facing, shoulders, hands and silhouette. Use two views by default, not four. Add a
+third only when a named ambiguity survives. These capture runs are read-only, so
+parallelism is useful; imports, source/Blender writes and git operations are not
+parallel work. Never share an output directory between capture processes.
+
+Produces 480 PNG per 16 s view at fixed simulated 30 Hz time; the run can take
+longer than 16 seconds. If bash hands back a job, keep working on already-known
+context and check `job_output` when needed. Do not relaunch a slow QA merely because
+it is still running.
 
 Known limit (measured): `qa_motion.gd` moves the actor with a fixed 1/30 s step,
 but lets the locomotion clock advance with the frame's REAL delta, so on a busy
@@ -24,24 +38,31 @@ phase. Those judgments go through `tools/probe-loco-axes.gd` (fixed step, foot
 print metric).
 
 The sequence advances through walk, sprint, strafe L, strafe R, diagonal, back,
-crouch fwd and crouch lateral: two seconds per segment. Look with `read_image` at
-several cycle phases and frames around 60, 120, 180, 240 and 360; for example N-1,
-N, N+1, N+3, N+6. Comparing one flattering pose is not enough.
+crouch fwd and crouch lateral: two seconds per segment. Start with sparse semantic
+coverage, then densify only the suspicious boundary. Around a transition at frame
+N, a useful local set is N-1, N, N+1, N+3, N+6 (plus a later settle when needed).
+If the overlay exposes a blend weight, sample several points across that blend.
+Do not increase frame density across the whole run to inspect one transition.
 
-To build a grid without inventing a new tool, if ImageMagick is available:
+Build sheets with the project helper, preserving the same indices in each view:
 
 ```bash
-montage /tmp/bf-before/frame_0179.png /tmp/bf-before/frame_0180.png \
-  /tmp/bf-before/frame_0181.png /tmp/bf-before/frame_0183.png \
-  /tmp/bf-before/frame_0186.png /tmp/bf-before/frame_0192.png \
-  -thumbnail 480x270 -tile 3x2 -geometry +2+2 /tmp/bf-before-turn.png
+tools/bf qa sheet --out=/tmp/bf-before-side-turn.png --cols=3 --cell=480x270 \
+  /tmp/bf-before-side/frame_0119.png /tmp/bf-before-side/frame_0120.png \
+  /tmp/bf-before-side/frame_0121.png /tmp/bf-before-side/frame_0123.png \
+  /tmp/bf-before-side/frame_0126.png /tmp/bf-before-side/frame_0132.png
+
+tools/bf qa sheet --out=/tmp/bf-before-back-turn.png --cols=3 --cell=480x270 \
+  /tmp/bf-before-back/frame_0119.png /tmp/bf-before-back/frame_0120.png \
+  /tmp/bf-before-back/frame_0121.png /tmp/bf-before-back/frame_0123.png \
+  /tmp/bf-before-back/frame_0126.png /tmp/bf-before-back/frame_0132.png
 ```
 
-Open the grid with `read_image`. To observe hands/feet also open individual PNGs;
-a thumbnail can hide defects. Save the after in another directory and compare the
-same frames, weapon, camera, speed and duration. If you change the phase clock,
-record that difference: the same frame no longer means the same cycle phase. Still
-clips do not prove continuity.
+Read both sheets in the same inference and compare aligned tiles. Open individual
+PNGs only when thumbnails hide a hand/foot detail. Save the after in separate
+directories and compare the same frames, weapon, camera, speed and duration. If
+you change the phase clock, record that difference: the same frame no longer means
+the same cycle phase. Still clips do not prove continuity.
 
 ## Do not confuse lab and gameplay
 
@@ -51,6 +72,12 @@ clips do not prove continuity.
 playing, walk that public path and test the affected contract; do not conclude
 gameplay is fine because the lab looks fine.
 
+Likewise, the lab and player camera answer different questions. Use the multiview
+lab to localize pose/layer ownership. After a player-facing fix (weapon silhouette,
+ADS/combat framing, camera-relative presentation, input-driven transition), add
+one representative real player-camera capture if the lab cannot prove that
+perspective. Do not run both routes as ritual duplicate evidence.
+
 `--mode=sequence --view=back --duration=16` adds idle, start, stop, crouch/stand
 and combat. Its diagonal crouch segment uses components 2.6/2.6: magnitude ~3.68
 m/s even though the label says 2.6. Use locomotion mode to compare cardinal crouch
@@ -59,6 +86,15 @@ at 2.6; do not recalibrate clips from that label.
 The camera follows the actor and the checkerboard exposes sliding. Perceived
 smoothness on device, touch input and real FPS need their own run; fixed sampling
 does not prove them.
+
+## Choose the layer before editing
+
+Use the aligned views to distinguish source motion from runtime presentation. If
+feet/pelvis/torso remain coherent while only weapon, hands or an additive pose are
+rigid or misaligned, inspect `operator_visual.gd` mount/IK/layer blending before
+opening Blender or changing cadence. If the whole body path is wrong in isolation,
+motion/clip ownership is plausible. This is a decision shortcut, not proof by
+code: the visual evidence comes first.
 
 ## Change the owner and verify
 
@@ -75,7 +111,7 @@ Wait for it to finish and confirm it reimported the updated GLB without errors. 
 it skips it due to cache, invalidate only that GLB's imported cache and repeat; do
 not edit `.import` configs or delete all `.godot` out of habit.
 
-Repeat the previous QA with `--out=/tmp/bf-after`. For locomotion/layers use
+Repeat the previous QA with `--out=/tmp/bf-after-*`. For locomotion/layers use
 `tools/bf test`: it covers public sprint selection, crouch/ADS continuity, cardinal
 foot slide, mount and IK. To investigate a specific failure there are
 `tools/bf qa slide --speed=7 --sprint`, `tools/bf qa ik` and `tools/bf qa reload`.
