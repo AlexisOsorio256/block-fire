@@ -81,10 +81,6 @@
   config:
     harnessSource: false
 
-# Deterministic BUILD-only boundary: temporary QA stays outside the checkout.
-- id: workflow-guard
-  name: './plugins/workflow-guard.js'
-
 # BUILD gets Blender defaults; CREATOR patches includeDefaults:false + cordis.
 - id: capabilities
   name: './plugins/capabilities.js'
