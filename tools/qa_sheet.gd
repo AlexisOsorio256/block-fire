@@ -62,9 +62,9 @@ func _build_sheet() -> void:
 		var height := maxi(1, int(round(float(image.get_height()) * scale)))
 		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
 		var column := index % _cols
-		var row := index / _cols
-		var x := column * _cell_w + (_cell_w - width) / 2
-		var y := row * _cell_h + (_cell_h - height) / 2
+		var row := floori(float(index) / float(_cols))
+		var x := column * _cell_w + floori(float(_cell_w - width) / 2.0)
+		var y := row * _cell_h + floori(float(_cell_h - height) / 2.0)
 		sheet.blit_rect(image, Rect2i(0, 0, width, height), Vector2i(x, y))
 
 	var save_error := sheet.save_png(_out)
