@@ -4,6 +4,10 @@ const ControlEditorScript := preload("res://game/ui/control_editor.gd")
 const MatchScript := preload("res://game/match/match.gd")
 const ArenaScript := preload("res://game/world/arena.gd")
 
+class SpreadStub extends Node:
+	var is_bot := true
+	var bot_accuracy := 0.68
+
 var failures: Array[String] = []
 var checks: int = 0
 
@@ -13,6 +17,7 @@ func _init() -> void:
 func _run() -> void:
 	_test_input_actions()
 	_test_weapon_definitions()
+	_test_aim_cone_contract()
 	_test_squad_rules()
 	_test_ffa_rules()
 	await _test_player_and_operator_contracts()
@@ -70,6 +75,41 @@ func _test_weapon_definitions() -> void:
 	# El armario del lobby deriva de la tabla de tintes: una sola lista de skins.
 	_check(WeaponSkin.skin_names().size() == WeaponSkin.TINTS.size() and WeaponSkin.skin_names()[0] == "Estándar",
 		"skin list derives from the tint table")
+
+## El retículo es un observador del arma: dibuja el cono real del próximo
+## disparo. Antes el hueco era fijo (5 px) mientras el cono real llegaba a
+## ±3,6°: con el retículo centrado en el pecho la mayoría de las balas caía
+## fuera y la pantalla no lo decía (SMG a 20 m con el gatillo mantenido: 41% de
+## impactos medidos en partida). Aquí se fija la única fórmula de dispersión y
+## su proyección a píxeles; `_fire_pellet` dispara con `current_spread()`.
+func _test_aim_cone_contract() -> void:
+	var smg: WeaponDefinition = WeaponController.DEFINITIONS[3]
+	var weapon := WeaponController.new()
+	weapon.active_index = 3
+	_check(is_equal_approx(weapon.current_spread(), smg.spread), "hip cone at rest is the declared spread")
+	weapon.spread_heat = WeaponController.SPREAD_HEAT_MAX
+	var hip_cap := smg.spread * (1.0 + WeaponController.SPREAD_HEAT_MAX * 0.95)
+	_check(is_equal_approx(weapon.current_spread(), hip_cap), "hip cone at heat cap follows the single formula")
+	weapon.aim_held = true
+	var ads_cap := smg.spread * (1.0 + WeaponController.SPREAD_HEAT_MAX * 0.42) * 0.55
+	_check(is_equal_approx(weapon.current_spread(), ads_cap), "ADS narrows the same cone")
+	weapon.aim_held = false
+	weapon.spread_heat = 0.0
+	var stub := SpreadStub.new()
+	weapon.actor = stub
+	_check(is_equal_approx(weapon.current_spread(), smg.spread * lerpf(1.8, 0.25, 0.68)),
+		"bot cone uses the same formula scaled by its accuracy")
+	# Proyección del cono a píxeles (cámara KEEP_HEIGHT: manda la altura).
+	var focal_68 := BlockfireCrosshair.focal_pixels(720.0, 68.0)
+	_check(absf(focal_68 - 533.72) < 0.5, "focal length at 68° over 720p")
+	_check(absf(BlockfireCrosshair.focal_pixels(720.0, 52.0) - 738.11) < 0.5, "focal length at 52° over 720p")
+	var worst_gap := 0.0
+	for definition: WeaponDefinition in WeaponController.DEFINITIONS:
+		worst_gap = maxf(worst_gap, definition.spread * (1.0 + WeaponController.SPREAD_HEAT_MAX * 0.95) * focal_68)
+	_check(worst_gap > BlockfireCrosshair.BASE_GAP, "the opened cone is visible above the rest gap")
+	_check(worst_gap < BlockfireCrosshair.MAX_GAP, "no live weapon cone is clipped by the drawn range")
+	weapon.free()
+	stub.free()
 
 func _test_squad_rules() -> void:
 	_check(SquadRules.buy_duration(1) == 10.0, "first squad buy phase")

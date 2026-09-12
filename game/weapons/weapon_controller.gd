@@ -119,6 +119,17 @@ func _physics_process(delta: float) -> void:
 func current_definition() -> WeaponDefinition:
 	return DEFINITIONS[clampi(active_index, 0, DEFINITIONS.size() - 1)]
 
+## Media anchura angular (radianes) del cono del PRÓXIMO disparo: la MISMA que
+## consume `_fire_pellet`. La mira dibuja este número, así que no puede existir
+## una segunda fórmula de dispersión: si aparece, el retículo vuelve a mentir.
+func current_spread() -> float:
+	var definition := current_definition()
+	var spread := definition.spread * (1.0 + spread_heat * (0.42 if aim_held else 0.95))
+	if actor != null and actor.get("is_bot"):
+		var accuracy: float = float(actor.get("bot_accuracy")) if actor.get("bot_accuracy") != null else 0.65
+		return spread * lerpf(1.8, 0.25, accuracy)
+	return spread * (0.55 if aim_held else 1.0)
+
 func set_available_weapons(indices: Array, preferred_index: int = -1) -> void:
 	var sanitized: Array[int] = []
 	for value: Variant in indices:
@@ -310,17 +321,15 @@ func _fire_pellet(definition: WeaponDefinition, pellet_index: int) -> void:
 	# que todavía bloqueaba físicamente el cañón.
 	var aim_origin: Vector3 = _aim_origin()
 	var direction: Vector3 = _aim_direction()
-	var spread := definition.spread * (1.0 + spread_heat * (0.42 if aim_held else 0.95))
+	var spread := current_spread()
 	if actor != null and actor.get("is_bot"):
 		if ai_target == null or not ai_can_see:
 			return
 		var target_point: Vector3 = ai_target.get_target_point() if ai_target.has_method("get_target_point") else ai_target.global_position + Vector3.UP
 		direction = aim_origin.direction_to(target_point)
-		var accuracy: float = float(actor.get("bot_accuracy")) if actor.get("bot_accuracy") != null else 0.65
-		spread *= lerpf(1.8, 0.25, accuracy)
 		direction = _spread_direction(direction, spread)
 	else:
-		direction = _spread_direction(direction, spread * (0.55 if aim_held else 1.0))
+		direction = _spread_direction(direction, spread)
 
 	# Bala y mira comparten punto: la boca dispara HACIA el punto que la mira ya
 	# cubre, no paralela a la cámara. Con convergencia lejana el cañón quedaba a

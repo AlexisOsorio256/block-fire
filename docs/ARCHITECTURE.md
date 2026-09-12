@@ -44,6 +44,9 @@ del día usa `docs/CURRENT_STATE.md`; las reglas del proyecto viven en
 - **Rifle / pistola / escopeta / SMG** (stats, coste, munición, `reload_time`):
   `game/data/weapons/<id>.tres`. Presentación del arma (modelo, montaje,
   agarre, boca, retroceso del cuerpo): `OperatorVisual.WEAPON_CONFIG`.
+- **Retículo**: `game/ui/crosshair.gd` dibuja el cono de
+  `WeaponController.current_spread()` proyectado con el FOV real de la cámara.
+  El HUD sólo lo empuja: nadie recalcula dispersión fuera del arma.
 - **Recarga visual**: clip por arma en `OperatorMotion.RELOAD_CLIP_BY_WEAPON`,
   recorrido de la mano en `assets/models/animation_library/reload_hand_path.json`
   (generado por `tools/make_anim_clips.py`).

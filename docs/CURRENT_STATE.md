@@ -54,6 +54,16 @@ Pasada visual de superficie (capturas propias y de partida, no medición):
 - Trazadora: la caja de 16 mm es ancho de mundo; a un metro del ojo son ~15 px
   aditivos sobre la mira. El ancho se limita en radianes vistos desde la cámara
   (`CombatFX.TRACER_EYE_WIDTH`), así que sigue siendo una línea de ~4 px.
+- Mira: el retículo dibujaba un hueco fijo de 5 px mientras el cono real del
+  arma llega a ±3,6° (SMG a tope de calor). Medido en partida con el retículo
+  centrado en el pecho (`reticle_deg=0.00`) y el gatillo mantenido: 69/25/9% de
+  impactos a 10/20/30 m con SMG y 100/97/78% con rifle; con ADS 100/97/81% y
+  100/100/100%. Ahora `WeaponController.current_spread()` es la única fórmula de
+  dispersión (la que dispara) y la mira la proyecta a píxeles con el FOV de la
+  cámara; el punto central sigue marcando la puntería exacta. Captura con el
+  mismo encuadre y gatillo mantenido: hueco 5 → 33 px = cono declarado de la SMG
+  (0,0625 rad × 533,7 px/rad a 68° y 720p). Con semilla fija, el patrón de
+  impactos de 192 disparos es idéntico antes/después: sólo cambia la mira.
 - Los botones AJUSTES/CAMBIAR del HUD crecían hacia el final y se salían del
   borde derecho en 1280x720; ahora crecen hacia el principio.
 - Los controles táctiles dibujaban sus círculos y anillos sin antialias mientras

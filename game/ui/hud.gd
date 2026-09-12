@@ -23,7 +23,7 @@ var weapon_label: Label
 var status_label: Label
 var banner_label: Label
 var damage_label: Label
-var crosshair: Control
+var crosshair: BlockfireCrosshair
 var bottom_bar: HBoxContainer
 var buy_panel: PanelContainer
 var buy_title: Label
@@ -381,6 +381,7 @@ func _process(delta: float) -> void:
 		Engine.time_scale = 1.0
 	_update_fps_counter(delta)
 	_update_reload_indicator()
+	_update_crosshair_spread()
 
 
 func _fps_enabled() -> bool:
@@ -405,13 +406,30 @@ func _update_fps_counter(delta: float) -> void:
 
 ## El arma local se lee del contexto de partida: no hace falta que match.gd
 ## emita nada nuevo para el indicador de recarga.
+func _local_player() -> Node:
+	return match_context.get("player") if match_context != null else null
+
+
 func _local_weapon() -> Node:
-	if match_context == null:
-		return null
-	var local_player: Node = match_context.get("player")
+	var local_player := _local_player()
 	if local_player == null:
 		return null
 	return local_player.get("weapon")
+
+
+## La mira es un observador del arma: dibuja el cono que `WeaponController`
+## va a usar en el próximo disparo. El HUD no calcula dispersión propia.
+func _update_crosshair_spread() -> void:
+	if crosshair == null:
+		return
+	var local_player := _local_player()
+	if local_player == null:
+		return
+	var weapon := _local_weapon()
+	var camera: Camera3D = local_player.get("camera") as Camera3D
+	if weapon == null or camera == null or not weapon.has_method("current_spread"):
+		return
+	crosshair.set_spread(float(weapon.call("current_spread")), camera.fov)
 
 
 func _update_reload_indicator() -> void:
