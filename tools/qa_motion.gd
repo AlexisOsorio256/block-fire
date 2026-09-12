@@ -6,8 +6,8 @@ extends SceneTree
 ## --all-frames           # opt in only when every rendered frame is genuinely needed
 ##
 ## By default the lab SIMULATES the full timeline but saves only a compact semantic
-## sample under /tmp. This prevents visual QA from flooding the checkout or inviting
-## serial inspection of hundreds of nearly redundant PNGs.
+## sample under /tmp. Defaults target a readable 8-14 tile overview; densify one
+## suspicious boundary explicitly with --frames instead of shrinking dozens of poses.
 ##
 ## Speeds are GAMEPLAY speeds (player.gd: walk 4.8, sprint 7.0, crouch 2.6) and
 ## every label means the gameplay action, never the clip's own implied speed.
@@ -65,24 +65,22 @@ func _add_capture_frames(values: Array[int]) -> void:
 		if value >= 0 and value < total: _capture_frames[value] = true
 
 func _default_capture_frames() -> void:
-	var total := int(duration * 30.0)
 	if mode == "sequence":
-		# State centers plus tight boundaries, including jump/land and switch.
-		_add_capture_frames([0, 30, 59, 61, 90, 119, 121, 150, 179, 181, 210,
-			239, 242, 270, 299, 303, 330, 359, 363, 390, 419, 422, 440,
-			450, 456, 465, 474, 480, 490, 510, 539, 542, 560, 599, 601, 630])
+		# One readable representative per semantic state, plus only the transitions
+		# most likely to expose continuity (ADS entry and jump/land).
+		_add_capture_frames([30, 90, 150, 181, 210, 270, 330, 390, 440, 456, 465, 474, 560, 630])
 	elif mode == "combat":
-		for boundary: int in range(0, total + 1, 30):
-			_add_capture_frames([boundary + 15, boundary + 29, boundary + 31])
+		# HIP idle/fire, the first HIP→ADS boundary, steady ADS/strafe and later
+		# alternating HIP/ADS states. Keep it small enough for one readable sheet.
+		_add_capture_frames([15, 45, 59, 61, 75, 105, 119, 121, 135, 165, 195, 225])
 	elif mode == "air":
-		for boundary: int in range(0, total + 1, 60):
-			_add_capture_frames([boundary, boundary + 12, boundary + 23, boundary + 25, boundary + 45])
+		# Two cycles are enough to expose takeoff/peak/land continuity.
+		_add_capture_frames([0, 12, 23, 25, 45, 60, 72, 83, 85, 105])
 	elif mode == "reload":
-		for boundary: int in range(0, total + 1, 90):
-			_add_capture_frames([boundary + 15, boundary + 59, boundary + 61, boundary + 89])
-	else: # locomotion and unknown modes with 2 s state segments
-		for boundary: int in range(0, total + 1, 60):
-			_add_capture_frames([boundary + 30, boundary + 59, boundary + 61])
+		# Static and moving reload examples, including completion boundaries.
+		_add_capture_frames([15, 59, 61, 89, 105, 149, 151, 179])
+	else: # locomotion: one center sample per 2 s state
+		_add_capture_frames([30, 90, 150, 210, 270, 330, 390, 450])
 
 func _build() -> void:
 	var world := Node3D.new()
