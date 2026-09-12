@@ -60,7 +60,9 @@ var gravity: float = 22.0
 var walk_speed: float = 4.8
 var sprint_speed: float = 7.0
 var crouch_speed: float = 2.6
-var acceleration: float = 32.0
+## Combat response: ~80 ms to walk, ~160 ms for a full strafe reversal.
+## One vector budget also brakes; diagonal input must not gain acceleration.
+var acceleration: float = 60.0
 var assist_break_timer: float = 0.0
 ## Alcance y fuerza del agarre rotacional; el cono limita dónde se siente.
 const ASSIST_RANGE := 70.0
@@ -447,7 +449,7 @@ func _update_body_rotation(delta: float, movement_direction: Vector3) -> void:
 		target_yaw = atan2(-movement_direction.x, -movement_direction.z)
 	else:
 		return
-	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 11.0, 0.0, 1.0))
+	rotation.y = lerp_angle(rotation.y, target_yaw, 1.0 - exp(-18.0 * delta))
 
 ## Asistencia rotacional = resistencia al arrastre, no imán. Mientras ADS/fuego
 ## está activo, arrastrar sobre el torso visible pesa más; el giro pedido nunca

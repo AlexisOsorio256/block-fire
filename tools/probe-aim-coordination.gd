@@ -75,6 +75,8 @@ func run() -> void:
 			player.look_pitch = 45.0
 			var max_grip := 0.0
 			var max_flip := 0.0
+			var grip_context := ""
+			var flip_context := ""
 			var previous := {"L": Vector3.ZERO, "R": Vector3.ZERO}
 			controls.qa_set_move(Vector2.RIGHT if state in ["strafe", "crouch"] else (Vector2.UP if state == "sprint_ads" else Vector2.ZERO))
 			player.weapon.reload_timer = 0.0
@@ -91,16 +93,24 @@ func run() -> void:
 				player.weapon._physics_process(1.0 / 60.0)
 				visual._process(1.0 / 60.0)
 				for side: String in ["L", "R"]:
-					max_grip = maxf(max_grip, grip_error(visual, side))
+					var error := grip_error(visual, side)
+					if error > max_grip:
+						max_grip = error
+						grip_context = "%s frame=%d reload=%.3f" % [side, frame, visual.motion.reload_phase]
 					var sk := visual.skeleton
 					var shoulder := sk.get_bone_global_pose(sk.find_bone("UpperArm." + side)).origin
 					var elbow := sk.get_bone_global_pose(sk.find_bone("LowerArm." + side)).origin
 					var wrist := sk.get_bone_global_pose(sk.find_bone("Wrist." + side)).origin
 					var plane := (shoulder - elbow).cross(wrist - elbow).normalized()
 					if previous[side] != Vector3.ZERO:
-						max_flip = maxf(max_flip, rad_to_deg(acos(clampf(plane.dot(previous[side]), -1, 1))))
+						var flip := rad_to_deg(acos(clampf(plane.dot(previous[side]), -1, 1)))
+						if flip > max_flip:
+							max_flip = flip
+							flip_context = "%s frame=%d reload=%.3f" % [side, frame, visual.motion.reload_phase]
 					previous[side] = plane
 			print("AIM_TRANSITION weapon=%s state=%s max_grip_mm=%.6f elbow_step_deg=%.6f" % [id, state, max_grip * 1000, max_flip])
+			if max_grip >= 0.005 or max_flip >= 90.0:
+				print("  worst_grip=%s worst_flip=%s" % [grip_context, flip_context])
 			check(max_grip < 0.005, "transition preserves reachable grips")
 			check(max_flip < 90.0, "no elbow-plane flip during transition")
 	controls.release_all()
@@ -141,8 +151,9 @@ func grip_error(visual: OperatorVisual, side: String) -> float:
 	var wrist := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Wrist." + side)).origin
 	var target := visual.left_fist().global_position if side == "L" else visual.right_fist().global_position
 	var config: Dictionary = OperatorVisual.WEAPON_CONFIG[visual.equipped_weapon_id]
-	if side == "L" and config.has("support_wrist"):
-		target += visual.weapon_mount.global_basis * (config.support_wrist as Vector3)
+	var socket_key := "support_wrist" if side == "L" else "grip_wrist"
+	if config.has(socket_key):
+		target += visual.weapon_mount.global_basis * (config[socket_key] as Vector3)
 	else:
 		target -= shoulder.direction_to(target) * OperatorBody.PALM_OFFSET
 	return wrist.distance_to(target)

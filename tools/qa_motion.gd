@@ -4,6 +4,7 @@ extends SceneTree
 ## --out=/tmp/bf-motion --weapon=rifle --duration=24
 ## --frames=59,60,61,90  # explicit sparse capture set
 ## --all-frames           # opt in only when every rendered frame is genuinely needed
+## --closeup              # inspect contacts on the weapon at full resolution
 ##
 ## By default the lab SIMULATES the full timeline but saves only a compact semantic
 ## sample under /tmp. Defaults target a readable 8-14 tile overview; densify one
@@ -32,6 +33,7 @@ var _capture := true
 var _capture_all := false
 var _capture_frames: Dictionary = {}
 var _explicit_frames := false
+var _closeup := false
 
 func _init() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -47,6 +49,7 @@ func _init() -> void:
 				if value.is_valid_int(): _capture_frames[int(value)] = true
 		if arg == "--all-frames": _capture_all = true
 		if arg == "--no-capture": _capture = false
+		if arg == "--closeup": _closeup = true
 	if out.is_empty(): out = "/tmp/blockfire-qa-motion-%d" % OS.get_process_id()
 	if _capture and not _capture_all and not _explicit_frames:
 		_default_capture_frames()
@@ -112,6 +115,7 @@ func _build() -> void:
 	world.add_child(visual)
 	visual.set_showcase_mode(true)
 	visual.set_equipped_weapon(weapon)
+	visual.motion.reload_weapon_id = weapon
 	visual.set_process(false)
 	visual.debug_manual_state = true
 	camera = Camera3D.new()
@@ -203,7 +207,9 @@ func _process(_delta: float) -> bool:
 	visual._process(1.0/30.0)
 	var yaw := {"front":0.0,"q34":35.0,"side":90.0,"back":180.0}.get(view,35.0) as float
 	var focus := Vector3(visual.position.x,1.0+visual.position.y*0.7,visual.position.z)
-	camera.position = focus + Vector3(sin(deg_to_rad(yaw))*4.1,.45,cos(deg_to_rad(yaw))*4.1)
+	var distance := 1.7 if _closeup else 4.1
+	if _closeup: focus.y += 0.45
+	camera.position = focus + Vector3(sin(deg_to_rad(yaw))*distance,.15 if _closeup else .45,cos(deg_to_rad(yaw))*distance)
 	camera.look_at(focus)
 	label.text = "%s  ·  %s  ·  %s\n%.2fs  |  %.1f m/s  |  sprint %.2f  |  reload %.2f" % [stage,weapon,view,t,Vector2(m.local_velocity.x,m.local_velocity.z).length(),m._sprint_weight,m.reload_phase]
 	if _capture and (_capture_all or _capture_frames.has(frame)):

@@ -68,7 +68,7 @@ func run() -> void:
 			if weapon == "rifle" and state == "HIP":
 				# Reference measured on the normalized rifle mesh: underside of the
 				# rear handguard. AABB clearance is a contact proxy; inspect the hand too.
-				var contact := Vector3(0.0, 0.172533, 0.28)
+				var contact := Vector3(0.0, 0.172533, 0.28) * (0.86 / 0.92)
 				var palm := v._left_fist.get_child(0) as MeshInstance3D
 				var bounds := (v.weapon_mount.global_transform.affine_inverse() * palm.global_transform) * palm.get_aabb()
 				print("RIFLE_PALM_HANDGUARD clearance_mm=%.3f" % (1000.0 * contact.distance_to(contact.clamp(bounds.position, bounds.end))))

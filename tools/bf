@@ -5,7 +5,7 @@
 #
 #   tools/bf doctor                 diagnóstico rápido (sin suites largas)
 #   tools/bf test                   suite completa (smoke + animation_layers)
-#   tools/bf qa motion|touch|perf|fx|hud|anim|shot|sheet
+#   tools/bf qa motion|player|touch|perf|fx|hud|anim|shot|sheet
 #   tools/bf build android          APK de debug
 #   tools/bf blender <clip...>      exporta sources .blend a GLB (modo export)
 #   tools/bf body <Clip>            añade cuerpo de visualización a un source
@@ -111,6 +111,7 @@ cmd_qa() {
 	local what="${1:-}"; shift || true
 	case "$what" in
 		motion) run_game_script res://tools/qa_motion.gd "$@" ;;
+		player) run_game_script res://tools/qa_player_motion.gd "$@" ;;
 		touch)  need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/qa_touch.gd ;;
 		perf)   run_game_script res://tools/qa_perf.gd "$@" ;;
 		fx)     run_game_script res://tools/qa_fx_lab.gd "$@" ;;
@@ -121,7 +122,7 @@ cmd_qa() {
 		slide)  run_game_script res://tools/probe-slide.gd "$@" ;;
 		ik)     need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-ik-quality.gd ;;
 		reload) need_godot; "$GODOT_BIN" --headless --path "$ROOT" --script res://tools/probe-reload-hand.gd ;;
-		*) die "qa desconocido: '${what:-}' (motion|touch|perf|fx|hud|anim|shot|sheet|slide|ik|reload)" ;;
+		*) die "qa desconocido: '${what:-}' (motion|player|touch|perf|fx|hud|anim|shot|sheet|slide|ik|reload)" ;;
 	esac
 }
 

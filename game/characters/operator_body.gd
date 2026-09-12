@@ -35,6 +35,9 @@ var aim_basis := Basis.IDENTITY
 const BRAKE_DECELERATION := 6.0
 var _previous_speed := -1.0
 var _previous_physics_frame := -1
+var _previous_world_velocity := Vector3.ZERO
+var _lateral_acceleration := 0.0
+var _turn_lean := 0.0
 var _head_look_yaw := 0.0
 var _head_look_pitch := 0.0
 var _debug_reload_time := 0.0
@@ -89,12 +92,24 @@ func read_motion_inputs(actor: OperatorVisual, delta: float) -> void:
 		_previous_physics_frame = frame
 	motion.braking = motion.grounded and _previous_speed > 0.25 and elapsed > 0.0 \
 		and (_previous_speed - speed_now) / elapsed > BRAKE_DECELERATION
+	# World-space derivative: differentiating actor-local velocity mistakes the
+	# body's own yaw for an acceleration. Only the torso reacts, never the feet.
+	var world_velocity: Vector3 = body.global_basis * motion.local_velocity if body is Node3D else motion.local_velocity
+	_lateral_acceleration = 0.0
+	if motion.grounded and _previous_speed >= 0.0 and elapsed > 0.0:
+		var acceleration: Vector3 = (world_velocity - _previous_world_velocity) / elapsed
+		if body is Node3D: acceleration = body.global_basis.inverse() * acceleration
+		_lateral_acceleration = acceleration.x
+	_previous_world_velocity = world_velocity
 	_previous_speed = speed_now
 
 ## Respawn must not compare a new actor's rest state with pre-death motion.
 func reset_motion_history() -> void:
 	_previous_speed = -1.0
 	_previous_physics_frame = -1
+	_previous_world_velocity = Vector3.ZERO
+	_lateral_acceleration = 0.0
+	_turn_lean = 0.0
 	aim_basis = Basis.IDENTITY
 
 
@@ -123,6 +138,15 @@ func update_head_look(actor: OperatorVisual, delta: float) -> void:
 	var pitch := deg_to_rad(clampf(aim_pitch, -78.0, 78.0)) * weight
 	aim_basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch)
 	var chest := skeleton.find_bone(CharacterAsset.CHEST_BONE)
+	# Brief directional weight for strafing/cutting. Model +Z forward and
+	# model -X is the actor's right. Exponential recovery is render-rate stable.
+	var lean_target := deg_to_rad(6.0) * clampf(_lateral_acceleration / 60.0, -1.0, 1.0)
+	_turn_lean = lerpf(_turn_lean, lean_target, 1.0 - exp(-18.0 * delta))
+	if chest >= 0 and absf(_turn_lean) > 0.00001:
+		var parent := skeleton.get_bone_parent(chest)
+		var parent_basis := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+		var local_turn := parent_basis.inverse() * Basis(Vector3.BACK, _turn_lean) * parent_basis
+		skeleton.set_bone_pose_rotation(chest, (local_turn * skeleton.get_bone_pose(chest).basis).get_rotation_quaternion())
 	if chest >= 0 and weight > 0.0 and (yaw != 0.0 or pitch != 0.0):
 		# Rotate the chest in WORLD axes, then convert back to its parent bone.
 		# Applying model axes directly to the chest's local pose changes reach
@@ -198,6 +222,8 @@ func solve_arms_ik(actor: OperatorVisual) -> void:
 		# La clase de recarga la decide OperatorMotion a partir del weapon_id;
 		# aquí solo se consume para elegir el recorrido de mano publicado.
 		var path := OperatorVisual.reload_hand_offset(motion.reload_phase, motion.reload_class())
+		# Different handguard heights need different reach, not longer arm bones.
+		path *= config.get("reload_path_scale", Vector3.ONE) as Vector3
 		target += actor.weapon_mount.global_basis * path * motion.reload_weight
 	_solve_arm_ik(actor, "L", target, pole_l)
 	var left := actor.left_fist()
@@ -215,10 +241,14 @@ func _solve_arm_ik(actor: OperatorVisual, side: String, target_world: Vector3, p
 		return
 	var target := skeleton.global_transform.affine_inverse() * target_world
 	var config: Dictionary = OperatorVisual.WEAPON_CONFIG.get(actor.equipped_weapon_id, {})
-	if side == "L" and config.has("support_wrist"):
+	# The elbow plane belongs to the aiming torso. Keeping its pole in the
+	# unturned model frame makes a bent arm cross that pole at high aim pitch.
+	pole = skeleton.global_basis.inverse() * actor.model_root.global_basis * aim_basis * pole
+	var socket_key := "support_wrist" if side == "L" else "grip_wrist"
+	if config.has(socket_key):
 		# The cupped palm has a fixed wrist socket in weapon space. Solving
 		# that socket keeps the forearm attached through ADS and lateral lean.
-		target = skeleton.global_transform.affine_inverse() * (target_world + actor.weapon_mount.global_basis * (config.support_wrist as Vector3))
+		target = skeleton.global_transform.affine_inverse() * (target_world + actor.weapon_mount.global_basis * (config[socket_key] as Vector3))
 		_two_bone_ik(actor, upper, lower, wrist, target, pole)
 		return
 	# La malla de la mano sobresale ~7 cm del hueso de muñeca: el IK apunta a

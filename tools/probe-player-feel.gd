@@ -207,6 +207,8 @@ func movement_tests(player: ProbePlayer, controls: BlockfireMobileControls) -> v
 				counts.append(ticks)
 				check(ticks < hz and overshoot < 0.00001, "target reached without overshoot")
 				print("RESPONSE hz=%d heading=%.0f action=%s ticks=%d ms=%.3f distance=%.6f overshoot=%.6f" % [hz, rad_to_deg(angle), action, ticks, ticks * dt * 1000, distance, overshoot])
+				var response_limit := 0.20 if action == "reverse" else (0.14 if action == "turn90" else 0.10)
+				check(ticks * dt <= response_limit + 0.00001, "combat response stays within %d ms for %s" % [roundi(response_limit * 1000), action])
 			if reference.is_empty(): reference = counts
 			else:
 				for i in counts.size(): check(absi(counts[i] - reference[i]) <= 1, "direction-independent timing")

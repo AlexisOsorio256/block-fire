@@ -78,9 +78,12 @@ func run() -> void:
 		var tick_index := 0
 		var previous_speed := -1.0
 		var peak_weight := 0.0
+		var peak_turn_lean := 0.0
 		var public_brake_samples := 0
-		for stage: String in ["start", "steady", "stop", "idle", "resume", "reverse", "steady", "stop", "idle"]:
+		for stage: String in ["start", "steady", "stop", "idle", "resume", "reverse", "steady", "side", "side_reverse", "stop", "idle"]:
 			if stage != "steady": controls.qa_set_move(Vector2.ZERO if stage in ["stop", "idle"] else (Vector2.DOWN if stage == "reverse" else Vector2.UP))
+			if stage == "side": controls.qa_set_move(Vector2.LEFT)
+			if stage == "side_reverse": controls.qa_set_move(Vector2.RIGHT)
 			var active := 0
 			for tick in rates.x / 2:
 				player.set_physics_process(true)
@@ -95,12 +98,17 @@ func run() -> void:
 					check(player.visual.motion.braking == expected, "brake uses planar acceleration once per physics snapshot")
 					if player.visual.motion.braking: active += 1
 					peak_weight = maxf(peak_weight, player.visual.motion._brake_weight)
+					peak_turn_lean = maxf(peak_turn_lean, absf(player.visual._body._turn_lean))
+					check(absf(player.visual._body._turn_lean) <= deg_to_rad(6.001), "directional torso reaction is bounded")
 				previous_speed = speed
 				if stage == "idle" and tick > rates.x / 3:
 					check(player.visual.motion._brake_weight == 0.0, "idle clears brake weight within 0.18s")
+					check(absf(player.visual._body._turn_lean) < 0.001, "directional torso reaction settles at rest")
 			public_brake_samples += active
 			print("PUBLIC_BRAKE physics=%d render=%d stage=%s active_samples=%d weight=%.6f" % [rates.x, rates.y, stage, active, player.visual.motion._brake_weight])
 		check(public_brake_samples > 0 and peak_weight > 0.0, "public stops activate brake")
+		check(peak_turn_lean > deg_to_rad(1.0), "public cuts visibly activate directional torso reaction")
+		print("TURN_REACTION physics=%d render=%d peak_deg=%.4f" % [rates.x, rates.y, rad_to_deg(peak_turn_lean)])
 		check(max_foot_delta < 0.000001 and max_phase_delta < 0.000001, "brake cannot alter feet or locomotion phase")
 		print("BRAKE_INVARIANT physics=%d render=%d added_foot_delta=%.9f phase_delta=%.9f peak_weight=%.6f" % [rates.x, rates.y, max_foot_delta, max_phase_delta, peak_weight])
 		player.visual.revive()

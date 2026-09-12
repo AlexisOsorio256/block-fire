@@ -405,7 +405,7 @@ static func _make_fist(fist_name: String, at: Vector3, skin_material: StandardMa
 	var fist := Node3D.new()
 	fist.name = fist_name
 	fist.position = at
-	if mirrored and weapon_id == "rifle":
+	if mirrored and weapon_id != "pistol":
 		# Cupped support: palm below the handguard, fingers up one side and
 		# thumb on the other. A solid cylinder here filled the weapon with skin.
 		var parts := [

@@ -164,9 +164,26 @@ subproceso). Se puede ejecutar antes de cada limpieza sin pensarlo.
 
 ## Respuesta del personaje — implementación vigente
 
+Respuesta de combate actual: aceleración vectorial de Player 60 m/s², giro
+exponencial 18/s. A 60 Hz: inicio/frenada 83 ms, giro de 90° 117 ms e inversión
+de strafe 167 ms (antes 150/217/300 ms). Velocidades máximas sin cambio.
+OperatorBody añade hasta 6° de inclinación lateral a partir de aceleración
+mundial, sólo al torso; los probes públicos verifican pies/fase intactos.
+
+Montajes recalibrados sobre geometría visible: agarres en las empuñaduras,
+apoyo de SMG bajo guardamanos, apoyo envolvente también en escopeta/SMG.
+Escalas y offsets de armas largas ajustados al alcance del rig y al hombro.
+La muñeca derecha tiene socket fijo; los polos de codo acompañan la misma
+rotación de apuntado que el torso. Recorrido de recarga adaptado al alcance
+de escopeta/SMG. No se reemplazaron clips ni se añadió root motion.
+QA reproducible: `tools/bf qa player --view=player|side --frames=...` usa input
+real; `tools/bf qa motion --closeup` muestra los contactos. Evidencia local en
+`captures/combat-feel/`. Android, confort táctil y equivalencia con Free Fire
+siguen SIN VERIFICAR. Persisten el acabado tosco de manos y costuras del rig.
+
 Cámara: error de rumbo <0.001° a pasos 30/60/120 Hz; colisión inmediata,
 sin bombeo. Analog: deadzone radial 0.12 y remap lineal; auto-sprint entra
-0.96/sale 0.88, crouch y ADS/fuego ganan. Aceleración vectorial 32 m/s²;
+0.96/sale 0.88, crouch y ADS/fuego ganan. Aceleración vectorial 60 m/s²;
 cardinal y diagonal tienen tiempos idénticos, sin overshoot.
 
 Frenada: derivada planar por snapshot físico (>6 m/s²), release/reset explícitos;
